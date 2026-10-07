@@ -45,16 +45,17 @@
       </figure>
     </div>
 
-    <button id="enter" type="button">
-      <span class="kicker">6 April 2026 · 19:33 UTC</span>
-      <span class="title">Look out the window</span>
-      <span class="quiet">Aristarchus Plateau to Reiner Gamma. Real crew audio. No synthesized sound.</span>
-    </button>
+    <button id="enter" type="button">Click or press any key to look out the window</button>
+    <p id="hint" hidden>Space pause · ← → windows · 1–4 crew · F full screen · Esc controls</p>
+    <div id="clocks">
+      <span id="utc">19:33:00 UTC</span>
+      <span id="et">15:33:00 EDT</span>
+      <span id="met"></span>
+    </div>
 
     <div id="hud" hidden>
       <header class="top">
         <div>
-          <div id="clock" class="clock">19:33:00</div>
           <div id="clocknote" class="fine">UTC on the Orion clock. Audio is the master.</div>
         </div>
         <div class="crew" role="group" aria-label="Crew narration">
@@ -101,6 +102,7 @@
       </div>
     </div>
   </div>
+  <script src="logic.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

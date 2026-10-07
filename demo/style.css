@@ -39,6 +39,12 @@ button, input { font: inherit; color: inherit; }
   inset: 0;
   background: #0b0c10;
   overflow: hidden;
+  opacity: 0;
+}
+
+#stage.live #cabin {
+  opacity: 1;
+  transition: opacity 1.05s ease;
 }
 
 #wall {
@@ -372,43 +378,97 @@ button, input { font: inherit; color: inherit; }
 
 #enter {
   position: absolute;
-  z-index: 4;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(420px, 70vw);
-  padding: 22px 24px;
-  border: 1px solid rgba(244, 241, 234, 0.14);
-  border-radius: 14px;
-  background: rgba(8, 9, 12, 0.55);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  z-index: 8;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0 8vw;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+  box-shadow: none;
   cursor: pointer;
-  text-align: left;
-  backdrop-filter: blur(6px);
+  text-align: center;
+  color: #f4f1ea;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: clamp(16px, 2.1vw, 22px);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  transition: opacity 1s ease;
 }
 
-#enter .kicker, .fine {
+#enter.dismiss {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#clocks {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  right: 16px;
+  opacity: 0;
+  pointer-events: none;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  color: rgba(244, 241, 234, 0.78);
+  text-shadow: 0 1px 3px #000;
+}
+
+#stage.live #clocks { opacity: 1; transition: opacity 1s ease 0.25s; }
+
+#clocks span + span { margin-left: 0.75em; }
+#met:empty { display: none; }
+
+#hint {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(244, 241, 234, 0.82);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  white-space: normal;
+  text-align: center;
+  max-width: 92vw;
+  pointer-events: none;
+  transition: opacity 600ms ease;
+}
+
+#hint.fade { opacity: 0; }
+
+#stage.turning #cabin {
+  transition: transform 220ms ease, filter 220ms ease;
+}
+
+#stage.turning.turn-out #cabin {
+  transform: translateX(calc(var(--turn, 1) * -8%));
+  filter: blur(7px);
+}
+
+#stage.turning.turn-in #cabin {
+  transform: translateX(calc(var(--turn, 1) * 8%));
+  filter: blur(7px);
+  transition: none;
+}
+
+#glass { transition: opacity 180ms linear; }
+#stage.xfade #glass { opacity: 0; }
+
+.fine {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
-}
-
-#enter .title {
-  display: block;
-  margin: 8px 0;
-  font-size: 34px;
-}
-
-#enter .quiet {
-  display: block;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-size: 14px;
-  line-height: 1.4;
-  color: var(--muted);
-  text-transform: none;
-  letter-spacing: 0;
 }
 
 #hud {
@@ -433,12 +493,6 @@ button, input { font: inherit; color: inherit; }
   justify-content: space-between;
   gap: 16px;
   align-items: flex-end;
-}
-
-.clock {
-  font-variant-numeric: tabular-nums;
-  font-size: 28px;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 .crew, .cameras, .tracks, .row {
@@ -512,6 +566,8 @@ button.on, button[aria-pressed="true"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #glass img, #wall, .reflect { transform: none; }
+  #glass img, #wall, .reflect, #cabin { transform: none; filter: none; }
   #window { transform: translate(-50%, -50%); }
+  #stage.live #cabin, #enter, #clocks, #hint { transition: none; }
+  #stage.turning #cabin { filter: none; transform: none; }
 }

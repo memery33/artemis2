@@ -205,6 +205,14 @@ def merge(document: dict) -> dict:
     document["segments"].sort(key=lambda row: row["start"])
     document["cab_run"] = CAB_RUN
     document["licenses"] = LICENSES
+    # Data User Guide, flight-day table: FD01 starts with SLS Launch.
+    document["mission_start"] = {
+        "utc": "2026-04-01T22:35:12Z",
+        "source": (
+            "Artemis II Data User Guide, Mission Start Time, "
+            "FD01 2026-04-01 22:35:12 UTC (SLS Launch)."
+        ),
+    }
     return document
 
 

@@ -19,7 +19,10 @@ let photoB = document.getElementById("photoB");
 const subs = document.getElementById("subs");
 const credit = document.getElementById("credit");
 const empty = document.getElementById("empty");
-const clock = document.getElementById("clock");
+const utcEl = document.getElementById("utc");
+const etEl = document.getElementById("et");
+const metEl = document.getElementById("met");
+const hint = document.getElementById("hint");
 const note = document.getElementById("note");
 const scrub = document.getElementById("scrub");
 const offsetInput = document.getElementById("offset");
@@ -40,6 +43,25 @@ document.body.appendChild(audio);
 const DATA = new URL("data/", document.baseURI);
 function media(file) {
   return new URL(file, DATA).href;
+}
+
+const warmImgs = new Map();
+function warm(file) {
+  if (!file) return Promise.resolve();
+  let row = warmImgs.get(file);
+  if (row) return row.ready;
+  const img = new Image();
+  const ready = new Promise((resolve) => {
+    const finish = () => resolve();
+    img.onload = () => {
+      if (img.decode) img.decode().then(finish, finish);
+      else finish();
+    };
+    img.onerror = finish;
+  });
+  img.src = media(file);
+  warmImgs.set(file, { img, ready });
+  return ready;
 }
 
 let doc = null;
@@ -67,6 +89,9 @@ let shownPlate = "";
 let shownTaken = "";
 let shownRange = "";
 let scrubStamp = null;
+let lastNudge = 0;
+let turnToken = 0;
+let arrived = false;
 let aimX = 0;
 let aimY = 0;
 let lookX = 0;
@@ -252,7 +277,7 @@ async function ensureAudio() {
   if (gen !== loadGen || currentFile !== seg.file) return false;
   // Recompute after the await so a seek during load is not discarded.
   const rel = Math.max(0, (utcMs - tOf(seg.start)) / 1000);
-  if (audio.readyState >= 1 && Math.abs(audio.currentTime - rel) > 0.35) {
+  if (audio.readyState >= 1 && Math.abs(audio.currentTime - rel) > 0.08) {
     audio.currentTime = rel;
   }
   if (gen !== loadGen || segmentAt(utcMs)?.file !== seg.file) return false;
@@ -268,11 +293,17 @@ async function ensureAudio() {
 function paint() {
   const view = visiblePair(utcMs);
   const frame = view.cur;
-  const clockStr = fmt(utcMs);
+  stage.dataset.ms = String(Math.round(utcMs));
+  const clocks = ArtemisLogic.formatClocks(utcMs, doc.mission_start ? tOf(doc.mission_start.utc) : null);
+  const clockStr = `${clocks.utc}|${clocks.eastern}|${clocks.met || ""}`;
   if (clockStr !== shownClock) {
     shownClock = clockStr;
-    clock.textContent = clockStr;
+    utcEl.textContent = clocks.utc;
+    etEl.textContent = clocks.eastern;
+    metEl.textContent = clocks.met || "";
   }
+  if (view.next) warm(view.next.file);
+  if (view.cur) warm(view.cur.file);
   if (!frame && view.next) {
     // The glass stays on the next real exposure and fades it up to the
     // timestamp. Nothing is invented for the gap before 19:33:26.
@@ -314,8 +345,9 @@ function paint() {
     const progress = view.next
       ? Math.min(1, Math.max(0, (utcMs - (tOf(frame.utc) + offsetS * 1000)) / (tOf(view.next.utc) - tOf(frame.utc))))
       : 0;
-    // Decode the next exposure before the dissolve so the glass does not dip to black.
-    if (view.next && progress > 0.35) {
+    // Decode the next exposure as soon as it is known, before the dissolve.
+    if (view.next) {
+      warm(view.next.file);
       const nextUrl = media(view.next.file);
       if (photoB.src !== nextUrl) {
         photoB.src = nextUrl;
@@ -420,8 +452,14 @@ function paint() {
 
 function drawMap(current) {
   const ctx = map.getContext("2d");
-  const w = map.width;
-  const h = map.height;
+  const cssW = map.clientWidth || 360;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(160, Math.round(cssW * dpr));
+  const h = Math.max(106, Math.round(w * 2 / 3));
+  if (map.width !== w || map.height !== h) {
+    map.width = w;
+    map.height = h;
+  }
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#10141c";
   ctx.fillRect(0, 0, w, h);
@@ -468,16 +506,39 @@ function drawMap(current) {
     ctx.fill();
     ctx.stroke();
   }
-  ctx.font = "11px Helvetica, sans-serif";
+  const visible = [];
+  const seen = new Set();
   for (const target of doc.targets) {
-    if (!target.geographic) continue;
+    if (!target.geographic || seen.has(target.name)) continue;
     if (target.lon < lon0 || target.lon > lon1 || target.lat < lat0 || target.lat > lat1) continue;
+    seen.add(target.name);
+    visible.push(target);
+  }
+  const names = visible.map((target) => target.name);
+  const fontPx = ArtemisLogic.chooseFont(names, w, Math.max(11, Math.round(11 * dpr)), (name, px) => {
+    ctx.font = `${px}px Helvetica, sans-serif`;
+    return ctx.measureText(name).width;
+  });
+  ctx.font = `${fontPx}px Helvetica, sans-serif`;
+  const anchors = visible.map((target) => {
     const [x, y] = xy(target.lon, target.lat);
-    ctx.fillStyle = "#f4f1ea";
+    return { name: target.name, x, y, w: ctx.measureText(target.name).width, h: fontPx + 2 };
+  });
+  const labels = ArtemisLogic.placeLabels(anchors, { x: 4, y: 4, x2: w - 4, y2: h - 4 });
+  ctx.fillStyle = "#f4f1ea";
+  ctx.strokeStyle = "rgba(244,241,234,0.55)";
+  ctx.lineWidth = Math.max(1, dpr);
+  for (const label of labels) {
     ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.arc(label.ax, label.ay, Math.max(2, 3 * dpr * 0.5), 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillText(target.name, x + 6, y - 4);
+    if (label.leader) {
+      ctx.beginPath();
+      ctx.moveTo(label.ax, label.ay);
+      ctx.lineTo(label.x, label.y2);
+      ctx.stroke();
+    }
+    ctx.fillText(label.name, label.x, label.y2 - 2);
   }
 }
 
@@ -585,10 +646,14 @@ function loop(now) {
       // The element has not landed yet. Keep the mission clock on the seek.
     } else if (seg && currentFile === seg.file && !audio.paused && audio.readyState >= 2) {
       const rel = (utcMs - tOf(seg.start)) / 1000;
+      const drift = Math.abs(audio.currentTime - rel);
       // A seek is applied on the element asynchronously. Until currentTime
       // catches the mission clock, leave utcMs where the seek put it.
-      if (Math.abs(audio.currentTime - rel) < 0.8) {
+      if (drift <= 0.1) {
         utcMs = tOf(seg.start) + audio.currentTime * 1000;
+      } else if (!seeking && now - lastNudge > 250) {
+        lastNudge = now;
+        audio.currentTime = Math.max(0, rel);
       }
     } else if (lastWall) {
       utcMs += (now - lastWall) * rate;
@@ -614,7 +679,13 @@ async function toggle() {
   playing = !playing;
   playBtn.textContent = playing ? "Pause" : "Play";
   if (playing) await ensureAudio();
-  else audio.pause();
+  else {
+    const seg = segmentAt(utcMs);
+    if (seg && currentFile === seg.file && Number.isFinite(audio.currentTime)) {
+      utcMs = tOf(seg.start) + audio.currentTime * 1000;
+    }
+    audio.pause();
+  }
 }
 
 function seekTo(ms) {
@@ -653,7 +724,7 @@ function setCamera(next) {
   });
 }
 
-function setWindow(next) {
+function presentWindow(next) {
   windowView = next;
   shownId = null;
   stage.classList.toggle("cab", next === "3");
@@ -664,39 +735,129 @@ function setWindow(next) {
   document.querySelector(".cameras").hidden = next === "3";
 }
 
+function frameFor(win, t) {
+  const saved = windowView;
+  windowView = win;
+  const view = pair(t);
+  windowView = saved;
+  return view.cur || view.next;
+}
+
+function turn(apply, dir) {
+  const token = ++turnToken;
+  const incoming = dir > 0 ? "3" : "2";
+  const ahead = frameFor(incoming, utcMs);
+  if (ahead) warm(ahead.file);
+  if (reduceMotion) {
+    stage.classList.add("xfade");
+    window.setTimeout(() => {
+      if (token !== turnToken) return;
+      apply();
+      stage.classList.remove("xfade");
+    }, 160);
+    return;
+  }
+  stage.style.setProperty("--turn", String(dir));
+  stage.classList.add("turning", "turn-out");
+  window.setTimeout(() => {
+    if (token !== turnToken) return;
+    apply();
+    stage.classList.remove("turn-out");
+    stage.classList.add("turn-in");
+    requestAnimationFrame(() => {
+      if (token !== turnToken) return;
+      stage.classList.remove("turn-in");
+      window.setTimeout(() => {
+        if (token === turnToken) stage.classList.remove("turning");
+      }, 240);
+    });
+  }, 180);
+}
+
+function setWindow(next) {
+  if (next === windowView) return;
+  const dir = next === "3" ? 1 : -1;
+  turn(() => presentWindow(next), dir);
+}
+
 function enterCabRun() {
   if (rangeKey !== "cab") {
     savedFlybyMs = utcMs;
     savedTrack = track;
   }
-  rangeKey = "cab";
-  backFly.hidden = false;
-  setWindow("3");
-  setTrack("pcd2");
-  seekTo(tOf(doc.cab_run.start));
+  const bright = doc.frames.find((frame) => frame.instrument === "cab2" && frame.utc === doc.cab_run.start);
+  if (bright) warm(bright.file);
+  const apply = () => {
+    rangeKey = "cab";
+    backFly.hidden = false;
+    presentWindow("3");
+    setTrack("pcd2");
+    seekTo(tOf(doc.cab_run.start));
+  };
+  if (windowView === "3") apply();
+  else turn(apply, 1);
 }
 
 function backToFlyby() {
-  rangeKey = "flyby";
-  backFly.hidden = true;
   const back = savedFlybyMs == null ? tOf(doc.window.start) : savedFlybyMs;
   const trackBack = savedTrack;
   savedFlybyMs = null;
   savedTrack = null;
-  setWindow("2");
-  if (trackBack) setTrack(trackBack);
-  seekTo(back);
+  const apply = () => {
+    rangeKey = "flyby";
+    backFly.hidden = true;
+    presentWindow("2");
+    if (trackBack) setTrack(trackBack);
+    seekTo(back);
+  };
+  if (windowView === "2") apply();
+  else turn(apply, -1);
+}
+
+function showHintOnce() {
+  if (sessionStorage.getItem("artemis2.hint")) return;
+  sessionStorage.setItem("artemis2.hint", "1");
+  hint.hidden = false;
+  window.setTimeout(() => {
+    hint.classList.add("fade");
+    window.setTimeout(() => { hint.hidden = true; }, reduceMotion ? 0 : 650);
+  }, 4200);
+}
+
+function openingSegment() {
+  return doc.segments.find((seg) => seg.track === track && tOf(seg.end) > utcMs) || null;
+}
+
+async function arrive() {
+  if (arrived) return;
+  arrived = true;
+  stage.classList.add("live");
+  enter.classList.add("dismiss");
+  playing = true;
+  playBtn.textContent = "Pause";
+  // play() has to be called in this gesture or the later start is blocked.
+  // The first recording begins a couple of seconds after 19:33:00, so this
+  // only unlocks the element. Nothing is heard until that file's real start.
+  const seg = openingSegment();
+  if (seg && !audio.src) audio.src = media(seg.file);
+  const kick = audio.play();
+  if (kick) kick.catch(() => {});
+  if (!segmentAt(utcMs)) audio.pause();
+  await ensureAudio();
+  showHintOnce();
+  window.setTimeout(() => { enter.hidden = true; }, 1100);
 }
 
 async function boot() {
   doc = await fetch("data/timeline.json").then((response) => response.json());
   utcMs = tOf(doc.window.start);
-  enter.addEventListener("click", async () => {
-    enter.hidden = true;
-    playing = true;
-    playBtn.textContent = "Pause";
-    await ensureAudio();
-  });
+  const opener = frameFor("2", utcMs);
+  if (opener) warm(opener.file);
+  const other = frameFor("3", utcMs);
+  if (other) warm(other.file);
+  const firstAudio = doc.segments.find((seg) => seg.track === track);
+  if (firstAudio) sourceUrl(firstAudio.file);
+  enter.addEventListener("click", () => { arrive(); });
   playBtn.addEventListener("click", toggle);
   document.getElementById("full").addEventListener("click", () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -747,18 +908,33 @@ async function boot() {
     aimX = Math.max(-1, Math.min(1, event.gamma / 28));
     aimY = Math.max(-1, Math.min(1, ((event.beta || 0) - 45) / 32));
   });
+  const crewKeys = ["Wiseman", "Glover", "Koch", "Hansen"];
   window.addEventListener("keydown", (event) => {
-    poke();
-    if (event.key === " ") {
+    if (!arrived) {
       event.preventDefault();
-      if (enter.hidden) toggle();
-      else enter.click();
-    } else if (event.key === "f") {
+      arrive();
+      return;
+    }
+    const key = event.key;
+    if (key === "Escape") {
+      poke();
+      return;
+    }
+    if (event.target.closest("input, textarea")) return;
+    if (key === " ") {
+      event.preventDefault();
+      if (event.target.closest("button")) return;
+      toggle();
+    } else if (key === "f" || key === "F") {
       document.getElementById("full").click();
-    } else if (event.key === "ArrowRight") {
-      seekTo(utcMs + 5000);
-    } else if (event.key === "ArrowLeft") {
-      seekTo(utcMs - 5000);
+    } else if (key === "ArrowRight") {
+      event.preventDefault();
+      setWindow("3");
+    } else if (key === "ArrowLeft") {
+      event.preventDefault();
+      setWindow("2");
+    } else if (key >= "1" && key <= "4") {
+      setCrew(crewKeys[Number(key) - 1]);
     }
   });
   requestAnimationFrame(loop);

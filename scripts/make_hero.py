@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""README hero: the Moon through the cone window, with one real crew line.
+"""Drawn-window hero sequence.
 
-Opens on a lunar frame. art002e016183 is a cabin interior and is not used.
+The shipped docs/hero.gif and docs/hero-still.png are captures of the live
+page with the controls hidden. This script rebuilds the older composed
+sequence if you want that version instead. art002e016183 is a cabin
+interior and is not used.
 """
 
 from __future__ import annotations
