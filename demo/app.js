@@ -54,6 +54,10 @@ let aimX = 0;
 let aimY = 0;
 let lookX = 0;
 let lookY = 0;
+let floatX = 0;
+let floatY = 0;
+let floatR = 0;
+let plate = 0;
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const tOf = (iso) => Date.parse(iso);
@@ -188,30 +192,43 @@ function paint() {
   const view = pair(utcMs);
   const frame = view.cur;
   clock.textContent = fmt(utcMs);
-  if (!frame) {
+  if (!frame && view.next) {
+    // The glass stays on the next real exposure and fades it up to the
+    // timestamp. Nothing is invented for the gap before 19:33:26.
+    empty.hidden = true;
+    const arrival = view.next;
+    const start = tOf(doc.window.start);
+    const at = tOf(arrival.utc) + offsetS * 1000;
+    const along = Math.min(1, Math.max(0, (utcMs - start) / Math.max(1, at - start)));
+    // A faint hold of that same frame, then up to full at its timestamp.
+    const fadeIn = reduceMotion ? 1 : 0.14 + 0.86 * (along * along);
+    useFrame(arrival);
+    photoB.style.opacity = "0";
+    photoA.style.opacity = String(fadeIn);
+    applyMotion(photoA, photoB, 0, 0);
+    credit.textContent = fadeIn > 0.18
+      ? `${arrival.credit}. Independent viewer, not a NASA product.`
+      : "";
+    const moon = photoA.complete && photoA.naturalWidth ? sampleMoon(photoA) * fadeIn : 0;
+    stage.style.setProperty("--moon", moon.toFixed(3));
+    easePlate(fadeIn > 0.2 ? photoA : null);
+  } else if (!frame) {
     photoA.style.opacity = 0;
     photoB.style.opacity = 0;
-    if (view.list.length === 0) {
-      empty.hidden = false;
-      empty.textContent = camera === "orion"
-        ? "No Orion vehicle still falls in this window. SAW Cam 3’s science cadence is about one frame every eight minutes, and none of those frames is in the shipped set."
-        : "No shipped frame for this camera.";
-    } else {
-      empty.hidden = true;
-    }
+    empty.hidden = false;
+    empty.textContent = camera === "orion"
+      ? "No Orion vehicle still falls in this window. SAW Cam 3’s science cadence is about one frame every eight minutes, and none of those frames is in the shipped set."
+      : "No shipped frame for this camera.";
     credit.textContent = "";
     stage.style.setProperty("--moon", "0");
+    easePlate(null);
   } else {
     empty.hidden = true;
     const progress = view.next
       ? Math.min(1, Math.max(0, (utcMs - (tOf(frame.utc) + offsetS * 1000)) / (tOf(view.next.utc) - tOf(frame.utc))))
       : 0;
     const fade = !reduceMotion && view.next && progress > 0.9;
-    if (shownId !== frame.nasa_id) {
-      shownId = frame.nasa_id;
-      photoA.src = media(frame.file);
-      photoA.alt = `${frame.credit}. ${frame.camera_label}.`;
-    }
+    useFrame(frame);
     if (fade) {
       const nextUrl = media(view.next.file);
       if (photoB.src !== nextUrl) {
@@ -224,20 +241,13 @@ function paint() {
       photoA.style.opacity = 1;
       photoB.style.opacity = 0;
     }
-    if (reduceMotion) {
-      photoA.style.transform = "none";
-      photoB.style.transform = "none";
-    } else {
-      const sway = Math.sin((utcMs || 0) / 14000) * 0.8;
-      const panX = -lookX * 2.2 + sway;
-      const panY = -lookY * 1.4;
-      const drift = (view.index % 2 === 0 ? -1 : 1) * progress * 1.1;
-      const scale = 1.06 + progress * 0.05;
-      photoA.style.transform = `translate(${panX + drift}%, ${panY + progress * 0.4}%) scale(${scale})`;
-      photoB.style.transform = `translate(${panX * 0.6}%, ${panY * 0.6}%) scale(1.06)`;
-    }
+    applyMotion(photoA, photoB, progress, view.index);
     credit.textContent = `${frame.credit}. Independent viewer, not a NASA product.`;
-    if (photoA.complete && photoA.naturalWidth) stage.style.setProperty("--moon", sampleMoon(photoA).toFixed(3));
+    const aOp = parseFloat(photoA.style.opacity) || 0;
+    const bOp = parseFloat(photoB.style.opacity) || 0;
+    const visible = aOp >= bOp ? photoA : photoB;
+    if (visible.complete && visible.naturalWidth) stage.style.setProperty("--moon", sampleMoon(visible).toFixed(3));
+    easePlate(visible.complete && visible.naturalWidth ? visible : null);
   }
 
   const cabin = cabinAt(utcMs);
@@ -347,23 +357,70 @@ function drawMap(current) {
 }
 
 const lumCanvas = document.createElement("canvas");
-lumCanvas.width = 16;
+lumCanvas.width = 32;
 lumCanvas.height = 16;
 const moonCache = new Map();
-function sampleMoon(img) {
-  const key = img.currentSrc;
-  if (moonCache.has(key)) return moonCache.get(key);
-  const ctx = lumCanvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0, 16, 16);
-  const data = ctx.getImageData(0, 0, 16, 16).data;
+const plateCache = new Map();
+
+function meanLuma(data) {
   let sum = 0;
   const count = data.length / 4;
   for (let i = 0; i < data.length; i += 4) {
     sum += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
   }
-  const value = sum / count;
+  return sum / count;
+}
+
+function sampleMoon(img) {
+  const key = img.currentSrc;
+  if (moonCache.has(key)) return moonCache.get(key);
+  const ctx = lumCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, 16, 16);
+  const value = meanLuma(ctx.getImageData(0, 0, 16, 16).data);
   moonCache.set(key, value);
   return value;
+}
+
+function regionLuma(img) {
+  const key = img.currentSrc;
+  if (plateCache.has(key)) return plateCache.get(key);
+  const ctx = lumCanvas.getContext("2d", { willReadFrequently: true });
+  const sw = img.naturalWidth;
+  const sh = img.naturalHeight;
+  ctx.clearRect(0, 0, 32, 16);
+  ctx.drawImage(img, sw * 0.2, sh * 0.55, sw * 0.6, sh * 0.32, 0, 0, 32, 16);
+  const value = meanLuma(ctx.getImageData(0, 0, 32, 16).data);
+  plateCache.set(key, value);
+  return value;
+}
+
+function easePlate(img) {
+  const target = img && img.complete && img.naturalWidth ? regionLuma(img) : 0;
+  plate += (target - plate) * (reduceMotion ? 1 : 0.18);
+  subs.style.setProperty("--plate", plate.toFixed(3));
+}
+
+function applyMotion(a, b, progress, index) {
+  if (reduceMotion) {
+    a.style.transform = "none";
+    b.style.transform = "none";
+    return;
+  }
+  const drift = (index % 2 === 0 ? -1 : 1) * progress * 1.1;
+  const panX = -lookX * 2.2 + floatX;
+  const panY = -lookY * 1.4 + floatY;
+  const scale = 1.06 + progress * 0.05;
+  const rot = floatR.toFixed(3);
+  a.style.transform = `translate(${panX + drift}%, ${panY + progress * 0.4}%) rotate(${rot}deg) scale(${scale})`;
+  b.style.transform = `translate(${panX * 0.6}%, ${panY * 0.6}%) rotate(${rot}deg) scale(1.06)`;
+}
+
+function useFrame(frame) {
+  if (shownId !== frame.nasa_id) {
+    shownId = frame.nasa_id;
+    photoA.src = media(frame.file);
+    photoA.alt = `${frame.credit}. ${frame.camera_label}.`;
+  }
 }
 
 function loop(now) {
@@ -371,8 +428,16 @@ function loop(now) {
   if (!reduceMotion) {
     lookX += (aimX - lookX) * 0.08;
     lookY += (aimY - lookY) * 0.08;
+    const t = now / 1000;
+    // Slow, uneven drift. Two incommensurate sines, not a mechanical loop.
+    floatX = Math.sin(t / 7.4) * 0.28 + Math.sin(t / 12.8) * 0.14;
+    floatY = Math.cos(t / 9.2) * 0.2 + Math.sin(t / 16.5) * 0.09;
+    floatR = Math.sin(t / 11.3) * 0.07 + Math.sin(t / 18.7) * 0.035;
     stage.style.setProperty("--look-x", lookX.toFixed(4));
     stage.style.setProperty("--look-y", lookY.toFixed(4));
+    stage.style.setProperty("--float-x", floatX.toFixed(4));
+    stage.style.setProperty("--float-y", floatY.toFixed(4));
+    stage.style.setProperty("--float-r", floatR.toFixed(4));
   }
   if (!doc) return;
   if (playing) {

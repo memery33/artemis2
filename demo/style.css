@@ -7,6 +7,12 @@
   --moon: 0;
   --look-x: 0;
   --look-y: 0;
+  --float-x: 0;
+  --float-y: 0;
+  --float-r: 0;
+  --plate: 0;
+  /* Fractal grain for the metal. Not a fastener pattern. */
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
 }
 
@@ -37,12 +43,16 @@ button, input { font: inherit; color: inherit; }
 #wall {
   position: absolute;
   inset: -4%;
-  background:
-    radial-gradient(90% 70% at 50% 42%, rgba(255, 255, 255, 0.045), transparent 46%),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 7px),
-    linear-gradient(165deg, #6a7280 0%, #4a5160 16%, #2c313b 48%, #1a1e26 100%);
-  transform: translate(calc(var(--look-x) * 14px), calc(var(--look-y) * 10px));
-  box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.55);
+  background-color: #2c323c;
+  background-image:
+    radial-gradient(ellipse 46% 40% at 50% 46%, rgba(220, 226, 232, calc(var(--moon) * 0.32)), transparent 68%),
+    var(--grain),
+    linear-gradient(168deg, #8a929e 0%, #5c6572 20%, #343b46 55%, #1c2128 100%);
+  background-size: auto, 160px 160px, auto;
+  background-blend-mode: soft-light, multiply, normal;
+  transform:
+    translate(calc(var(--look-x) * 14px + var(--float-x) * 5px), calc(var(--look-y) * 10px + var(--float-y) * 4px));
+  box-shadow: inset 0 0 160px rgba(0, 0, 0, 0.4);
 }
 
 #shade {
@@ -62,7 +72,11 @@ button, input { font: inherit; color: inherit; }
   width: min(84vw, calc(68vh * 1.58));
   aspect-ratio: 1.58 / 1;
   transform:
-    translate(calc(-50% + var(--look-x) * 10px), calc(-50% + var(--look-y) * 7px));
+    translate(
+      calc(-50% + var(--look-x) * 10px + var(--float-x) * 7px),
+      calc(-50% + var(--look-y) * 7px + var(--float-y) * 5px)
+    )
+    rotate(calc(var(--float-r) * 1deg));
 }
 
 .reveal {
@@ -70,16 +84,24 @@ button, input { font: inherit; color: inherit; }
   box-sizing: border-box;
 }
 
-/* Outer retainer: fused-silica thermal pane, the outermost lite. */
+/* Outer retainer: fused-silica thermal pane, the outermost lite.
+   Light on each step comes from the opening. Corners of the recess stay darker. */
 .thermal {
   padding: clamp(18px, 2.4vw, 36px);
   border-radius: clamp(36px, 5vw, 78px);
-  background:
-    linear-gradient(180deg, #6a707b 0%, #3e4450 8%, #232730 22%, #15171c 100%);
+  background-color: #3c4450;
+  background-image:
+    radial-gradient(ellipse at 50% 48%, rgba(228, 232, 238, calc(var(--moon) * 0.22)) 58%, transparent 80%),
+    var(--grain),
+    linear-gradient(168deg, #9aa2ae 0%, #6a7280 11%, #3a424e 42%, #222830 100%);
+  background-size: auto, 140px 140px, auto;
+  background-blend-mode: soft-light, overlay, normal;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.38),
-    inset 0 -22px 28px rgba(0, 0, 0, 0.55),
-    0 28px 50px rgba(0, 0, 0, 0.45);
+    inset 26px 20px 32px rgba(0, 0, 0, 0.38),
+    inset -18px 22px 28px rgba(0, 0, 0, 0.22),
+    inset 0 -24px 26px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, calc(0.14 + var(--moon) * 0.16)),
+    0 26px 44px rgba(0, 0, 0, 0.38);
 }
 
 /* Middle step: pressure pane, set back from the thermal retainer. */
@@ -87,10 +109,17 @@ button, input { font: inherit; color: inherit; }
   height: 100%;
   padding: clamp(12px, 1.5vw, 22px);
   border-radius: clamp(26px, 3.6vw, 58px);
-  background: linear-gradient(180deg, #1a1e26 0%, #0e1014 100%);
+  background-color: #14181e;
+  background-image:
+    radial-gradient(ellipse at 50% 50%, rgba(210, 216, 224, calc(var(--moon) * 0.16)) 62%, transparent 82%),
+    var(--grain),
+    linear-gradient(180deg, #2a3038 0%, #12151a 100%);
+  background-size: auto, 120px 120px, auto;
+  background-blend-mode: soft-light, multiply, normal;
   box-shadow:
-    inset 0 10px 16px rgba(0, 0, 0, 0.55),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+    inset 16px 14px 22px rgba(0, 0, 0, 0.55),
+    inset -12px 10px 18px rgba(0, 0, 0, 0.35),
+    inset 0 -12px 16px rgba(0, 0, 0, 0.4);
 }
 
 /* Innermost lip: acrylic pane. NASA states the innermost cone-window pane is acrylic. */
@@ -98,11 +127,18 @@ button, input { font: inherit; color: inherit; }
   height: 100%;
   padding: clamp(7px, 0.7vw, 12px);
   border-radius: clamp(18px, 2.6vw, 42px);
-  background: linear-gradient(160deg, #9aa3b0 0%, #5c656f 18%, #2a3038 55%, #16191e 100%);
+  background-color: #6a727c;
+  background-image:
+    radial-gradient(ellipse at 50% 50%, rgba(236, 240, 244, calc(0.2 + var(--moon) * 0.45)) 55%, transparent 78%),
+    var(--grain),
+    linear-gradient(155deg, #c5ccd4 0%, #7d868f 16%, #3a424c 52%, #1a1e24 100%);
+  background-size: auto, 90px 90px, auto;
+  background-blend-mode: soft-light, overlay, normal;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 0 22px rgba(214, 220, 228, calc(var(--moon) * 0.55)),
-    inset 0 -8px 12px rgba(0, 0, 0, 0.45);
+    inset 8px 7px 12px rgba(0, 0, 0, 0.4),
+    inset -6px 8px 10px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, calc(0.28 + var(--moon) * 0.35)),
+    inset 0 0 16px rgba(214, 220, 228, calc(var(--moon) * 0.4));
 }
 
 #glass {
@@ -129,12 +165,22 @@ button, input { font: inherit; color: inherit; }
 
 .reflect {
   position: absolute;
-  inset: 0;
+  inset: -8%;
   background:
-    linear-gradient(118deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 16%, transparent 34%),
-    linear-gradient(200deg, transparent 60%, rgba(186, 198, 210, 0.06) 100%);
-  mix-blend-mode: screen;
-  transform: translate(calc(var(--look-x) * -16px), calc(var(--look-y) * -10px));
+    linear-gradient(
+      calc(112deg + var(--look-x) * 8deg),
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.02) 14%,
+      transparent 32%
+    ),
+    radial-gradient(
+      ellipse 36% 22% at calc(28% + var(--look-x) * 10%) calc(22% + var(--look-y) * 8%),
+      rgba(255, 255, 255, 0.05),
+      transparent 70%
+    );
+  mix-blend-mode: soft-light;
+  opacity: 0.85;
+  transform: translate(calc(var(--look-x) * -28px + var(--float-x) * -10px), calc(var(--look-y) * -16px));
   pointer-events: none;
 }
 
@@ -177,12 +223,45 @@ button, input { font: inherit; color: inherit; }
 
 #subs {
   position: absolute;
-  left: 10%;
-  right: 10%;
-  bottom: 7%;
+  left: 8%;
+  right: 8%;
+  bottom: 6.5%;
+  z-index: 2;
   text-align: center;
   pointer-events: none;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 14px rgba(0, 0, 0, 0.45);
+}
+
+/* Soft plate. --plate is the luminance of the frame behind the line, so a
+   sunlit limb gets a darker scrim and a black frame stays nearly clear. */
+#subs::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: -0.7em;
+  bottom: -0.55em;
+  width: min(96%, 36em);
+  transform: translateX(-50%);
+  border-radius: 1.2em;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, calc(0.2 + var(--plate) * 0.64)) 0%,
+    rgba(0, 0, 0, calc(0.06 + var(--plate) * 0.36)) 58%,
+    transparent 80%
+  );
+}
+
+#subs .who,
+#subs .say {
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.95),
+    0 0 8px rgba(0, 0, 0, 0.9),
+    1px 0 0 rgba(0, 0, 0, 0.72),
+    -1px 0 0 rgba(0, 0, 0, 0.72),
+    0 1px 0 rgba(0, 0, 0, 0.72),
+    0 -1px 0 rgba(0, 0, 0, 0.72);
+  -webkit-text-stroke: 0.55px rgba(0, 0, 0, 0.7);
+  paint-order: stroke fill;
 }
 
 #subs .who {
@@ -191,7 +270,7 @@ button, input { font: inherit; color: inherit; }
   text-transform: uppercase;
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.88);
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
@@ -202,11 +281,11 @@ button, input { font: inherit; color: inherit; }
   font-weight: 400;
   font-size: clamp(14px, 1.45vw, 20px);
   line-height: 1.35;
-  color: rgba(255, 255, 255, 0.9);
+  color: #f7f7f5;
 }
 
-#subs.dim { opacity: 0.45; }
-#subs.mine .who { color: rgba(255, 255, 255, 0.82); }
+#subs.dim { opacity: 0.5; }
+#subs.mine .who { color: #fff; }
 
 #credit, #empty {
   position: absolute;
@@ -367,6 +446,6 @@ button.on, button[aria-pressed="true"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #glass img, #wall, #window, .reflect { transform: none; }
+  #glass img, #wall, .reflect { transform: none; }
   #window { transform: translate(-50%, -50%); }
 }

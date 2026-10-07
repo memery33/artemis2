@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,13 +32,22 @@ def rounded_mask(size, radius) -> Image.Image:
 
 
 def metal(size, light, dark) -> Image.Image:
-    image = Image.new("RGB", size, dark)
-    draw = ImageDraw.Draw(image)
-    for y in range(size[1]):
-        t = y / max(1, size[1] - 1)
-        shade = tuple(int(light[c] * (1 - t) + dark[c] * t) for c in range(3))
-        draw.line([(0, y), (size[0], y)], fill=shade)
-    return image
+    h, w = size[1], size[0]
+    t = np.linspace(0, 1, h)[:, None]
+    base = np.empty((h, w, 3), np.float32)
+    for c in range(3):
+        base[:, :, c] = light[c] * (1 - t) + dark[c] * t
+    # Fine grain, not a fastener or panel pattern.
+    rng = np.random.default_rng(7)
+    base += rng.normal(0, 7, base.shape)
+    ys = np.linspace(-1, 1, h)[:, None]
+    xs = np.linspace(-1, 1, w)[None, :]
+    # Recess corners fall off. The opening is the light source, so the middle stays brighter.
+    corner = np.clip(np.abs(xs) * np.abs(ys) - 0.12, 0, 1)
+    spill = np.clip(1 - np.sqrt(xs * xs * 0.7 + ys * ys), 0, 1)
+    base *= 1 - corner[:, :, None] * 0.45
+    base += spill[:, :, None] * 28
+    return Image.fromarray(np.clip(base, 0, 255).astype(np.uint8), "RGB")
 
 
 def place_round(canvas: Image.Image, image: Image.Image, box, radius) -> None:
@@ -96,10 +106,36 @@ def compose(photo: Image.Image, caption: str, speaker: str, size, shift=(0.0, 0.
         body = font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", max(16, h // 32))
         cx = (opening[0] + opening[2]) // 2
         base = opening[3] - int(oh * 0.12)
+        plate = Image.new("RGBA", wall.size, (0, 0, 0, 0))
+        pd = ImageDraw.Draw(plate)
+        pd.ellipse(
+            (cx - int(w * 0.2), base - int(h * 0.09), cx + int(w * 0.2), base + int(h * 0.055)),
+            fill=(0, 0, 0, int(90 + 80 * moon)),
+        )
+        plate = plate.filter(ImageFilter.GaussianBlur(radius=max(6, h // 40)))
+        wall = Image.alpha_composite(wall.convert("RGBA"), plate).convert("RGB")
+        draw = ImageDraw.Draw(wall)
+        stroke = (0, 0, 0)
         if speaker:
-            draw.text((cx, base - int(h * 0.045)), speaker.upper(), fill=(255, 255, 255, 180), anchor="mm", font=small)
+            draw.text(
+                (cx, base - int(h * 0.045)),
+                speaker.upper(),
+                fill=(255, 255, 255),
+                anchor="mm",
+                font=small,
+                stroke_width=2,
+                stroke_fill=stroke,
+            )
         if caption:
-            draw.text((cx, base), caption, fill=(245, 245, 245), anchor="mm", font=body)
+            draw.text(
+                (cx, base),
+                caption,
+                fill=(247, 247, 245),
+                anchor="mm",
+                font=body,
+                stroke_width=3,
+                stroke_fill=stroke,
+            )
     return wall
 
 
