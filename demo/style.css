@@ -11,8 +11,9 @@
   --float-y: 0;
   --float-r: 0;
   --plate: 0;
-  /* Fractal grain for the metal. Not a fastener pattern. */
-  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  /* Static grain tile. A live turbulence filter re-rasterized every frame and
+     dropped the replay to a handful of frames per second. */
+  --grain: url("grain.png");
   font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
 }
 
@@ -43,16 +44,17 @@ button, input { font: inherit; color: inherit; }
 #wall {
   position: absolute;
   inset: -4%;
-  background-color: #2c323c;
+  /* Cabin lights are off in the interior photos, so the cone reads as a dark
+     surround. Spill from the glass is the only bright metal. */
+  background-color: #07080c;
   background-image:
-    radial-gradient(ellipse 46% 40% at 50% 46%, rgba(220, 226, 232, calc(var(--moon) * 0.32)), transparent 68%),
+    radial-gradient(ellipse 42% 36% at 50% 48%, rgba(186, 196, 208, calc(var(--moon) * 0.22)), transparent 70%),
     var(--grain),
-    linear-gradient(168deg, #8a929e 0%, #5c6572 20%, #343b46 55%, #1c2128 100%);
-  background-size: auto, 160px 160px, auto;
-  background-blend-mode: soft-light, multiply, normal;
-  transform:
-    translate(calc(var(--look-x) * 14px + var(--float-x) * 5px), calc(var(--look-y) * 10px + var(--float-y) * 4px));
-  box-shadow: inset 0 0 160px rgba(0, 0, 0, 0.4);
+    linear-gradient(168deg, #2a313b 0%, #14181f 32%, #07080c 100%);
+  background-size: auto, 128px 128px, auto;
+  transform: none;
+  box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.55);
+  will-change: transform;
 }
 
 #shade {
@@ -68,15 +70,37 @@ button, input { font: inherit; color: inherit; }
   position: absolute;
   z-index: 2;
   left: 50%;
-  top: 47%;
-  width: min(84vw, calc(68vh * 1.58));
+  top: 50%;
+  /* Face near the glass. 1.58 is the landscape rounded rectangle from
+     jsc2022e045980, not a measured clear aperture. */
+  width: min(96vw, calc(104vh * 1.58));
   aspect-ratio: 1.58 / 1;
-  transform:
-    translate(
-      calc(-50% + var(--look-x) * 10px + var(--float-x) * 7px),
-      calc(-50% + var(--look-y) * 7px + var(--float-y) * 5px)
-    )
-    rotate(calc(var(--float-r) * 1deg));
+  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+
+/* Nearest lip, a few pixels soft. The glass and inner steps stay sharp. */
+#near {
+  position: absolute;
+  inset: -2%;
+  z-index: 0;
+  border-radius: clamp(40px, 5.2vw, 96px);
+  padding: clamp(22px, 2.6vw, 46px);
+  pointer-events: none;
+  filter: blur(2.2px);
+  background:
+    radial-gradient(ellipse at 50% 46%, rgba(196, 204, 214, calc(var(--moon) * 0.2)) 58%, transparent 80%),
+    var(--grain),
+    linear-gradient(168deg, #4a5260 0%, #1c222b 40%, #0a0c10 100%);
+  background-size: auto, 140px 140px, auto;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 
 .reveal {
@@ -87,21 +111,22 @@ button, input { font: inherit; color: inherit; }
 /* Outer retainer: fused-silica thermal pane, the outermost lite.
    Light on each step comes from the opening. Corners of the recess stay darker. */
 .thermal {
-  padding: clamp(18px, 2.4vw, 36px);
-  border-radius: clamp(36px, 5vw, 78px);
-  background-color: #3c4450;
+  position: relative;
+  z-index: 1;
+  padding: clamp(14px, 1.7vw, 28px);
+  border-radius: clamp(34px, 4.4vw, 72px);
+  background-color: #161a20;
   background-image:
-    radial-gradient(ellipse at 50% 48%, rgba(228, 232, 238, calc(var(--moon) * 0.22)) 58%, transparent 80%),
+    radial-gradient(ellipse at 50% 48%, rgba(210, 216, 224, calc(var(--moon) * 0.16)) 60%, transparent 82%),
     var(--grain),
-    linear-gradient(168deg, #9aa2ae 0%, #6a7280 11%, #3a424e 42%, #222830 100%);
+    linear-gradient(168deg, #3a424e 0%, #1a1f27 18%, #10141a 100%);
   background-size: auto, 140px 140px, auto;
-  background-blend-mode: soft-light, overlay, normal;
   box-shadow:
-    inset 26px 20px 32px rgba(0, 0, 0, 0.38),
-    inset -18px 22px 28px rgba(0, 0, 0, 0.22),
-    inset 0 -24px 26px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, calc(0.14 + var(--moon) * 0.16)),
-    0 26px 44px rgba(0, 0, 0, 0.38);
+    inset 22px 16px 28px rgba(0, 0, 0, 0.55),
+    inset -14px 18px 24px rgba(0, 0, 0, 0.35),
+    inset 0 -18px 22px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, calc(0.06 + var(--moon) * 0.1)),
+    0 18px 36px rgba(0, 0, 0, 0.45);
 }
 
 /* Middle step: pressure pane, set back from the thermal retainer. */
@@ -115,7 +140,6 @@ button, input { font: inherit; color: inherit; }
     var(--grain),
     linear-gradient(180deg, #2a3038 0%, #12151a 100%);
   background-size: auto, 120px 120px, auto;
-  background-blend-mode: soft-light, multiply, normal;
   box-shadow:
     inset 16px 14px 22px rgba(0, 0, 0, 0.55),
     inset -12px 10px 18px rgba(0, 0, 0, 0.35),
@@ -125,20 +149,19 @@ button, input { font: inherit; color: inherit; }
 /* Innermost lip: acrylic pane. NASA states the innermost cone-window pane is acrylic. */
 .acrylic {
   height: 100%;
-  padding: clamp(7px, 0.7vw, 12px);
-  border-radius: clamp(18px, 2.6vw, 42px);
-  background-color: #6a727c;
+  padding: clamp(5px, 0.45vw, 9px);
+  border-radius: clamp(16px, 2.2vw, 36px);
+  background-color: #2a3038;
   background-image:
-    radial-gradient(ellipse at 50% 50%, rgba(236, 240, 244, calc(0.2 + var(--moon) * 0.45)) 55%, transparent 78%),
+    radial-gradient(ellipse at 50% 50%, rgba(228, 232, 238, calc(0.08 + var(--moon) * 0.42)) 52%, transparent 78%),
     var(--grain),
-    linear-gradient(155deg, #c5ccd4 0%, #7d868f 16%, #3a424c 52%, #1a1e24 100%);
+    linear-gradient(155deg, #8e98a4 0%, #3c444e 22%, #161a20 100%);
   background-size: auto, 90px 90px, auto;
-  background-blend-mode: soft-light, overlay, normal;
   box-shadow:
-    inset 8px 7px 12px rgba(0, 0, 0, 0.4),
-    inset -6px 8px 10px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, calc(0.28 + var(--moon) * 0.35)),
-    inset 0 0 16px rgba(214, 220, 228, calc(var(--moon) * 0.4));
+    inset 6px 5px 10px rgba(0, 0, 0, 0.45),
+    inset -4px 6px 8px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, calc(0.16 + var(--moon) * 0.4)),
+    inset 0 0 12px rgba(214, 220, 228, calc(var(--moon) * 0.28));
 }
 
 #glass {
@@ -168,19 +191,18 @@ button, input { font: inherit; color: inherit; }
   inset: -8%;
   background:
     linear-gradient(
-      calc(112deg + var(--look-x) * 8deg),
+      112deg,
       rgba(255, 255, 255, 0.07) 0%,
       rgba(255, 255, 255, 0.02) 14%,
       transparent 32%
     ),
     radial-gradient(
-      ellipse 36% 22% at calc(28% + var(--look-x) * 10%) calc(22% + var(--look-y) * 8%),
+      ellipse 36% 22% at 28% 22%,
       rgba(255, 255, 255, 0.05),
       transparent 70%
     );
   mix-blend-mode: soft-light;
   opacity: 0.85;
-  transform: translate(calc(var(--look-x) * -28px + var(--float-x) * -10px), calc(var(--look-y) * -16px));
   pointer-events: none;
 }
 
@@ -223,44 +245,39 @@ button, input { font: inherit; color: inherit; }
 
 #subs {
   position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: 6.5%;
+  left: 50%;
+  bottom: 7%;
   z-index: 2;
+  width: max-content;
+  max-width: 62%;
+  transform: translateX(-50%);
   text-align: center;
   pointer-events: none;
 }
 
-/* Soft plate. --plate is the luminance of the frame behind the line, so a
-   sunlit limb gets a darker scrim and a black frame stays nearly clear. */
+/* A dim that hugs the words. The wide plate across the Moon is gone.
+   --plate only nudges this local shadow on a bright limb. */
 #subs::before {
   content: "";
   position: absolute;
   z-index: -1;
-  left: 50%;
-  top: -0.7em;
-  bottom: -0.55em;
-  width: min(96%, 36em);
-  transform: translateX(-50%);
-  border-radius: 1.2em;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(0, 0, 0, calc(0.2 + var(--plate) * 0.64)) 0%,
-    rgba(0, 0, 0, calc(0.06 + var(--plate) * 0.36)) 58%,
-    transparent 80%
-  );
+  inset: -0.15em -0.35em;
+  border-radius: 0.35em;
+  background: rgba(0, 0, 0, calc(0.04 + var(--plate) * 0.16));
+  filter: blur(5px);
 }
 
 #subs .who,
 #subs .say {
   text-shadow:
     0 1px 1px rgba(0, 0, 0, 0.95),
-    0 0 8px rgba(0, 0, 0, 0.9),
-    1px 0 0 rgba(0, 0, 0, 0.72),
-    -1px 0 0 rgba(0, 0, 0, 0.72),
-    0 1px 0 rgba(0, 0, 0, 0.72),
-    0 -1px 0 rgba(0, 0, 0, 0.72);
-  -webkit-text-stroke: 0.55px rgba(0, 0, 0, 0.7);
+    0 0 2px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(0, 0, 0, 0.65),
+    1px 0 0 rgba(0, 0, 0, 0.85),
+    -1px 0 0 rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(0, 0, 0, 0.85),
+    0 -1px 0 rgba(0, 0, 0, 0.85);
+  -webkit-text-stroke: 0.4px rgba(0, 0, 0, 0.78);
   paint-order: stroke fill;
 }
 
@@ -349,6 +366,7 @@ button, input { font: inherit; color: inherit; }
 
 #hud {
   position: absolute;
+  z-index: 4;
   inset: 0;
   display: flex;
   flex-direction: column;
@@ -431,14 +449,15 @@ button.on, button[aria-pressed="true"] {
 
 #stage:fullscreen #window,
 #stage:-webkit-full-screen #window {
-  width: min(90vw, calc(76vh * 1.58));
+  width: min(98vw, calc(108vh * 1.58));
 }
 
 @media (max-width: 800px) {
-  #window { width: min(94vw, calc(52vh * 1.58)); top: 42%; }
-  .thermal { padding: 12px; border-radius: 28px; }
-  .pressure { padding: 8px; border-radius: 20px; }
-  .acrylic { padding: 5px; border-radius: 14px; }
+  #window { width: min(118vw, calc(96vh * 1.58)); top: 50%; }
+  #near { padding: 16px; border-radius: 28px; filter: blur(1.6px); }
+  .thermal { padding: 10px; border-radius: 24px; }
+  .pressure { padding: 7px; border-radius: 18px; }
+  .acrylic { padding: 4px; border-radius: 12px; }
   .bottom { flex-direction: column; align-items: stretch; }
   #map { width: 100%; }
   #enter .title { font-size: 28px; }

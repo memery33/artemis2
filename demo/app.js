@@ -9,10 +9,13 @@ const glance = document.getElementById("glance");
 const glanceImg = document.getElementById("glanceImg");
 const glanceCap = document.getElementById("glanceCap");
 const stage = document.getElementById("stage");
+const wall = document.getElementById("wall");
+const windowEl = document.getElementById("window");
+const reflectEl = document.querySelector(".reflect");
 const hud = document.getElementById("hud");
 const enter = document.getElementById("enter");
-const photoA = document.getElementById("photoA");
-const photoB = document.getElementById("photoB");
+let photoA = document.getElementById("photoA");
+let photoB = document.getElementById("photoB");
 const subs = document.getElementById("subs");
 const credit = document.getElementById("credit");
 const empty = document.getElementById("empty");
@@ -50,6 +53,10 @@ let hideTimer = 0;
 let lastWall = 0;
 let shownId = null;
 let seeking = false;
+let shownLine = "";
+let shownNote = "";
+let shownClock = "";
+let shownPlate = "";
 let aimX = 0;
 let aimY = 0;
 let lookX = 0;
@@ -128,6 +135,26 @@ function lineAt(t) {
   return current;
 }
 
+// python -m http.server does not send Accept-Ranges, and Chrome then reports
+// the m4a as not seekable. A blob URL is seekable, so the scrubber and the
+// crew switch can land inside a recording.
+const audioBlobs = new Map();
+
+function sourceUrl(file) {
+  let pending = audioBlobs.get(file);
+  if (!pending) {
+    pending = fetch(media(file)).then(async (response) => {
+      if (!response.ok) throw new Error("audio");
+      return URL.createObjectURL(await response.blob());
+    }).catch((err) => {
+      audioBlobs.delete(file);
+      throw err;
+    });
+    audioBlobs.set(file, pending);
+  }
+  return pending;
+}
+
 async function ensureAudio() {
   const seg = segmentAt(utcMs);
   if (!seg) {
@@ -140,9 +167,12 @@ async function ensureAudio() {
   if (currentFile !== seg.file) {
     gen = ++loadGen;
     currentFile = seg.file;
-    audio.src = media(seg.file);
-    audio.playbackRate = rate;
     try {
+      const url = await sourceUrl(seg.file);
+      if (gen !== loadGen) return false;
+      audio.src = url;
+      audio.dataset.file = seg.file;
+      audio.playbackRate = rate;
       const loaded = audio.readyState >= 1 && audio.currentSrc === audio.src;
       if (!loaded) {
         await new Promise((resolve, reject) => {
@@ -191,7 +221,11 @@ async function ensureAudio() {
 function paint() {
   const view = pair(utcMs);
   const frame = view.cur;
-  clock.textContent = fmt(utcMs);
+  const clockStr = fmt(utcMs);
+  if (clockStr !== shownClock) {
+    shownClock = clockStr;
+    clock.textContent = clockStr;
+  }
   if (!frame && view.next) {
     // The glass stays on the next real exposure and fades it up to the
     // timestamp. Nothing is invented for the gap before 19:33:26.
@@ -227,19 +261,29 @@ function paint() {
     const progress = view.next
       ? Math.min(1, Math.max(0, (utcMs - (tOf(frame.utc) + offsetS * 1000)) / (tOf(view.next.utc) - tOf(frame.utc))))
       : 0;
-    const fade = !reduceMotion && view.next && progress > 0.9;
-    useFrame(frame);
-    if (fade) {
+    // Decode the next exposure before the dissolve so the glass does not dip to black.
+    if (view.next && progress > 0.35) {
       const nextUrl = media(view.next.file);
       if (photoB.src !== nextUrl) {
         photoB.src = nextUrl;
         photoB.alt = view.next.credit;
       }
-      photoB.style.opacity = (progress - 0.9) / 0.1;
-      photoA.style.opacity = 1 - photoB.style.opacity;
+    }
+    const fade = !reduceMotion && view.next && progress > 0.9;
+    useFrame(frame);
+    if (fade) {
+      const ready = photoB.complete && photoB.naturalWidth > 0;
+      if (ready) {
+        const mix = (progress - 0.9) / 0.1;
+        photoB.style.opacity = String(mix);
+        photoA.style.opacity = String(1 - mix);
+      } else {
+        photoA.style.opacity = "1";
+        photoB.style.opacity = "0";
+      }
     } else {
-      photoA.style.opacity = 1;
-      photoB.style.opacity = 0;
+      photoA.style.opacity = "1";
+      photoB.style.opacity = "0";
     }
     applyMotion(photoA, photoB, progress, view.index);
     credit.textContent = `${frame.credit}. Independent viewer, not a NASA product.`;
@@ -264,25 +308,36 @@ function paint() {
   }
 
   const line = lineAt(utcMs);
-  if (!line) {
-    subs.innerHTML = "";
-  } else {
-    const mine = highlight && line.speaker === highlight;
-    subs.className = mine ? "mine" : highlight ? "dim" : "";
-    const who = document.createElement("span");
-    who.className = "who";
-    who.textContent = line.role ? `${line.speaker} · ${line.role}` : (line.speaker || "Crew");
-    const say = document.createElement("span");
-    say.className = "say";
-    say.textContent = line.text;
-    subs.replaceChildren(who, say);
+  const mine = line && highlight && line.speaker === highlight;
+  const lineKey = line ? `${line.utc}|${mine ? 1 : 0}|${highlight || ""}` : "";
+  if (lineKey !== shownLine) {
+    shownLine = lineKey;
+    if (!line) {
+      subs.replaceChildren();
+      subs.className = "";
+    } else {
+      subs.className = mine ? "mine" : highlight ? "dim" : "";
+      const who = document.createElement("span");
+      who.className = "who";
+      who.textContent = line.role ? `${line.speaker} · ${line.role}` : (line.speaker || "Crew");
+      const say = document.createElement("span");
+      say.className = "say";
+      say.textContent = line.text;
+      subs.replaceChildren(who, say);
+    }
   }
 
   const span = tOf(doc.window.end) - tOf(doc.window.start);
-  if (!seeking) scrub.value = String(Math.round(((utcMs - tOf(doc.window.start)) / span) * 1000));
+  if (!seeking) {
+    const next = String(Math.round(((utcMs - tOf(doc.window.start)) / span) * 1000));
+    if (scrub.value !== next) {
+      scrubStamp = next;
+      scrub.value = next;
+    }
+  }
   const gap = !segmentAt(utcMs);
   const who = highlight || "the crew";
-  note.textContent = [
+  const noteText = [
     highlight
       ? `${who}'s narration is highlighted. Photos are not attributed to ${who}; the credit on every frame is NASA/Artemis II Crew. Filtering is by camera and by the guide's window note.`
       : "Photos are credited to NASA/Artemis II Crew. There is no per-person photographer field.",
@@ -290,7 +345,11 @@ function paint() {
     "art002e016183 is a cabin interior and stays off the glass. The PCD recording is not panned, and no sound is added.",
     doc.pointing.note,
   ].filter(Boolean).join(" ");
-  drawMap(view.cur);
+  if (noteText !== shownNote) {
+    shownNote = noteText;
+    note.textContent = noteText;
+  }
+  if (!hud.hidden) drawMap(view.cur);
 }
 
 function drawMap(current) {
@@ -397,7 +456,11 @@ function regionLuma(img) {
 function easePlate(img) {
   const target = img && img.complete && img.naturalWidth ? regionLuma(img) : 0;
   plate += (target - plate) * (reduceMotion ? 1 : 0.18);
-  subs.style.setProperty("--plate", plate.toFixed(3));
+  const next = plate.toFixed(3);
+  if (next !== shownPlate) {
+    shownPlate = next;
+    subs.style.setProperty("--plate", next);
+  }
 }
 
 function applyMotion(a, b, progress, index) {
@@ -416,11 +479,21 @@ function applyMotion(a, b, progress, index) {
 }
 
 function useFrame(frame) {
-  if (shownId !== frame.nasa_id) {
-    shownId = frame.nasa_id;
-    photoA.src = media(frame.file);
-    photoA.alt = `${frame.credit}. ${frame.camera_label}.`;
+  if (shownId === frame.nasa_id) return;
+  const url = media(frame.file);
+  const alt = `${frame.credit}. ${frame.camera_label}.`;
+  // The back buffer already holds this exposure from the dissolve. Promote
+  // that decoded bitmap instead of assigning a new src, which blanks the glass.
+  if (photoB.src === url && photoB.complete && photoB.naturalWidth) {
+    const hold = photoA;
+    photoA = photoB;
+    photoB = hold;
+    photoA.alt = alt;
+  } else {
+    photoA.src = url;
+    photoA.alt = alt;
   }
+  shownId = frame.nasa_id;
 }
 
 function loop(now) {
@@ -433,16 +506,18 @@ function loop(now) {
     floatX = Math.sin(t / 7.4) * 0.28 + Math.sin(t / 12.8) * 0.14;
     floatY = Math.cos(t / 9.2) * 0.2 + Math.sin(t / 16.5) * 0.09;
     floatR = Math.sin(t / 11.3) * 0.07 + Math.sin(t / 18.7) * 0.035;
-    stage.style.setProperty("--look-x", lookX.toFixed(4));
-    stage.style.setProperty("--look-y", lookY.toFixed(4));
-    stage.style.setProperty("--float-x", floatX.toFixed(4));
-    stage.style.setProperty("--float-y", floatY.toFixed(4));
-    stage.style.setProperty("--float-r", floatR.toFixed(4));
+    // Direct transforms. Writing the custom properties every frame repainted
+    // the gradients and the blurred lip, and the replay fell to a few fps.
+    wall.style.transform = `translate(${(lookX * 14 + floatX * 5).toFixed(2)}px, ${(lookY * 10 + floatY * 4).toFixed(2)}px)`;
+    windowEl.style.transform = `translate(calc(-50% + ${(lookX * 10 + floatX * 7).toFixed(2)}px), calc(-50% + ${(lookY * 7 + floatY * 5).toFixed(2)}px)) rotate(${floatR.toFixed(3)}deg)`;
+    reflectEl.style.transform = `translate(${(-lookX * 28 - floatX * 10).toFixed(2)}px, ${(-lookY * 16).toFixed(2)}px)`;
   }
   if (!doc) return;
   if (playing) {
     let seg = segmentAt(utcMs);
-    if (seg && currentFile === seg.file && !audio.paused && audio.readyState >= 2) {
+    if (audio.seeking) {
+      // The element has not landed yet. Keep the mission clock on the seek.
+    } else if (seg && currentFile === seg.file && !audio.paused && audio.readyState >= 2) {
       const rel = (utcMs - tOf(seg.start)) / 1000;
       // A seek is applied on the element asynchronously. Until currentTime
       // catches the mission clock, leave utcMs where the seek put it.
@@ -478,7 +553,6 @@ async function toggle() {
 
 function seekTo(ms) {
   utcMs = Math.min(tOf(doc.window.end), Math.max(tOf(doc.window.start), ms));
-  shownId = null;
   ensureAudio();
 }
 
@@ -528,6 +602,11 @@ async function boot() {
   });
   scrub.addEventListener("pointerdown", () => { seeking = true; });
   scrub.addEventListener("input", () => {
+    if (scrub.value === scrubStamp) {
+      scrubStamp = null;
+      return;
+    }
+    scrubStamp = null;
     const span = tOf(doc.window.end) - tOf(doc.window.start);
     seekTo(tOf(doc.window.start) + (Number(scrub.value) / 1000) * span);
   });

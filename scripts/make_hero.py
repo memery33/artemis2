@@ -67,58 +67,81 @@ def cover(photo: Image.Image, size, shift=(0.0, 0.0)) -> Image.Image:
     return resized.crop((left, top, left + size[0], top + size[1]))
 
 
+def opening_box(w: int, h: int):
+    """Landscape rounded rectangle filling the frame, cabin only at the edges.
+
+    1.58 matches the cone-panel openings in jsc2022e045980. It is not a
+    measured clear aperture. Interior photos that show the bezel
+    (art002e004439, art002e004440, art002e009292) have a crew member in the
+    glass, so this stays a drawing.
+    """
+    aspect = 1.58
+    oh = int(h * 0.96)
+    ow = int(oh * aspect)
+    if ow > int(w * 0.98):
+        ow = int(w * 0.98)
+        oh = int(ow / aspect)
+    ox = (w - ow) // 2
+    oy = (h - oh) // 2
+    return ox, oy, ox + ow, oy + oh
+
+
 def compose(photo: Image.Image, caption: str, speaker: str, size, shift=(0.0, 0.0), moon: float = 0.7) -> Image.Image:
     w, h = size
-    wall = metal(size, (104, 110, 120), (28, 31, 38))
-    # Sunlit Moon darkens the cabin wall. The shade is not a second photograph.
+    # Dark cabin. The interior frames were shot with the lights off.
+    wall = metal(size, (36, 40, 48), (8, 9, 12))
     if moon > 0:
-        shade = Image.new("RGB", size, (8, 9, 12))
-        wall = Image.blend(wall, shade, min(0.38, moon * 0.34))
-    draw = ImageDraw.Draw(wall)
-    # Landscape rounded opening, the shape in NASA image jsc2022e045980.
-    # Three steps: thermal retainer, pressure pane, innermost acrylic lip.
-    outer = (int(w * 0.08), int(h * 0.08), int(w * 0.92), int(h * 0.90))
-    place_round(wall, metal((outer[2] - outer[0], outer[3] - outer[1]), (168, 174, 184), (48, 52, 60)), outer, int(h * 0.08))
-    mid = (outer[0] + int(w * 0.028), outer[1] + int(h * 0.045), outer[2] - int(w * 0.028), outer[3] - int(h * 0.055))
-    place_round(wall, metal((mid[2] - mid[0], mid[3] - mid[1]), (28, 32, 38), (10, 11, 14)), mid, int(h * 0.055))
-    inner = (mid[0] + int(w * 0.016), mid[1] + int(h * 0.028), mid[2] - int(w * 0.016), mid[3] - int(h * 0.032))
-    place_round(wall, metal((inner[2] - inner[0], inner[3] - inner[1]), (150, 158, 168), (40, 44, 50)), inner, int(h * 0.04))
-    opening = (inner[0] + int(w * 0.012), inner[1] + int(h * 0.02), inner[2] - int(w * 0.012), inner[3] - int(h * 0.022))
+        shade = Image.new("RGB", size, (5, 6, 8))
+        wall = Image.blend(wall, shade, min(0.28, moon * 0.22))
+    outer = opening_box(w, h)
+    # Nearest retainer, drawn and then softened. Inner steps and the glass stay sharp.
+    near = metal((outer[2] - outer[0], outer[3] - outer[1]), (78, 84, 94), (18, 20, 24))
+    near = near.filter(ImageFilter.GaussianBlur(radius=max(1.2, h / 280)))
+    place_round(wall, near, outer, int(h * 0.075))
+    pad_x, pad_y = int(w * 0.018), int(h * 0.032)
+    mid = (outer[0] + pad_x, outer[1] + pad_y, outer[2] - pad_x, outer[3] - pad_y)
+    place_round(wall, metal((mid[2] - mid[0], mid[3] - mid[1]), (22, 25, 30), (8, 9, 12)), mid, int(h * 0.05))
+    lip = int(w * 0.01)
+    inner = (mid[0] + lip, mid[1] + int(h * 0.016), mid[2] - lip, mid[3] - int(h * 0.018))
+    place_round(wall, metal((inner[2] - inner[0], inner[3] - inner[1]), (120, 128, 136), (28, 32, 38)), inner, int(h * 0.034))
+    edge = int(w * 0.006)
+    opening = (inner[0] + edge, inner[1] + int(h * 0.01), inner[2] - edge, inner[3] - int(h * 0.012))
     ow, oh = opening[2] - opening[0], opening[3] - opening[1]
     glass = cover(photo, (ow, oh), shift).convert("RGBA")
     sheen = Image.new("RGBA", (ow, oh), (0, 0, 0, 0))
     sd = ImageDraw.Draw(sheen)
-    sd.polygon([(0, 0), (int(ow * 0.46), 0), (0, int(oh * 0.62))], fill=(255, 255, 255, 26))
+    sd.polygon([(0, 0), (int(ow * 0.46), 0), (0, int(oh * 0.62))], fill=(255, 255, 255, 22))
     vig = Image.new("L", (ow, oh), 0)
     vd = ImageDraw.Draw(vig)
     vd.ellipse((-int(ow * 0.08), -int(oh * 0.05), int(ow * 1.08), int(oh * 1.08)), fill=255)
     vig = vig.filter(ImageFilter.GaussianBlur(radius=max(8, oh // 10)))
-    dark = Image.new("RGBA", (ow, oh), (0, 0, 0, 150))
-    # Invert the ellipse so the center stays clear.
+    dark = Image.new("RGBA", (ow, oh), (0, 0, 0, 140))
     inv = Image.eval(vig, lambda p: 255 - p)
     dark.putalpha(inv)
     glass = Image.alpha_composite(glass, sheen)
     glass = Image.alpha_composite(glass, dark)
-    place_round(wall, glass.convert("RGB"), opening, int(h * 0.03))
-    draw = ImageDraw.Draw(wall)
+    place_round(wall, glass.convert("RGB"), opening, int(h * 0.026))
     if speaker or caption:
-        small = font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", max(11, h // 48))
-        body = font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", max(16, h // 32))
+        small = font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", max(11, h // 52))
+        body = font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", max(16, h // 34))
         cx = (opening[0] + opening[2]) // 2
-        base = opening[3] - int(oh * 0.12)
-        plate = Image.new("RGBA", wall.size, (0, 0, 0, 0))
-        pd = ImageDraw.Draw(plate)
-        pd.ellipse(
-            (cx - int(w * 0.2), base - int(h * 0.09), cx + int(w * 0.2), base + int(h * 0.055)),
-            fill=(0, 0, 0, int(90 + 80 * moon)),
-        )
-        plate = plate.filter(ImageFilter.GaussianBlur(radius=max(6, h // 40)))
-        wall = Image.alpha_composite(wall.convert("RGBA"), plate).convert("RGB")
+        base = opening[3] - int(oh * 0.1)
+        # Dim follows the glyphs. No ellipse across the Moon.
+        mask = Image.new("L", wall.size, 0)
+        md = ImageDraw.Draw(mask)
+        if speaker:
+            md.text((cx, base - int(h * 0.04)), speaker.upper(), fill=255, anchor="mm", font=small)
+        if caption:
+            md.text((cx, base), caption, fill=255, anchor="mm", font=body)
+        soft = mask.filter(ImageFilter.GaussianBlur(radius=max(2, h // 180)))
+        dim = Image.new("RGBA", wall.size, (0, 0, 0, 0))
+        dim.putalpha(soft.point(lambda p: int(p * (0.28 + 0.22 * moon))))
+        wall = Image.alpha_composite(wall.convert("RGBA"), dim).convert("RGB")
         draw = ImageDraw.Draw(wall)
         stroke = (0, 0, 0)
         if speaker:
             draw.text(
-                (cx, base - int(h * 0.045)),
+                (cx, base - int(h * 0.04)),
                 speaker.upper(),
                 fill=(255, 255, 255),
                 anchor="mm",
@@ -133,7 +156,7 @@ def compose(photo: Image.Image, caption: str, speaker: str, size, shift=(0.0, 0.
                 fill=(247, 247, 245),
                 anchor="mm",
                 font=body,
-                stroke_width=3,
+                stroke_width=2,
                 stroke_fill=stroke,
             )
     return wall
