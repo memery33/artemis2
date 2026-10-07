@@ -2,6 +2,8 @@
 
 ![Orion window during the Aristarchus to Reiner Gamma pass](docs/hero.gif)
 
+A 1280×720 still of the same view is [`docs/hero-still.png`](docs/hero-still.png).
+
 Python toolkit for NASA's Artemis II lunar-science release on the Planetary Data System, and a static replay that puts you at an Orion window for the 6 April 2026 pass from Aristarchus Plateau to Reiner Gamma.
 
 The page plays the crew's real PCD recordings. It does not synthesize cabin noise or any other audio. Photos are the crew's frames, credited **NASA ID …, Credit: NASA/Artemis II Crew**. This is an independent project. It is not a NASA product and NASA does not endorse it.
@@ -36,7 +38,11 @@ Atlas access is the documented Imaging Node API: `POST /api/search/atlas/_search
 cd demo && python -m http.server 8765
 ```
 
-Click **Look out the window**. The recording is the clock. Move the mouse, or press a key, for the map, the scrubber, the camera-offset slider, and PCD2/PCD3. `f` is fullscreen. The opening is a landscape rounded rectangle with three pane lips: that is the shape of the cone-window apertures machined into the crew-module panel in NASA image [jsc2022e045980](https://images.nasa.gov/details/jsc2022e045980), and each cone window is a three-pane stack (fused-silica thermal pane, acrylic pressure pane, redundant pane) as described in [Orion Window Testing Brings Artemis I Closer into View](https://www.nasa.gov/missions/artemis/orion/orion-window-testing-brings-artemis-1-closer-into-view/). Orion has four of those cone windows plus a side-hatch window and a docking-hatch window ([Orion Windows Provide New Outlook for Spacecraft’s Future](https://www.nasa.gov/missions/artemis/orion/orion-windows-provide-new-outlook-for-spacecrafts-future/)). A public dimensioned clear-aperture drawing was not available, so the frame follows that photographed outline rather than a guessed size in millimetres.
+Click **Look out the window**. The recording is the clock. Move the mouse, or press a key, for the map, the scrubber, the camera-offset slider, and PCD2/PCD3. `f` is fullscreen.
+
+The page is the inner face of one cone window, not a picture frame floating on a blank page. The opening is the rounded rectangle machined into the crew-module cone panel in NASA image [jsc2022e045980](https://images.nasa.gov/details/jsc2022e045980). Each cone window is three panes — an outer fused-silica thermal pane, a pressure pane, and a redundant pane — and NASA states that the innermost cone-window pane is acrylic ([Orion Windows Provide New Outlook for Spacecraft’s Future](https://www.nasa.gov/missions/artemis/orion/orion-windows-provide-new-outlook-for-spacecrafts-future/); the same three-lite stack is described in [Orion Window Testing Brings Artemis I Closer into View](https://www.nasa.gov/missions/artemis/orion/orion-window-testing-brings-artemis-1-closer-into-view/)). Orion has four of those cone windows plus a side-hatch window and a docking-hatch window. No public dimensioned clear-aperture drawing was found, so the page does not invent millimetres, bolt circles, or seats. The wall is the aluminum cone panel around that opening ([crew module](https://www.nasa.gov/reference/crew-module/)). It is drawn, not a pasted cabin photograph. Pointer movement and device tilt, when the browser provides them, shift the near frame against the view. A bright Moon darkens the wall. `prefers-reduced-motion` turns the drift, parallax, and Ken Burns off.
+
+`art002e016183` is a Z9 frame of a lit card in a dark cabin, not a lunar limb. It is shown for a few seconds beside the window and is never placed in the glass. The other Z9 frames in this set are lunar and stay in the window. PCD audio is the original mix: voices are not panned by speaker, because each file is two people on one recording, and nothing is synthesized. Subtitles sit low on the glass, small, like a film line.
 
 Shipped demo media is about 17 MB: browse frames resized to a 1200-pixel long edge, and the five PCD files trimmed to mono 64 kbps AAC. Rebuild it with `python scripts/rebuild_demo.py` after the cache described in that script is filled. `notebooks/replay.ipynb` is the same pipeline.
 

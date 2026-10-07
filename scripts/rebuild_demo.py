@@ -16,6 +16,7 @@ transcoded to mono 64 kbps AAC. Nothing is synthesized.
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -39,6 +40,17 @@ def main() -> None:
     images = CACHE / "png" if any((CACHE / "png").glob("*.png")) else CACHE / "thumbs"
     summary = export_replay(CATALOG, DEMO, image_dir=images, bitrate="64k")
     print(summary)
+    # art002e016183 is a cabin interior (lit card, not a lunar limb).
+    timeline_path = DEMO / "timeline.json"
+    document = json.loads(timeline_path.read_text())
+    for frame in document["frames"]:
+        if frame["nasa_id"] == "art002e016183":
+            frame["view"] = "cabin"
+            frame["view_note"] = (
+                "Lit card in a dark cabin, not a lunar limb. "
+                "Shown beside the window, not through the glass."
+            )
+    timeline_path.write_text(json.dumps(document, separators=(", ", ": ")))
     total = bytes_under(DEMO)
     print(f"demo/data {total / 1e6:.2f} MB")
     if total > 28_000_000:

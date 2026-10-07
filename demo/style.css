@@ -1,9 +1,12 @@
 :root {
   color-scheme: dark;
-  --cabin: #07080c;
+  --cabin: #101218;
   --ink: #f4f1ea;
   --muted: #b7b1a6;
   --line: rgba(244, 241, 234, 0.18);
+  --moon: 0;
+  --look-x: 0;
+  --look-y: 0;
   font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
 }
 
@@ -21,66 +24,106 @@ button, input { font: inherit; color: inherit; }
 
 #stage { position: relative; height: 100%; }
 
+/* The viewport is the inner face of a cone panel, not a page with a
+   picture frame on it. Aluminum pressure-vessel cone: NASA crew-module
+   reference. Openings: NASA image jsc2022e045980. */
 #cabin {
   position: absolute;
   inset: 0;
+  background: #0b0c10;
+  overflow: hidden;
+}
+
+#wall {
+  position: absolute;
+  inset: -4%;
   background:
-    radial-gradient(120% 80% at 50% 100%, #1a1c24 0%, #07080c 55%);
+    radial-gradient(90% 70% at 50% 42%, rgba(255, 255, 255, 0.045), transparent 46%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 7px),
+    linear-gradient(165deg, #6a7280 0%, #4a5160 16%, #2c313b 48%, #1a1e26 100%);
+  transform: translate(calc(var(--look-x) * 14px), calc(var(--look-y) * 10px));
+  box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.55);
+}
+
+#shade {
+  position: absolute;
+  inset: 0;
+  background: #05060a;
+  opacity: calc(var(--moon) * 0.42);
+  pointer-events: none;
+  z-index: 1;
 }
 
 #window {
   position: absolute;
-  inset: 4.5vh 6vw 7vh;
-  display: flex;
-  flex-direction: column;
+  z-index: 2;
+  left: 50%;
+  top: 47%;
+  width: min(84vw, calc(68vh * 1.58));
+  aspect-ratio: 1.58 / 1;
+  transform:
+    translate(calc(-50% + var(--look-x) * 10px), calc(-50% + var(--look-y) * 7px));
 }
 
-.bezel {
-  flex: 1;
-  min-height: 0;
-  padding: 18px 22px 26px;
-  border-radius: 42px;
-  background:
-    linear-gradient(180deg, #3a3d46 0%, #1c1e26 18%, #12141a 70%, #0a0b10 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    inset 0 -18px 30px rgba(0, 0, 0, 0.55),
-    0 24px 60px rgba(0, 0, 0, 0.45);
+.reveal {
+  height: 100%;
+  box-sizing: border-box;
 }
 
-.lip { height: 100%; padding: 8px; }
+/* Outer retainer: fused-silica thermal pane, the outermost lite. */
 .thermal {
-  border-radius: 30px;
-  background: linear-gradient(160deg, #6a6256, #2a261f 40%, #14120f);
+  padding: clamp(18px, 2.4vw, 36px);
+  border-radius: clamp(36px, 5vw, 78px);
+  background:
+    linear-gradient(180deg, #6a707b 0%, #3e4450 8%, #232730 22%, #15171c 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -22px 28px rgba(0, 0, 0, 0.55),
+    0 28px 50px rgba(0, 0, 0, 0.45);
 }
+
+/* Middle step: pressure pane, set back from the thermal retainer. */
 .pressure {
-  border-radius: 24px;
-  background: linear-gradient(180deg, #243036, #10161a);
-  padding: 6px;
+  height: 100%;
+  padding: clamp(12px, 1.5vw, 22px);
+  border-radius: clamp(26px, 3.6vw, 58px);
+  background: linear-gradient(180deg, #1a1e26 0%, #0e1014 100%);
+  box-shadow:
+    inset 0 10px 16px rgba(0, 0, 0, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 }
-.inner {
-  border-radius: 18px;
-  background: #050608;
-  padding: 0;
-  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.65);
+
+/* Innermost lip: acrylic pane. NASA states the innermost cone-window pane is acrylic. */
+.acrylic {
+  height: 100%;
+  padding: clamp(7px, 0.7vw, 12px);
+  border-radius: clamp(18px, 2.6vw, 42px);
+  background: linear-gradient(160deg, #9aa3b0 0%, #5c656f 18%, #2a3038 55%, #16191e 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 0 22px rgba(214, 220, 228, calc(var(--moon) * 0.55)),
+    inset 0 -8px 12px rgba(0, 0, 0, 0.45);
 }
 
 #glass {
   position: relative;
   height: 100%;
-  border-radius: 16px;
+  border-radius: clamp(12px, 1.8vw, 30px);
   overflow: hidden;
   background: #000;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.65),
+    inset 0 18px 28px rgba(0, 0, 0, 0.28);
 }
 
 #glass img {
   position: absolute;
-  inset: -8%;
-  width: 116%;
-  height: 116%;
+  inset: -10%;
+  width: 120%;
+  height: 120%;
   object-fit: cover;
   opacity: 0;
-  transform-origin: 50% 45%;
+  transform-origin: 50% 46%;
   will-change: transform, opacity;
 }
 
@@ -88,55 +131,82 @@ button, input { font: inherit; color: inherit; }
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(115deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.03) 22%, transparent 38%),
-    linear-gradient(200deg, transparent 55%, rgba(190, 210, 220, 0.07) 100%);
+    linear-gradient(118deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 16%, transparent 34%),
+    linear-gradient(200deg, transparent 60%, rgba(186, 198, 210, 0.06) 100%);
   mix-blend-mode: screen;
+  transform: translate(calc(var(--look-x) * -16px), calc(var(--look-y) * -10px));
   pointer-events: none;
 }
 
 .vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, 0.55) 100%);
+  background:
+    radial-gradient(ellipse at center, transparent 48%, rgba(0, 0, 0, 0.28) 78%, rgba(0, 0, 0, 0.62) 100%);
   pointer-events: none;
 }
 
-#sill {
-  height: 22px;
-  margin: 0 12% -6px;
-  background: linear-gradient(#2a2d36, #0c0d12);
-  border-radius: 0 0 10px 10px;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
+#glance {
+  position: absolute;
+  z-index: 3;
+  left: max(16px, 2vw);
+  bottom: max(16px, 3vh);
+  width: min(210px, 22vw);
+  margin: 0;
+  padding: 8px 8px 10px;
+  background: rgba(12, 13, 16, 0.82);
+  border: 1px solid rgba(244, 241, 234, 0.16);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+#glance img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+#glance figcaption {
+  margin-top: 6px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(244, 241, 234, 0.78);
 }
 
 #subs {
   position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: 9%;
+  left: 10%;
+  right: 10%;
+  bottom: 7%;
   text-align: center;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
   pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 14px rgba(0, 0, 0, 0.45);
 }
 
 #subs .who {
   display: block;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  font-size: 12px;
-  color: #f0d7a2;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.62);
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 #subs .say {
   display: block;
-  margin-top: 4px;
-  font-size: clamp(16px, 2.1vw, 28px);
+  margin-top: 3px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 400;
+  font-size: clamp(14px, 1.45vw, 20px);
   line-height: 1.35;
+  color: rgba(255, 255, 255, 0.9);
 }
 
-#subs.dim { opacity: 0.55; }
-#subs.mine .who { color: #fff4d2; }
+#subs.dim { opacity: 0.45; }
+#subs.mine .who { color: rgba(255, 255, 255, 0.82); }
 
 #credit, #empty {
   position: absolute;
@@ -159,17 +229,19 @@ button, input { font: inherit; color: inherit; }
 
 #enter {
   position: absolute;
+  z-index: 4;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(440px, 86vw);
-  padding: 28px 26px;
-  border: 0;
-  border-radius: 18px;
-  background: rgba(8, 9, 12, 0.78);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  width: min(420px, 70vw);
+  padding: 22px 24px;
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 14px;
+  background: rgba(8, 9, 12, 0.55);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
   cursor: pointer;
   text-align: left;
+  backdrop-filter: blur(6px);
 }
 
 #enter .kicker, .fine {
@@ -278,16 +350,23 @@ button.on, button[aria-pressed="true"] {
 
 .fine { margin: 0; text-transform: none; letter-spacing: 0; line-height: 1.4; }
 
-#stage:fullscreen #window, #stage:-webkit-full-screen #window { inset: 2vh 3vw 4vh; }
+#stage:fullscreen #window,
+#stage:-webkit-full-screen #window {
+  width: min(90vw, calc(76vh * 1.58));
+}
 
 @media (max-width: 800px) {
-  #window { inset: 2vh 2vw 4vh; }
-  .bezel { padding: 10px 10px 16px; border-radius: 28px; }
+  #window { width: min(94vw, calc(52vh * 1.58)); top: 42%; }
+  .thermal { padding: 12px; border-radius: 28px; }
+  .pressure { padding: 8px; border-radius: 20px; }
+  .acrylic { padding: 5px; border-radius: 14px; }
   .bottom { flex-direction: column; align-items: stretch; }
   #map { width: 100%; }
   #enter .title { font-size: 28px; }
+  #glance { width: min(160px, 42vw); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #glass img { transition: none; }
+  #glass img, #wall, #window, .reflect { transform: none; }
+  #window { transform: translate(-50%, -50%); }
 }

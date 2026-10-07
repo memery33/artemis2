@@ -1,6 +1,13 @@
 /* Orion window replay. Audio from the archive is the clock. No synthesized sound. */
 
 const ORION = new Set(["saw2", "saw3", "saw4", "cab2", "onav", "dcam"]);
+// art002e016183 is a Z9 frame of a lit rectangle in an otherwise black cabin
+// (bright pixels sit in the middle; they do not form a lunar limb). It is
+// not shown through the glass.
+const CABIN_IDS = new Set(["art002e016183"]);
+const glance = document.getElementById("glance");
+const glanceImg = document.getElementById("glanceImg");
+const glanceCap = document.getElementById("glanceCap");
 const stage = document.getElementById("stage");
 const hud = document.getElementById("hud");
 const enter = document.getElementById("enter");
@@ -43,6 +50,10 @@ let hideTimer = 0;
 let lastWall = 0;
 let shownId = null;
 let seeking = false;
+let aimX = 0;
+let aimY = 0;
+let lookX = 0;
+let lookY = 0;
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const tOf = (iso) => Date.parse(iso);
@@ -60,13 +71,24 @@ function poke() {
   hideTimer = setTimeout(() => hud.classList.remove("show"), 3400);
 }
 
+function cameraMatch(frame) {
+  if (camera === "window2") return frame.instrument === "nkd5015";
+  if (camera === "z9") return frame.instrument === "nkz9019";
+  if (camera === "orion") return ORION.has(frame.instrument);
+  return true;
+}
+
+function isCabin(frame) {
+  return frame.view === "cabin" || CABIN_IDS.has(frame.nasa_id);
+}
+
 function frames() {
-  return doc.frames.filter((frame) => {
-    if (camera === "window2") return frame.instrument === "nkd5015";
-    if (camera === "z9") return frame.instrument === "nkz9019";
-    if (camera === "orion") return ORION.has(frame.instrument);
-    return true;
-  });
+  return doc.frames.filter((frame) => cameraMatch(frame) && !isCabin(frame));
+}
+
+function cabinAt(t) {
+  const row = doc.frames.find((frame) => isCabin(frame) && cameraMatch(frame) && t >= tOf(frame.utc) && t < tOf(frame.utc) + 9000);
+  return row || null;
 }
 
 function pair(t) {
@@ -178,6 +200,7 @@ function paint() {
       empty.hidden = true;
     }
     credit.textContent = "";
+    stage.style.setProperty("--moon", "0");
   } else {
     empty.hidden = true;
     const progress = view.next
@@ -201,13 +224,33 @@ function paint() {
       photoA.style.opacity = 1;
       photoB.style.opacity = 0;
     }
-    if (!reduceMotion) {
-      const drift = (view.index % 2 === 0 ? -1 : 1) * progress * 1.6;
-      const scale = 1.05 + progress * 0.07;
-      photoA.style.transform = `scale(${scale}) translate(${drift}%, ${progress * 0.6}%)`;
-      photoB.style.transform = `scale(1.05) translate(${-drift * 0.3}%, 0)`;
+    if (reduceMotion) {
+      photoA.style.transform = "none";
+      photoB.style.transform = "none";
+    } else {
+      const sway = Math.sin((utcMs || 0) / 14000) * 0.8;
+      const panX = -lookX * 2.2 + sway;
+      const panY = -lookY * 1.4;
+      const drift = (view.index % 2 === 0 ? -1 : 1) * progress * 1.1;
+      const scale = 1.06 + progress * 0.05;
+      photoA.style.transform = `translate(${panX + drift}%, ${panY + progress * 0.4}%) scale(${scale})`;
+      photoB.style.transform = `translate(${panX * 0.6}%, ${panY * 0.6}%) scale(1.06)`;
     }
     credit.textContent = `${frame.credit}. Independent viewer, not a NASA product.`;
+    if (photoA.complete && photoA.naturalWidth) stage.style.setProperty("--moon", sampleMoon(photoA).toFixed(3));
+  }
+
+  const cabin = cabinAt(utcMs);
+  if (!cabin) {
+    glance.hidden = true;
+  } else {
+    glance.hidden = false;
+    const src = media(cabin.file);
+    if (glanceImg.src !== src) {
+      glanceImg.src = src;
+      glanceImg.alt = `${cabin.credit}. Cabin interior, not the view through the window.`;
+    }
+    glanceCap.textContent = `${cabin.credit}. This Z9 frame is inside the cabin, so it stays off the glass.`;
   }
 
   const line = lineAt(utcMs);
@@ -234,6 +277,7 @@ function paint() {
       ? `${who}'s narration is highlighted. Photos are not attributed to ${who}; the credit on every frame is NASA/Artemis II Crew. Filtering is by camera and by the guide's window note.`
       : "Photos are credited to NASA/Artemis II Crew. There is no per-person photographer field.",
     gap ? "Gap between recordings. The clock keeps moving. No sound is added." : "",
+    "art002e016183 is a cabin interior and stays off the glass. The PCD recording is not panned, and no sound is added.",
     doc.pointing.note,
   ].filter(Boolean).join(" ");
   drawMap(view.cur);
@@ -302,8 +346,34 @@ function drawMap(current) {
   }
 }
 
+const lumCanvas = document.createElement("canvas");
+lumCanvas.width = 16;
+lumCanvas.height = 16;
+const moonCache = new Map();
+function sampleMoon(img) {
+  const key = img.currentSrc;
+  if (moonCache.has(key)) return moonCache.get(key);
+  const ctx = lumCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, 16, 16);
+  const data = ctx.getImageData(0, 0, 16, 16).data;
+  let sum = 0;
+  const count = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    sum += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+  }
+  const value = sum / count;
+  moonCache.set(key, value);
+  return value;
+}
+
 function loop(now) {
   requestAnimationFrame(loop);
+  if (!reduceMotion) {
+    lookX += (aimX - lookX) * 0.08;
+    lookY += (aimY - lookY) * 0.08;
+    stage.style.setProperty("--look-x", lookX.toFixed(4));
+    stage.style.setProperty("--look-y", lookY.toFixed(4));
+  }
   if (!doc) return;
   if (playing) {
     let seg = segmentAt(utcMs);
@@ -412,6 +482,16 @@ async function boot() {
     button.addEventListener("click", () => setTrack(button.dataset.track));
   });
   window.addEventListener("mousemove", poke);
+  window.addEventListener("pointermove", (event) => {
+    if (reduceMotion) return;
+    aimX = (event.clientX / window.innerWidth) * 2 - 1;
+    aimY = (event.clientY / window.innerHeight) * 2 - 1;
+  });
+  window.addEventListener("deviceorientation", (event) => {
+    if (reduceMotion || event.gamma == null) return;
+    aimX = Math.max(-1, Math.min(1, event.gamma / 28));
+    aimY = Math.max(-1, Math.min(1, ((event.beta || 0) - 45) / 32));
+  });
   window.addEventListener("keydown", (event) => {
     poke();
     if (event.key === " ") {

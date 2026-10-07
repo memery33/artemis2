@@ -20,3 +20,5 @@ def test_shipped_window_keeps_a000033_and_does_not_invent_a_photographer():
     # Hertzsprung's 0,0 coordinate is not plotted as a real site.
     hertz = [row for row in document["targets"] if row["name"].startswith("Hertzsprung")]
     assert hertz and hertz[0]["geographic"] is False
+    cabin = [frame for frame in document["frames"] if frame.get("view") == "cabin"]
+    assert [frame["nasa_id"] for frame in cabin] == ["art002e016183"]
