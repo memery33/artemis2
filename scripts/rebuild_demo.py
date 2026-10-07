@@ -21,10 +21,34 @@ import shutil
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "build" / "cache"
 CATALOG = ROOT / "build" / "catalog.sqlite"
 DEMO = ROOT / "demo" / "data"
+
+
+def _stash_cab(hold: Path) -> None:
+    """Cab Cam files are not in the crew-camera cache. Keep them across a rebuild."""
+    if hold.exists():
+        shutil.rmtree(hold)
+    patterns = ("images/art002e041*.webp", "audio/art002a000045.m4a")
+    for pattern in patterns:
+        for path in DEMO.glob(pattern):
+            dest = hold / path.relative_to(DEMO)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest)
+
+
+def _restore_cab(hold: Path) -> None:
+    if not hold.exists():
+        return
+    for path in hold.rglob("*"):
+        if path.is_file():
+            dest = DEMO / path.relative_to(hold)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest)
 
 
 def main() -> None:
@@ -33,6 +57,8 @@ def main() -> None:
 
     if not (CACHE / "labels").is_dir():
         sys.exit(f"missing {CACHE / 'labels'}")
+    hold = ROOT / "build" / "cab-hold"
+    _stash_cab(hold)
     if DEMO.exists():
         shutil.rmtree(DEMO)
     counts = index_tree(CACHE, CATALOG)
@@ -51,10 +77,16 @@ def main() -> None:
                 "Shown beside the window, not through the glass."
             )
     timeline_path.write_text(json.dumps(document, separators=(", ", ": ")))
+    _restore_cab(hold)
+    from merge_cab_cam import merge
+
+    document = json.loads(timeline_path.read_text())
+    merge(document)
+    timeline_path.write_text(json.dumps(document, separators=(", ", ": ")))
     total = bytes_under(DEMO)
     print(f"demo/data {total / 1e6:.2f} MB")
-    if total > 28_000_000:
-        print("warning: demo bundle is above the ~25 MB target", file=sys.stderr)
+    if total > 30_000_000:
+        print("warning: demo/data is above the ~30 MB shipped-media budget", file=sys.stderr)
 
 
 if __name__ == "__main__":

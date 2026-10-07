@@ -316,6 +316,53 @@ button, input { font: inherit; color: inherit; }
 }
 
 #credit { bottom: 10px; text-align: left; }
+
+#taken {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  z-index: 3;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #f4f1ea;
+  text-shadow: 0 1px 2px #000, 0 0 8px #000;
+}
+
+#taken:empty { display: none; }
+
+/* Cab Cam already includes whatever the GoPro saw. A drawn bezel would invent hardware. */
+#stage.cab #near,
+#stage.cab .reflect,
+#stage.cab .vignette { display: none; }
+
+#stage.cab .thermal,
+#stage.cab .pressure,
+#stage.cab .acrylic {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+}
+
+#stage.cab #window {
+  width: min(96vw, calc(100vh * 4 / 3));
+  aspect-ratio: 4 / 3;
+}
+
+#stage.cab #glass {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#stage.cab #glass img {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 #empty {
   top: 42%;
   text-align: center;
@@ -401,7 +448,7 @@ button, input { font: inherit; color: inherit; }
   align-items: center;
 }
 
-button[data-crew], button[data-cam], button[data-track], #play, #full {
+button[data-crew], button[data-cam], button[data-track], button[data-win], #play, #full, #cabrun, #backfly {
   border: 1px solid var(--line);
   background: rgba(8, 9, 12, 0.72);
   border-radius: 999px;

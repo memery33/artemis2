@@ -31,6 +31,7 @@
                 <div class="reflect" aria-hidden="true"></div>
                 <div class="vignette" aria-hidden="true"></div>
                 <div id="empty" hidden></div>
+                <div id="taken"></div>
                 <div id="subs"></div>
                 <div id="credit"></div>
               </div>
@@ -71,6 +72,14 @@
             <button type="button" id="play" aria-label="Play or pause">Play</button>
             <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Mission clock" />
             <button type="button" id="full">Full screen</button>
+          </div>
+          <div class="row windows" role="group" aria-label="Window">
+            <button type="button" data-win="2" class="on">Window 2 (Nikon)</button>
+            <button type="button" data-win="3">Window 3 (Cab Cam)</button>
+          </div>
+          <div class="row">
+            <button type="button" id="cabrun">Cab Cam run · 22:36 UTC</button>
+            <button type="button" id="backfly" hidden>Back to the flyby</button>
           </div>
           <div class="row cameras" role="group" aria-label="Camera">
             <button type="button" data-cam="all" class="on">All cameras</button>

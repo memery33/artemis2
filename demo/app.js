@@ -26,6 +26,9 @@ const offsetInput = document.getElementById("offset");
 const offsetVal = document.getElementById("offsetval");
 const map = document.getElementById("map");
 const playBtn = document.getElementById("play");
+const taken = document.getElementById("taken");
+const clockNote = document.getElementById("clocknote");
+const backFly = document.getElementById("backfly");
 
 const audio = new Audio();
 audio.id = "voice";
@@ -46,6 +49,10 @@ let rate = 1;
 let track = "pcd3";
 let highlight = null;
 let camera = "all";
+let windowView = "2";
+let rangeKey = "flyby";
+let savedFlybyMs = null;
+let savedTrack = null;
 let offsetS = 0;
 let currentFile = null;
 let loadGen = 0;
@@ -57,6 +64,9 @@ let shownLine = "";
 let shownNote = "";
 let shownClock = "";
 let shownPlate = "";
+let shownTaken = "";
+let shownRange = "";
+let scrubStamp = null;
 let aimX = 0;
 let aimY = 0;
 let lookX = 0;
@@ -83,10 +93,18 @@ function poke() {
 }
 
 function cameraMatch(frame) {
+  const cab = frame.instrument === "cab2";
+  if (windowView === "3") return cab;
+  if (cab) return false;
   if (camera === "window2") return frame.instrument === "nkd5015";
   if (camera === "z9") return frame.instrument === "nkz9019";
   if (camera === "orion") return ORION.has(frame.instrument);
   return true;
+}
+
+function activeSpan() {
+  if (rangeKey === "cab" && doc.cab_run) return doc.cab_run;
+  return doc.window;
 }
 
 function isCabin(frame) {
@@ -114,6 +132,35 @@ function pair(t) {
     index: Math.max(0, index - 1),
     list,
   };
+}
+
+// A Nikon frame from the flyby is hours older than the Cab Cam run.
+// Holding it would pretend the 19:46 exposure is still the view.
+function visiblePair(t) {
+  const view = pair(t);
+  if (windowView !== "3" && view.cur) {
+    const age = t - (tOf(view.cur.utc) + offsetS * 1000);
+    if (age > 15 * 60 * 1000) {
+      return { cur: null, next: null, index: 0, list: view.list, stale: view.cur };
+    }
+  }
+  return view;
+}
+
+function takenText(frame) {
+  if (!frame || windowView !== "3") return "";
+  const when = `${frame.utc.slice(11, 19)} UTC`;
+  const age = utcMs - tOf(frame.utc);
+  const parts = [`Taken ${when} · ${frame.nasa_id}.`];
+  if (frame.look === "dark") {
+    parts.push("Real GoPro exposure, nearly black. Not a mask, and not brightened.");
+  } else {
+    parts.push("Shown as photographed. No window frame is drawn over this picture.");
+  }
+  if (age > 45000) {
+    parts.push(`Orion clock is ${fmt(utcMs)} UTC. This frame was not moved to match it.`);
+  }
+  return parts.join(" ");
 }
 
 function segmentAt(t) {
@@ -219,7 +266,7 @@ async function ensureAudio() {
 }
 
 function paint() {
-  const view = pair(utcMs);
+  const view = visiblePair(utcMs);
   const frame = view.cur;
   const clockStr = fmt(utcMs);
   if (clockStr !== shownClock) {
@@ -250,9 +297,15 @@ function paint() {
     photoA.style.opacity = 0;
     photoB.style.opacity = 0;
     empty.hidden = false;
-    empty.textContent = camera === "orion"
-      ? "No Orion vehicle still falls in this window. SAW Cam 3’s science cadence is about one frame every eight minutes, and none of those frames is in the shipped set."
-      : "No shipped frame for this camera.";
+    if (view.stale) {
+      empty.textContent = `No Window 2 frame was taken at ${fmt(utcMs)} UTC. The newest matching frame is ${view.stale.utc.slice(11, 19)} UTC (${view.stale.nasa_id}) and was not moved here.`;
+    } else if (camera === "orion") {
+      empty.textContent = "No Orion vehicle still falls in this window. SAW Cam 3’s science cadence is about one frame every eight minutes, and none of those frames is in the shipped set.";
+    } else if (windowView === "3") {
+      empty.textContent = "No Cab Cam frame was taken at this time. Times are not shifted to fill the gap.";
+    } else {
+      empty.textContent = "No shipped frame for this camera.";
+    }
     credit.textContent = "";
     stage.style.setProperty("--moon", "0");
     easePlate(null);
@@ -327,9 +380,22 @@ function paint() {
     }
   }
 
-  const span = tOf(doc.window.end) - tOf(doc.window.start);
+  const spanDoc = activeSpan();
+  const takenLine = takenText(frame);
+  if (takenLine !== shownTaken) {
+    shownTaken = takenLine;
+    taken.textContent = takenLine;
+  }
+  const rangeLine = rangeKey === "cab"
+    ? "Cab Cam run, real UTC. Pictures were not shifted into the flyby."
+    : "UTC on the Orion clock. Audio is the master.";
+  if (rangeLine !== shownRange) {
+    shownRange = rangeLine;
+    clockNote.textContent = rangeLine;
+  }
+  const span = tOf(spanDoc.end) - tOf(spanDoc.start);
   if (!seeking) {
-    const next = String(Math.round(((utcMs - tOf(doc.window.start)) / span) * 1000));
+    const next = String(Math.round(((utcMs - tOf(spanDoc.start)) / span) * 1000));
     if (scrub.value !== next) {
       scrubStamp = next;
       scrub.value = next;
@@ -464,7 +530,7 @@ function easePlate(img) {
 }
 
 function applyMotion(a, b, progress, index) {
-  if (reduceMotion) {
+  if (reduceMotion || windowView === "3") {
     a.style.transform = "none";
     b.style.transform = "none";
     return;
@@ -527,7 +593,7 @@ function loop(now) {
     } else if (lastWall) {
       utcMs += (now - lastWall) * rate;
     }
-    const end = tOf(doc.window.end);
+    const end = tOf(activeSpan().end);
     if (utcMs >= end) {
       utcMs = end;
       playing = false;
@@ -552,7 +618,8 @@ async function toggle() {
 }
 
 function seekTo(ms) {
-  utcMs = Math.min(tOf(doc.window.end), Math.max(tOf(doc.window.start), ms));
+  const span = activeSpan();
+  utcMs = Math.min(tOf(span.end), Math.max(tOf(span.start), ms));
   ensureAudio();
 }
 
@@ -586,6 +653,41 @@ function setCamera(next) {
   });
 }
 
+function setWindow(next) {
+  windowView = next;
+  shownId = null;
+  stage.classList.toggle("cab", next === "3");
+  document.querySelectorAll("[data-win]").forEach((button) => {
+    button.classList.toggle("on", button.dataset.win === next);
+    button.setAttribute("aria-pressed", button.dataset.win === next ? "true" : "false");
+  });
+  document.querySelector(".cameras").hidden = next === "3";
+}
+
+function enterCabRun() {
+  if (rangeKey !== "cab") {
+    savedFlybyMs = utcMs;
+    savedTrack = track;
+  }
+  rangeKey = "cab";
+  backFly.hidden = false;
+  setWindow("3");
+  setTrack("pcd2");
+  seekTo(tOf(doc.cab_run.start));
+}
+
+function backToFlyby() {
+  rangeKey = "flyby";
+  backFly.hidden = true;
+  const back = savedFlybyMs == null ? tOf(doc.window.start) : savedFlybyMs;
+  const trackBack = savedTrack;
+  savedFlybyMs = null;
+  savedTrack = null;
+  setWindow("2");
+  if (trackBack) setTrack(trackBack);
+  seekTo(back);
+}
+
 async function boot() {
   doc = await fetch("data/timeline.json").then((response) => response.json());
   utcMs = tOf(doc.window.start);
@@ -607,8 +709,9 @@ async function boot() {
       return;
     }
     scrubStamp = null;
-    const span = tOf(doc.window.end) - tOf(doc.window.start);
-    seekTo(tOf(doc.window.start) + (Number(scrub.value) / 1000) * span);
+    const spanDoc = activeSpan();
+    const span = tOf(spanDoc.end) - tOf(spanDoc.start);
+    seekTo(tOf(spanDoc.start) + (Number(scrub.value) / 1000) * span);
   });
   scrub.addEventListener("pointerup", () => { seeking = false; });
   offsetInput.addEventListener("input", () => {
@@ -621,6 +724,14 @@ async function boot() {
   });
   document.querySelectorAll("[data-cam]").forEach((button) => {
     button.addEventListener("click", () => setCamera(button.dataset.cam));
+  });
+  document.querySelectorAll("[data-win]").forEach((button) => {
+    button.addEventListener("click", () => setWindow(button.dataset.win));
+  });
+  document.getElementById("cabrun").addEventListener("click", enterCabRun);
+  backFly.addEventListener("click", backToFlyby);
+  document.querySelectorAll("[data-win]").forEach((button) => {
+    button.setAttribute("aria-pressed", button.dataset.win === "2" ? "true" : "false");
   });
   document.querySelectorAll("[data-track]").forEach((button) => {
     button.addEventListener("click", () => setTrack(button.dataset.track));
