@@ -1,0 +1,293 @@
+:root {
+  color-scheme: dark;
+  --cabin: #07080c;
+  --ink: #f4f1ea;
+  --muted: #b7b1a6;
+  --line: rgba(244, 241, 234, 0.18);
+  font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--cabin);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+button, input { font: inherit; color: inherit; }
+
+#stage { position: relative; height: 100%; }
+
+#cabin {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 80% at 50% 100%, #1a1c24 0%, #07080c 55%);
+}
+
+#window {
+  position: absolute;
+  inset: 4.5vh 6vw 7vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.bezel {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 22px 26px;
+  border-radius: 42px;
+  background:
+    linear-gradient(180deg, #3a3d46 0%, #1c1e26 18%, #12141a 70%, #0a0b10 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -18px 30px rgba(0, 0, 0, 0.55),
+    0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.lip { height: 100%; padding: 8px; }
+.thermal {
+  border-radius: 30px;
+  background: linear-gradient(160deg, #6a6256, #2a261f 40%, #14120f);
+}
+.pressure {
+  border-radius: 24px;
+  background: linear-gradient(180deg, #243036, #10161a);
+  padding: 6px;
+}
+.inner {
+  border-radius: 18px;
+  background: #050608;
+  padding: 0;
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.65);
+}
+
+#glass {
+  position: relative;
+  height: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+}
+
+#glass img {
+  position: absolute;
+  inset: -8%;
+  width: 116%;
+  height: 116%;
+  object-fit: cover;
+  opacity: 0;
+  transform-origin: 50% 45%;
+  will-change: transform, opacity;
+}
+
+.reflect {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.03) 22%, transparent 38%),
+    linear-gradient(200deg, transparent 55%, rgba(190, 210, 220, 0.07) 100%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+}
+
+#sill {
+  height: 22px;
+  margin: 0 12% -6px;
+  background: linear-gradient(#2a2d36, #0c0d12);
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
+}
+
+#subs {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 9%;
+  text-align: center;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+}
+
+#subs .who {
+  display: block;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: #f0d7a2;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+#subs .say {
+  display: block;
+  margin-top: 4px;
+  font-size: clamp(16px, 2.1vw, 28px);
+  line-height: 1.35;
+}
+
+#subs.dim { opacity: 0.55; }
+#subs.mine .who { color: #fff4d2; }
+
+#credit, #empty {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgba(244, 241, 234, 0.72);
+  text-shadow: 0 1px 6px #000;
+}
+
+#credit { bottom: 10px; text-align: left; }
+#empty {
+  top: 42%;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+#enter {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, 86vw);
+  padding: 28px 26px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(8, 9, 12, 0.78);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  text-align: left;
+}
+
+#enter .kicker, .fine {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#enter .title {
+  display: block;
+  margin: 8px 0;
+  font-size: 34px;
+}
+
+#enter .quiet {
+  display: block;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+#hud {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 280ms ease;
+}
+
+#hud.show { opacity: 1; }
+
+#hud .top, #hud .bottom { pointer-events: auto; }
+
+.top, .bottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 28px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.crew, .cameras, .tracks, .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+button[data-crew], button[data-cam], button[data-track], #play, #full {
+  border: 1px solid var(--line);
+  background: rgba(8, 9, 12, 0.72);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+}
+
+button.on, button[aria-pressed="true"] {
+  background: #f4f1ea;
+  color: #14151a;
+  border-color: #f4f1ea;
+}
+
+.controls {
+  flex: 1;
+  background: rgba(8, 9, 12, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#scrub, #offset { flex: 1; accent-color: #f4f1ea; }
+.offset {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+}
+
+#map {
+  width: min(360px, 38vw);
+  height: auto;
+  background: rgba(8, 9, 12, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.fine { margin: 0; text-transform: none; letter-spacing: 0; line-height: 1.4; }
+
+#stage:fullscreen #window, #stage:-webkit-full-screen #window { inset: 2vh 3vw 4vh; }
+
+@media (max-width: 800px) {
+  #window { inset: 2vh 2vw 4vh; }
+  .bezel { padding: 10px 10px 16px; border-radius: 28px; }
+  .bottom { flex-direction: column; align-items: stretch; }
+  #map { width: 100%; }
+  #enter .title { font-size: 28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #glass img { transition: none; }
+}

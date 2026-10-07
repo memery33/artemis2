@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Artemis II — Orion window</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage">
+    <div id="cabin">
+      <div id="window" aria-label="Orion cone window">
+        <div class="bezel">
+          <div class="lip thermal">
+            <div class="lip pressure">
+              <div class="lip inner">
+                <div id="glass">
+                  <img id="photoA" alt="" />
+                  <img id="photoB" alt="" />
+                  <div class="reflect" aria-hidden="true"></div>
+                  <div class="vignette" aria-hidden="true"></div>
+                  <div id="empty" hidden></div>
+                  <div id="subs"></div>
+                  <div id="credit"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="sill" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <button id="enter" type="button">
+      <span class="kicker">6 April 2026 · 19:33 UTC</span>
+      <span class="title">Look out the window</span>
+      <span class="quiet">Aristarchus Plateau to Reiner Gamma. Real crew audio. No synthesized sound.</span>
+    </button>
+
+    <div id="hud" hidden>
+      <header class="top">
+        <div>
+          <div id="clock" class="clock">19:33:00</div>
+          <div id="clocknote" class="fine">UTC on the Orion clock. Audio is the master.</div>
+        </div>
+        <div class="crew" role="group" aria-label="Crew narration">
+          <button type="button" data-crew="Wiseman">Wiseman</button>
+          <button type="button" data-crew="Glover">Glover</button>
+          <button type="button" data-crew="Koch">Koch</button>
+          <button type="button" data-crew="Hansen">Hansen</button>
+        </div>
+      </header>
+
+      <div class="bottom">
+        <canvas id="map" width="360" height="240" aria-label="Target map"></canvas>
+        <div class="controls">
+          <div class="row">
+            <button type="button" id="play" aria-label="Play or pause">Play</button>
+            <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Mission clock" />
+            <button type="button" id="full">Full screen</button>
+          </div>
+          <div class="row cameras" role="group" aria-label="Camera">
+            <button type="button" data-cam="all" class="on">All cameras</button>
+            <button type="button" data-cam="window2">Window 2 · D5-015</button>
+            <button type="button" data-cam="z9">Z9</button>
+            <button type="button" data-cam="orion">Orion cameras</button>
+          </div>
+          <div class="row tracks" role="group" aria-label="Audio track">
+            <button type="button" data-track="pcd2">PCD2 · Hansen &amp; Glover</button>
+            <button type="button" data-track="pcd3" class="on">PCD3 · Koch &amp; Wiseman</button>
+          </div>
+          <label class="offset">
+            Camera clock offset
+            <input id="offset" type="range" min="-5" max="5" step="0.1" value="0" />
+            <span id="offsetval">0.0 s</span>
+          </label>
+          <p id="note" class="fine"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
