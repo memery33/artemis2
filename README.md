@@ -1,5 +1,7 @@
 # artemis2
 
+The live demo is [https://memery33.github.io/artemis2/](https://memery33.github.io/artemis2/).
+
 ![Orion window during the Aristarchus to Reiner Gamma pass](docs/hero.gif)
 
 A 1280×720 still of the same view is [`docs/hero-still.png`](docs/hero-still.png).
