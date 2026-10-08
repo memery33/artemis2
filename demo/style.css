@@ -407,14 +407,21 @@ button, input { font: inherit; color: inherit; }
   z-index: 5;
   top: 14px;
   right: 16px;
+  max-width: min(28rem, calc(100% - 32px));
+  padding: 4px 9px 5px;
+  border-radius: 8px;
+  /* A chip behind the three times only. Not a band across the frame. */
+  background: rgba(0, 0, 0, 0.58);
   opacity: 0;
   pointer-events: none;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.03em;
-  color: rgba(244, 241, 234, 0.78);
-  text-shadow: 0 1px 3px #000;
+  line-height: 1.45;
+  text-align: right;
+  color: rgba(244, 241, 234, 0.94);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.95);
 }
 
 #stage.live #clocks { opacity: 1; transition: opacity 1s ease 0.25s; }

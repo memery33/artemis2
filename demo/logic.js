@@ -161,11 +161,55 @@
     return { utc: utc, eastern: eastern, met: met };
   }
 
+  // Drop the control header below the corner clock. clockBottom and hudTop
+  // are viewport y positions. The result is the HUD's top padding, in pixels.
+  function hudTopPad(clockBottom, hudTop, basePad, gap) {
+    const base = Number.isFinite(basePad) ? basePad : 18;
+    const air = Number.isFinite(gap) ? gap : 10;
+    if (!Number.isFinite(clockBottom) || !Number.isFinite(hudTop)) return base;
+    return Math.max(base, Math.ceil(clockBottom - hudTop + air));
+  }
+
+  // Last few seconds of a hold. mix is 1 at the incoming frame's own time.
+  const HOLD_FADE_MS = 4000;
+
+  function crossfade(now, currentMs, nextMs, fadeMs) {
+    const fade = Number.isFinite(fadeMs) && fadeMs > 0 ? fadeMs : HOLD_FADE_MS;
+    if (!Number.isFinite(now) || !Number.isFinite(currentMs) || !Number.isFinite(nextMs) || !(nextMs > currentMs)) {
+      return { mix: 0, dominant: "current" };
+    }
+    const windowMs = Math.min(fade, nextMs - currentMs);
+    const start = nextMs - windowMs;
+    let mix = 0;
+    if (now >= nextMs) mix = 1;
+    else if (now > start) mix = (now - start) / windowMs;
+    return { mix: mix, dominant: mix >= 0.5 ? "next" : "current" };
+  }
+
+  // Slow drift across one hold. Scale change stays within 4%.
+  function holdMotion(progress, index, floatX, floatY, lookX, lookY) {
+    const p = Math.min(1, Math.max(0, Number(progress) || 0));
+    const sign = index % 2 === 0 ? -1 : 1;
+    const fx = Number.isFinite(floatX) ? floatX : 0;
+    const fy = Number.isFinite(floatY) ? floatY : 0;
+    const lx = Number.isFinite(lookX) ? lookX : 0;
+    const ly = Number.isFinite(lookY) ? lookY : 0;
+    return {
+      scale: 1.025 + p * 0.035,
+      x: sign * p * 0.65 + fx * 0.45 - lx * 0.45,
+      y: p * 0.3 + fy * 0.45 - ly * 0.3,
+    };
+  }
+
   return {
     project: project,
     placeLabels: placeLabels,
     chooseFont: chooseFont,
     formatClocks: formatClocks,
     overlap: overlap,
+    hudTopPad: hudTopPad,
+    crossfade: crossfade,
+    holdMotion: holdMotion,
+    HOLD_FADE_MS: HOLD_FADE_MS,
   };
 });

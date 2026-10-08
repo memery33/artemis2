@@ -110,11 +110,25 @@ function fmt(ms) {
   return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 }
 
+function syncClockLane() {
+  if (!hud.classList.contains("show")) {
+    hud.style.paddingTop = "";
+    return;
+  }
+  const chip = document.getElementById("clocks").getBoundingClientRect();
+  const pad = ArtemisLogic.hudTopPad(chip.bottom, hud.getBoundingClientRect().top, 18, 10);
+  hud.style.paddingTop = `${pad}px`;
+}
+
 function poke() {
   hud.hidden = false;
   hud.classList.add("show");
   clearTimeout(hideTimer);
-  hideTimer = setTimeout(() => hud.classList.remove("show"), 3400);
+  requestAnimationFrame(syncClockLane);
+  hideTimer = setTimeout(() => {
+    hud.classList.remove("show");
+    hud.style.paddingTop = "";
+  }, 3400);
 }
 
 function cameraMatch(frame) {
@@ -354,24 +368,30 @@ function paint() {
         photoB.alt = view.next.credit;
       }
     }
-    const fade = !reduceMotion && view.next && progress > 0.9;
+    let shown = frame;
     useFrame(frame);
-    if (fade) {
-      const ready = photoB.complete && photoB.naturalWidth > 0;
-      if (ready) {
-        const mix = (progress - 0.9) / 0.1;
-        photoB.style.opacity = String(mix);
-        photoA.style.opacity = String(1 - mix);
-      } else {
-        photoA.style.opacity = "1";
-        photoB.style.opacity = "0";
-      }
+    if (windowView === "3" && view.next) {
+      const fade = ArtemisLogic.crossfade(
+        utcMs,
+        tOf(frame.utc) + offsetS * 1000,
+        tOf(view.next.utc) + offsetS * 1000,
+        ArtemisLogic.HOLD_FADE_MS,
+      );
+      const ready = photoB.complete && photoB.naturalWidth > 0 && photoB.src === media(view.next.file);
+      const mix = ready ? fade.mix : 0;
+      photoB.style.opacity = String(mix);
+      photoA.style.opacity = String(1 - mix);
+      if (ready && fade.dominant === "next") shown = view.next;
+    } else if (!reduceMotion && view.next && progress > 0.9 && photoB.complete && photoB.naturalWidth > 0) {
+      const mix = (progress - 0.9) / 0.1;
+      photoB.style.opacity = String(mix);
+      photoA.style.opacity = String(1 - mix);
     } else {
       photoA.style.opacity = "1";
       photoB.style.opacity = "0";
     }
     applyMotion(photoA, photoB, progress, view.index);
-    credit.textContent = `${frame.credit}. Independent viewer, not a NASA product.`;
+    credit.textContent = `${shown.credit}. Independent viewer, not a NASA product.`;
     const aOp = parseFloat(photoA.style.opacity) || 0;
     const bOp = parseFloat(photoB.style.opacity) || 0;
     const visible = aOp >= bOp ? photoA : photoB;
@@ -413,7 +433,7 @@ function paint() {
   }
 
   const spanDoc = activeSpan();
-  const takenLine = takenText(frame);
+  const takenLine = takenText(shownFrame(view));
   if (takenLine !== shownTaken) {
     shownTaken = takenLine;
     taken.textContent = takenLine;
@@ -427,7 +447,7 @@ function paint() {
   }
   const span = tOf(spanDoc.end) - tOf(spanDoc.start);
   if (!seeking) {
-    const next = String(Math.round(((utcMs - tOf(spanDoc.start)) / span) * 1000));
+    const next = String(Math.round(((utcMs - tOf(spanDoc.start)) / span) * (Number(scrub.max) || 1000)));
     if (scrub.value !== next) {
       scrubStamp = next;
       scrub.value = next;
@@ -590,10 +610,32 @@ function easePlate(img) {
   }
 }
 
+function shownFrame(view) {
+  const frame = view && view.cur;
+  if (!frame || windowView !== "3" || !view.next) return frame;
+  const fade = ArtemisLogic.crossfade(
+    utcMs,
+    tOf(frame.utc) + offsetS * 1000,
+    tOf(view.next.utc) + offsetS * 1000,
+    ArtemisLogic.HOLD_FADE_MS,
+  );
+  const ready = photoB.complete && photoB.naturalWidth > 0 && view.next && photoB.src === media(view.next.file);
+  if (ready && fade.dominant === "next") return view.next;
+  return frame;
+}
+
 function applyMotion(a, b, progress, index) {
-  if (reduceMotion || windowView === "3") {
+  if (reduceMotion) {
     a.style.transform = "none";
     b.style.transform = "none";
+    return;
+  }
+  if (windowView === "3") {
+    const current = ArtemisLogic.holdMotion(progress, index, floatX, floatY, lookX, lookY);
+    const incoming = ArtemisLogic.holdMotion(0, index + 1, floatX, floatY, lookX, lookY);
+    const rot = Number(floatR).toFixed(3);
+    a.style.transform = `translate(${current.x.toFixed(3)}%, ${current.y.toFixed(3)}%) rotate(${rot}deg) scale(${current.scale.toFixed(4)})`;
+    b.style.transform = `translate(${incoming.x.toFixed(3)}%, ${incoming.y.toFixed(3)}%) rotate(${rot}deg) scale(${incoming.scale.toFixed(4)})`;
     return;
   }
   const drift = (index % 2 === 0 ? -1 : 1) * progress * 1.1;
@@ -872,7 +914,7 @@ async function boot() {
     scrubStamp = null;
     const spanDoc = activeSpan();
     const span = tOf(spanDoc.end) - tOf(spanDoc.start);
-    seekTo(tOf(spanDoc.start) + (Number(scrub.value) / 1000) * span);
+    seekTo(tOf(spanDoc.start) + (Number(scrub.value) / (Number(scrub.max) || 1000)) * span);
   });
   scrub.addEventListener("pointerup", () => { seeking = false; });
   offsetInput.addEventListener("input", () => {
@@ -897,6 +939,8 @@ async function boot() {
   document.querySelectorAll("[data-track]").forEach((button) => {
     button.addEventListener("click", () => setTrack(button.dataset.track));
   });
+  window.addEventListener("resize", syncClockLane);
+  if (window.ResizeObserver) new ResizeObserver(syncClockLane).observe(document.getElementById("clocks"));
   window.addEventListener("mousemove", poke);
   window.addEventListener("pointermove", (event) => {
     if (reduceMotion) return;

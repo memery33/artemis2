@@ -97,3 +97,71 @@ console.log(JSON.stringify({
     assert clocks["cab"]["met"] == "120:00:51 MET"
     assert clocks["bare"]["met"] is None
     assert clocks["start"]["met"] == "0:00:00 MET"
+
+
+def test_open_controls_sit_below_the_corner_clock():
+    script = r"""
+const { hudTopPad } = require("./demo/logic.js");
+const cases = [
+  { clockBottom: 42, hudTop: 0, base: 18, gap: 10 },
+  { clockBottom: 8, hudTop: 0, base: 18, gap: 10 },
+  { clockBottom: 90, hudTop: 0, base: 18, gap: 12 },
+  { clockBottom: NaN, hudTop: 0, base: 18, gap: 10 },
+];
+console.log(JSON.stringify(cases.map((row) => ({
+  clockBottom: Number.isFinite(row.clockBottom) ? row.clockBottom : null,
+  hudTop: row.hudTop,
+  base: row.base,
+  gap: row.gap,
+  pad: hudTopPad(row.clockBottom, row.hudTop, row.base, row.gap),
+  missing: !Number.isFinite(row.clockBottom),
+}))));
+"""
+    rows = _node(script)
+    for row in rows:
+        if row["missing"]:
+            assert row["pad"] == row["base"]
+            continue
+        content_top = row["hudTop"] + row["pad"]
+        assert content_top >= row["clockBottom"] + row["gap"] - 1e-6
+        assert row["pad"] >= row["base"]
+
+
+def test_cab_crossfade_is_complete_at_the_real_capture_time():
+    script = r"""
+const { crossfade, holdMotion, HOLD_FADE_MS } = require("./demo/logic.js");
+const current = Date.parse("2026-04-06T22:39:03.000Z");
+const next = Date.parse("2026-04-06T22:39:33.000Z");
+const samples = [-1, 0, HOLD_FADE_MS, HOLD_FADE_MS / 2, 1].map((delta) => {
+  const now = delta < 0 ? current : next - (HOLD_FADE_MS - delta);
+  const row = crossfade(now, current, next, HOLD_FADE_MS);
+  return { delta, now, mix: row.mix, dominant: row.dominant };
+});
+const at = crossfade(next, current, next, HOLD_FADE_MS);
+const before = crossfade(next - 1, current, next, HOLD_FADE_MS);
+const early = crossfade(next - HOLD_FADE_MS - 1000, current, next, HOLD_FADE_MS);
+const shortGap = crossfade(current + 1500, current, current + 2000, HOLD_FADE_MS);
+const start = holdMotion(0, 0, 0, 0, 0, 0);
+const end = holdMotion(1, 0, 0, 0, 0, 0);
+console.log(JSON.stringify({
+  fadeMs: HOLD_FADE_MS,
+  at, before, early, shortGap,
+  scale0: start.scale,
+  scale1: end.scale,
+  delta: end.scale - start.scale,
+}));
+"""
+    row = _node(script)
+    assert row["fadeMs"] == 4000
+    assert row["at"]["mix"] == 1
+    assert row["at"]["dominant"] == "next"
+    assert row["before"]["mix"] < 1
+    assert row["before"]["dominant"] == "next"
+    assert row["early"]["mix"] == 0
+    assert row["early"]["dominant"] == "current"
+    # A shorter gap still finishes on the incoming frame's own timestamp.
+    assert abs(row["shortGap"]["mix"] - 0.75) < 1e-9
+    assert row["shortGap"]["dominant"] == "next"
+    assert row["scale0"] >= 1
+    assert abs(row["delta"] - 0.035) < 1e-9
+    assert row["delta"] <= 0.04
