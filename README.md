@@ -38,6 +38,8 @@ Atlas access is the documented Imaging Node API: `POST /api/search/atlas/_search
 cd demo && python -m http.server 8765
 ```
 
+`scripts/package_demo.sh` builds an offline zip for a Mac. It is not committed. Unzip it and double-click `Start Demo.command`.
+
 The page opens on a black screen with one line: **Click or press any key to look out the window**. That gesture is what the browser requires before it will play audio. The window then fades up, and the recording starts in step with the clock. The first PCD file begins at 19:33:01.758, so the opening second and a half stays quiet. Nothing is added to fill it.
 
 A small clock in the corner shows UTC and Eastern time (EDT on this date). Mission elapsed time counts from the Data User Guide's mission start, **2026-04-01 22:35:12 UTC**, the start of FD01 and the SLS launch event in that table. It is not a separate liftoff timestamp. The guide is the source. If that field were absent, elapsed time would be left off.
