@@ -501,12 +501,17 @@ function paint() {
   }
 
   const cabin = cabinAt(utcMs);
-  if (!cabin) {
+  const open = !!cabin;
+  if (!open) {
     glance.hidden = true;
   } else {
     glance.hidden = false;
     showFile(glanceImg, cabin.file, `${cabin.credit}. Cabin interior, not the view through the window.`);
     glanceCap.textContent = `${cabin.credit}. This Z9 frame is inside the cabin, so it stays off the glass.`;
+  }
+  if (open !== glanceOpen) {
+    glanceOpen = open;
+    placeSubs();
   }
 
   const line = lineAt(utcMs);
@@ -524,6 +529,7 @@ function paint() {
       who.textContent = line.role ? `${line.speaker} · ${line.role}` : (line.speaker || "Crew");
       const say = document.createElement("span");
       say.className = "say";
+      say.dataset.full = line.text;
       say.textContent = line.text;
       subs.replaceChildren(who, say);
     }
@@ -986,14 +992,17 @@ let creditMeasured = "";
 let creditBandText = "";
 let subsMeasured = "";
 let subsMode = "";
+let subsQuote = "";
 let besideRoom = -1;
 let besideTooTight = false;
+let glanceOpen = false;
+let placingSubs = false;
 function syncCreditBand() {
   const next = `${credit.getBoundingClientRect().height.toFixed(2)}px`;
   if (next === creditMeasured) return;
   creditMeasured = next;
   stage.style.setProperty("--credit-measured", next);
-  fitSubsInWindow();
+  placeSubs();
 }
 
 function subtitleLineCount(root) {
@@ -1033,58 +1042,169 @@ function rememberSubsHeight() {
   stage.style.setProperty("--subs-measured", next);
 }
 
+function quoteFits() {
+  const glass = document.getElementById("glass").getBoundingClientRect();
+  const sub = subs.getBoundingClientRect();
+  const creditBox = credit.getBoundingClientRect();
+  if (sub.width <= 0 || sub.height <= 0) return false;
+  const range = document.createRange();
+  const walker = document.createTreeWalker(subs, NodeFilter.SHOW_TEXT);
+  let node;
+  let lines = 0;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      lines += 1;
+      if (
+        rect.top < glass.top - 0.5
+        || rect.bottom > glass.bottom + 0.5
+        || rect.left < glass.left - 0.5
+        || rect.right > glass.right + 0.5
+      ) return false;
+    }
+  }
+  if (lines < 1 || lines > 3) return false;
+  const overlaps = sub.bottom > creditBox.top + 0.5
+    && sub.top < creditBox.bottom
+    && sub.right > creditBox.left
+    && sub.left < creditBox.right;
+  return !overlaps;
+}
+
+function prefixQuote(full, count) {
+  if (count >= full.length) return full;
+  const raw = full.slice(0, Math.max(1, count));
+  const word = raw.replace(/\s+\S*$/, "").trimEnd();
+  const slice = word || raw.trimEnd();
+  return `${slice}…`;
+}
+
+// Long quotes on a narrow glass wrap past three lines and leave the pane.
+// Full width is applied first. 0.9em is the readable step down. Whatever
+// still does not fit is cut, with an ellipsis, until the text is inside.
+function settleQuote() {
+  const say = subs.querySelector(".say");
+  if (!say || stage.classList.contains("touch")) {
+    stage.style.setProperty("--subs-scale", "1");
+    return;
+  }
+  const full = say.dataset.full || say.textContent;
+  say.dataset.full = full;
+  const narrowFree = window.innerWidth < 600 && !stage.classList.contains("subs-beside");
+  if (!narrowFree) {
+    say.textContent = full;
+    stage.style.setProperty("--subs-scale", "1");
+    fitSubsInWindow();
+    return;
+  }
+  const tryFull = (scale) => {
+    stage.style.setProperty("--subs-scale", scale);
+    say.textContent = full;
+    fitSubsInWindow();
+    return quoteFits();
+  };
+  if (tryFull("1") || tryFull("0.9")) return;
+  const clampAt = (scale) => {
+    stage.style.setProperty("--subs-scale", scale);
+    let best = "";
+    let lo = 1;
+    let hi = full.length;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      say.textContent = prefixQuote(full, mid);
+      fitSubsInWindow();
+      if (quoteFits()) {
+        best = say.textContent;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (!best) return false;
+    say.textContent = best;
+    fitSubsInWindow();
+    return true;
+  };
+  if (!clampAt("1")) clampAt("0.9");
+}
+
 // Fine pointer only. The subtitle stays centered until its box would meet
 // the card. Then it runs from the card's right edge to the window edge, or,
 // when that column is under 160px or wraps past three lines, the card stacks
-// above it. Nothing here runs from the animation frame.
+// above it. Under 600px with no card beside the line, the quote uses the
+// glass. Nothing here runs from the animation frame.
 function placeSubs() {
-  const glass = document.getElementById("glass").getBoundingClientRect();
-  const card = glance.getBoundingClientRect();
-  const edge = Math.max(16, window.innerWidth * 0.02);
-  const gap = 16;
-  let mode = "";
-  if (!stage.classList.contains("touch") && !glance.hidden && card.width > 0 && glass.width > 0) {
-    const room = glass.right - edge - (card.right + gap);
-    if (Math.abs(room - besideRoom) > 1) {
-      besideRoom = room;
-      besideTooTight = false;
+  if (placingSubs) return;
+  placingSubs = true;
+  try {
+    const say = subs.querySelector(".say");
+    if (say) {
+      const full = say.dataset.full || say.textContent;
+      if (full !== subsQuote) {
+        subsQuote = full;
+        besideTooTight = false;
+      }
+      say.dataset.full = full;
+      say.textContent = full;
     }
-    const box = centeredSubsWidth(glass.width);
-    const centeredLeft = glass.left + (glass.width - box) / 2;
-    const hitsCard = box > 0 && centeredLeft < card.right + gap && centeredLeft + box > card.left;
-    if (hitsCard) mode = room < 160 || besideTooTight ? "stack" : "beside";
-    stage.style.setProperty("--subs-left", `${Math.max(0, card.right + gap - glass.left).toFixed(2)}px`);
-  } else {
-    besideTooTight = false;
-    besideRoom = -1;
-  }
-  if (mode !== subsMode) {
+    stage.style.setProperty("--subs-scale", "1");
+    const glass = document.getElementById("glass").getBoundingClientRect();
+    const card = glance.getBoundingClientRect();
+    const edge = Math.max(16, window.innerWidth * 0.02);
+    const gap = 16;
+    const narrow = window.innerWidth < 600;
+    let mode = "";
+    if (!stage.classList.contains("touch") && !glance.hidden && card.width > 0 && glass.width > 0) {
+      const room = glass.right - edge - (card.right + gap);
+      if (Math.abs(room - besideRoom) > 1) {
+        besideRoom = room;
+        besideTooTight = false;
+      }
+      const box = narrow ? Math.max(0, glass.width - edge * 2) : centeredSubsWidth(glass.width);
+      const centeredLeft = glass.left + (glass.width - box) / 2;
+      const hitsCard = box > 0 && centeredLeft < card.right + gap && centeredLeft + box > card.left;
+      if (hitsCard) mode = room < 160 || besideTooTight ? "stack" : "beside";
+      else if (narrow) mode = "wide";
+      stage.style.setProperty("--subs-left", `${Math.max(0, card.right + gap - glass.left).toFixed(2)}px`);
+    } else {
+      besideTooTight = false;
+      besideRoom = -1;
+      if (!stage.classList.contains("touch") && narrow) mode = "wide";
+    }
     subsMode = mode;
     stage.classList.toggle("subs-beside", mode === "beside");
     stage.classList.toggle("subs-stack", mode === "stack");
+    stage.classList.toggle("subs-wide", mode === "wide");
     if (mode === "beside" && (subs.getBoundingClientRect().width < 160 || subtitleLineCount(subs) > 3)) {
       besideTooTight = true;
       subsMode = "stack";
       stage.classList.remove("subs-beside");
+      stage.classList.remove("subs-wide");
       stage.classList.add("subs-stack");
     }
+    settleQuote();
+    rememberSubsHeight();
+  } finally {
+    placingSubs = false;
   }
-  rememberSubsHeight();
-  fitSubsInWindow();
 }
 
-// Pull the line down only as far as it still clears the credit, and only
-// when the measured box would leave the window.
+// Pull the line down until it sits in the glass, and stop short of the credit.
 function fitSubsInWindow() {
   if (stage.classList.contains("touch") || !subs.firstChild) {
     stage.style.setProperty("--subs-fit", "0px");
     return;
   }
   stage.style.setProperty("--subs-fit", "0px");
-  const win = windowEl.getBoundingClientRect();
+  const glass = document.getElementById("glass").getBoundingClientRect();
   const sub = subs.getBoundingClientRect();
-  const short = Math.max(0, win.top - sub.top, sub.bottom - win.bottom);
-  const fit = Math.min(12, short > 0.25 ? short + 0.5 : 0);
+  const creditBox = credit.getBoundingClientRect();
+  const overflowTop = Math.max(0, glass.top - sub.top);
+  if (overflowTop <= 0.25) return;
+  const creditGap = creditBox.top - sub.bottom;
+  const fit = Math.min(overflowTop + 0.5, Math.max(0, creditGap - 0.5));
   stage.style.setProperty("--subs-fit", `${fit.toFixed(2)}px`);
 }
 
@@ -1327,6 +1447,7 @@ async function boot() {
   });
   if (window.ResizeObserver) new ResizeObserver(syncCreditBand).observe(credit);
   if (window.ResizeObserver) new ResizeObserver(syncSubsBand).observe(subs);
+  if (window.ResizeObserver) new ResizeObserver(() => placeSubs()).observe(glance);
   if (window.ResizeObserver) new ResizeObserver(syncClockLane).observe(document.getElementById("clocks"));
   const relayout = () => {
     shownId = null;

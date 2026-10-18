@@ -207,8 +207,8 @@ button, input[type="range"] { touch-action: manipulation; }
   height: 100%;
   border-radius: clamp(12px, 1.8vw, 30px);
   /* The photograph is clipped by #aperture. The credit and the subtitle
-     stay in this box, and a too-tall line may paint over the bezel
-     rather than lose its first row. */
+     stay in this box. A long quote narrows or shortens until it fits
+     here, so it does not climb onto the bezel. */
   overflow: visible;
   background: #000;
   box-shadow:
@@ -354,8 +354,10 @@ button, input[type="range"] { touch-action: manipulation; }
 }
 
 /* The column beside the card is under 160px, or the quote would wrap past
-   three lines. The card sits above the subtitle and the line uses the glass. */
-#stage.subs-stack:not(.touch) #subs {
+   three lines. The card sits above the subtitle and the line uses the glass.
+   subs-wide is the same full-glass line when no card sits beside it. */
+#stage.subs-stack:not(.touch) #subs,
+#stage.subs-wide:not(.touch) #subs {
   left: max(16px, 2vw);
   right: max(16px, 2vw);
   width: auto;
@@ -421,7 +423,7 @@ button, input[type="range"] { touch-action: manipulation; }
   margin-top: 3px;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-weight: 400;
-  font-size: clamp(14px, 1.45vw, 20px);
+  font-size: calc(clamp(14px, 1.45vw, 20px) * var(--subs-scale, 1));
   line-height: 1.35;
   color: #f7f7f5;
 }
