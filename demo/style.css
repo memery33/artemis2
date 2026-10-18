@@ -40,10 +40,13 @@ button, input[type="range"] { touch-action: manipulation; }
   /* Credit inset from the bottom of the glass. The dock is not on the glass
      unless a touch layout's window actually reaches it. */
   --dock-clear: max(10px, env(safe-area-inset-bottom));
+  /* One credit line, plus the desktop chip's 3px + 4px padding. */
+  --credit-h: calc(11px * 1.35 + 7px);
 }
 
 #stage.touch {
   --dock-clear: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
+  --credit-h: calc(11px * 1.35);
 }
 
 #stage.compact,
@@ -270,29 +273,30 @@ button, input[type="range"] { touch-action: manipulation; }
   color: rgba(244, 241, 234, 0.78);
 }
 
-/* Dock is a 44px row inset 8px, so the credit sits above it. */
+/* Dock is a 44px row inset 8px. Phones keep the card above that row.
+   A large touch window reaches the dock, so this pin alone is not enough. */
 #stage.touch #glance {
   bottom: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
 }
 
-/* A wide window reaches the lower left, so 3vh runs through the credit.
-   The card stops where the glass does: half the leftover viewport, plus the
-   three bezel steps under the glass, plus the 10px credit inset, the 22px
-   chip, and 16px for the window's drift. A narrow window does not need it. */
-@media (min-width: 800px) {
-  #stage:not(.touch) #glance {
-    bottom: max(
-      16px,
-      3vh,
-      calc(
-        max(-2vh, 50vh - 48vw / 1.58)
-        + clamp(14px, 1.7vw, 28px)
-        + clamp(12px, 1.5vw, 22px)
-        + clamp(5px, 0.45vw, 9px)
-        + 48px
-      )
-    );
-  }
+/* The card stops at the credit band's top: leftover viewport under the
+   window, the three bezel steps, --dock-clear, and the credit line.
+   16px covers the window's drift. Compact phones and the open fold
+   keep the positions above and below. */
+#stage:not(.compact):not(.fold) #glance {
+  bottom: max(
+    16px,
+    3vh,
+    calc(
+      max(-2vh, 50vh - 48vw / 1.58)
+      + clamp(14px, 1.7vw, 28px)
+      + clamp(12px, 1.5vw, 22px)
+      + clamp(5px, 0.45vw, 9px)
+      + var(--dock-clear)
+      + var(--credit-h)
+      + 16px
+    )
+  );
 }
 
 #subs {
