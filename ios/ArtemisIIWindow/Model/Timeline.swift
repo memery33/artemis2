@@ -91,12 +91,14 @@ struct Segment: Decodable, Equatable, Identifiable {
     let start: Date
     let end: Date
     let file: String
+    let targetID: String
 
     var id: String { nasaID }
 
     enum CodingKeys: String, CodingKey {
         case nasaID = "nasa_id"
         case track, start, end, file
+        case targetID = "target_id"
     }
 
     init(from decoder: Decoder) throws {
@@ -106,6 +108,7 @@ struct Segment: Decodable, Equatable, Identifiable {
         startUTC = try raw.decode(String.self, forKey: .start)
         endUTC = try raw.decode(String.self, forKey: .end)
         file = try raw.decode(String.self, forKey: .file)
+        targetID = try raw.decodeIfPresent(String.self, forKey: .targetID) ?? ""
         start = try ISO8601.parse(startUTC)
         end = try ISO8601.parse(endUTC)
     }
@@ -147,6 +150,8 @@ struct Frame: Decodable, Equatable, Identifiable {
     let file: String
     let credit: String
     let look: String?
+    let targetID: String
+    let exposureNote: String
 
     var id: String { nasaID }
     var isCabinCard: Bool { nasaID == Timeline.cabinID }
@@ -156,6 +161,8 @@ struct Frame: Decodable, Equatable, Identifiable {
         case nasaID = "nasa_id"
         case instrument, window, file, credit, look
         case cameraLabel = "camera_label"
+        case targetID = "target_id"
+        case exposureNote = "exposure_note"
     }
 
     init(from decoder: Decoder) throws {
@@ -168,6 +175,8 @@ struct Frame: Decodable, Equatable, Identifiable {
         file = try raw.decode(String.self, forKey: .file)
         credit = try raw.decode(String.self, forKey: .credit)
         look = try raw.decodeIfPresent(String.self, forKey: .look)
+        targetID = try raw.decodeIfPresent(String.self, forKey: .targetID) ?? ""
+        exposureNote = try raw.decodeIfPresent(String.self, forKey: .exposureNote) ?? ""
         date = try ISO8601.parse(utc)
     }
 }

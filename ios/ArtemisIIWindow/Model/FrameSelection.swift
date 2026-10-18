@@ -1,6 +1,6 @@
 import Foundation
 
-enum WindowSide: String, Equatable {
+enum WindowSide: String, Equatable, Sendable {
     case nikon = "2"
     case cab = "3"
 }
@@ -74,6 +74,46 @@ enum FrameSelection {
         guard let next, next > current else { return 0 }
         let span = next.timeIntervalSince(current)
         return min(1, max(0, now.timeIntervalSince(current) / span))
+    }
+
+    /// Dark Cab Cam frames are short exposures. The shipped JPEGs are mostly
+    /// dark, and the label notes a small bright patch near the middle.
+    static func appearance(_ frame: Frame) -> String {
+        let note = frame.exposureNote
+        if frame.look == "dark", note.range(of: "bright patch", options: .caseInsensitive) != nil {
+            return "Mostly dark short exposure, with a small bright patch near the middle. Not brightened."
+        }
+        if frame.look == "surface" {
+            return "Shown as photographed. No window frame is drawn over this picture."
+        }
+        return "Shown as photographed."
+    }
+
+    /// Short age, without the "not moved" sentence. Nil within two seconds.
+    static func clockGap(now: Date, taken: Date) -> String? {
+        let delta = now.timeIntervalSince(taken)
+        if abs(delta) < 2 { return nil }
+        let phrase = spanPhrase(abs(delta))
+        if delta > 0 { return "\(phrase) before this clock" }
+        return "\(phrase) after this clock"
+    }
+
+    /// How far the photograph's own timestamp sits from the Orion clock.
+    static func clockOffset(now: Date, taken: Date) -> String? {
+        guard let gap = clockGap(now: now, taken: taken) else { return nil }
+        if now.timeIntervalSince(taken) >= 45 {
+            return "Photo taken \(gap). Not moved to match it."
+        }
+        return "Photo taken \(gap)."
+    }
+
+    static func spanPhrase(_ seconds: TimeInterval) -> String {
+        let whole = Int(abs(seconds).rounded())
+        let minutes = whole / 60
+        let secs = whole % 60
+        if minutes > 0, secs > 0 { return "\(minutes) min \(secs) s" }
+        if minutes > 0 { return "\(minutes) min" }
+        return "\(secs) s"
     }
 
     static func subtitle(at time: Date, track: String, lines: [TranscriptLine]) -> TranscriptLine? {

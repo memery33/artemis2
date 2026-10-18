@@ -9,12 +9,14 @@ struct DockBar: View {
     @EnvironmentObject private var model: PlaybackModel
     @State private var about = false
     @State private var transcript = false
+    @State private var moments = false
     var placement: DockPlacement = .bottom
 
     var body: some View {
         controls
             .sheet(isPresented: $about) { AboutView() }
             .sheet(isPresented: $transcript) { TranscriptSheet() }
+            .sheet(isPresented: $moments) { MomentsSheet() }
     }
 
     @ViewBuilder
@@ -29,6 +31,7 @@ struct DockBar: View {
 
     private var bottomControls: some View {
         VStack(alignment: .leading, spacing: 8) {
+            MissionScrubber()
             Toggle(isOn: Binding(
                 get: { model.spatial },
                 set: { model.setSpatial($0) }
@@ -54,6 +57,7 @@ struct DockBar: View {
                     windowButton(.cab, title: "3", label: "Window 3")
                     crewButton
                     linesButton
+                    momentsButton
                     rangeButton
                     aboutButton
                 }
@@ -66,6 +70,7 @@ struct DockBar: View {
                     }
                     HStack(spacing: 8) {
                         linesButton
+                        momentsButton
                         rangeButton
                         aboutButton
                     }
@@ -85,6 +90,7 @@ struct DockBar: View {
     private var railControls: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
+                MissionScrubber()
                 Toggle(isOn: Binding(
                     get: { model.spatial },
                     set: { model.setSpatial($0) }
@@ -105,6 +111,7 @@ struct DockBar: View {
                 }
                 crewButton
                 linesButton
+                momentsButton
                 rangeButton
                 aboutButton
                 CabinCard(height: 72)
@@ -132,6 +139,11 @@ struct DockBar: View {
 
     private var linesButton: some View {
         dockButton("Lines", label: "Transcript") { transcript = true }
+    }
+
+    private var momentsButton: some View {
+        dockButton("Moments", label: "Milestones") { moments = true }
+            .accessibilityIdentifier("moments-button")
     }
 
     private var rangeButton: some View {

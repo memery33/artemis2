@@ -690,7 +690,46 @@ button.on, button[aria-pressed="true"] {
   gap: 8px;
 }
 
+.scrubwrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+#coverage {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(244, 241, 234, 0.15);
+  overflow: hidden;
+}
+#coverage .audio {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(244, 241, 234, 0.72);
+}
+#coverage .photo {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #d7b15e;
+}
 #scrub, #offset { flex: 1; accent-color: #f4f1ea; }
+#moments-panel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+#moments-panel button {
+  text-align: left;
+  white-space: normal;
+  line-height: 1.35;
+}
 .offset {
   display: flex;
   gap: 10px;

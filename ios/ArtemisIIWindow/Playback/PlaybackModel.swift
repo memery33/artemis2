@@ -3,7 +3,7 @@ import Combine
 import MediaPlayer
 import UIKit
 
-enum MissionRange: Equatable {
+enum MissionRange: Equatable, Sendable {
     case flyby
     case cab
 }
@@ -74,6 +74,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var graphReady = false
     private var pan: Float = 0
     private var rebuilding = false
+    /// The mission scrubber owns the clock until the finger lifts.
+    private var scrubbing = false
     private var resumeAfterInterrupt = false
     private var commandsInstalled = false
     private var lastWall: CFTimeInterval?
@@ -272,10 +274,7 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     func seek(to date: Date) {
         guard let span = activeSpan else { return }
-        var target = date
-        if target < span.start { target = span.start }
-        if target > span.end { target = span.end }
-        utc = target
+        utc = MissionClock.clamp(date, to: span)
         holdUntil = nil
         rebuilding = true
         defer { rebuilding = false }
@@ -327,6 +326,63 @@ final class PlaybackModel: NSObject, ObservableObject {
         playing = true
         holdUntil = nil
         seek(to: line.date)
+        engagePlayback()
+    }
+
+    /// Moves the clock, the crew track, the window, and the recording together.
+    func jump(to milestone: Milestone) {
+        guard let timeline else { return }
+        let cue = MilestoneSeek.cue(
+            for: milestone,
+            timeline: timeline,
+            range: range,
+            trackID: trackID,
+            window: window
+        )
+        if cue.range != range {
+            range = cue.range
+            currentFile = nil
+            audioFile = nil
+        }
+        if cue.trackID != trackID {
+            trackID = cue.trackID
+            if timeline.crew.contains(where: { $0.id == crewID && $0.track == cue.trackID }) != true,
+               let member = timeline.crew.first(where: { $0.track == cue.trackID }) {
+                crewID = member.id
+            }
+            currentFile = nil
+            audioFile = nil
+        }
+        if window != cue.window {
+            setWindow(cue.window)
+        }
+        playing = true
+        holdUntil = nil
+        scrubbing = false
+        seek(to: cue.date)
+        engagePlayback()
+    }
+
+    func beginScrub() {
+        scrubbing = true
+        lastWall = nil
+    }
+
+    func scrub(toFraction fraction: Double) {
+        guard scrubbing, let span = activeSpan else { return }
+        let duration = span.end.timeIntervalSince(span.start)
+        let date = span.start.addingTimeInterval(duration * min(1, max(0, fraction)))
+        utc = MissionClock.clamp(date, to: span)
+    }
+
+    func endScrub() {
+        guard scrubbing else { return }
+        scrubbing = false
+        lastWall = nil
+        seek(to: utc)
+    }
+
+    private func engagePlayback() {
         guard playing, !engineFailed else { return }
         do {
             try activateSpokenSession()
@@ -770,7 +826,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func tickOnMain(_ timestamp: CFTimeInterval) {
-        guard !rebuilding else { return }
+        guard !rebuilding, !scrubbing else { return }
         let now = timestamp
         let rawDelta = lastWall.map { max(0, now - $0) } ?? 0
         lastWall = now

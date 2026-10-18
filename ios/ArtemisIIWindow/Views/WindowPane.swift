@@ -236,13 +236,9 @@ struct FrameCaption: View {
 
     private func cabNote(_ frame: Frame) -> String {
         var parts = ["Taken \(Stamp.clock(frame.utc)) UTC · \(frame.nasaID)."]
-        if frame.look == "dark" {
-            parts.append("Real GoPro exposure, nearly black. Not brightened.")
-        } else {
-            parts.append("Shown as photographed.")
-        }
-        if model.utc.timeIntervalSince(frame.date) > 45 {
-            parts.append("This frame was not moved to match the clock.")
+        parts.append(FrameSelection.appearance(frame))
+        if let age = FrameSelection.clockOffset(now: model.utc, taken: frame.date) {
+            parts.append(age)
         }
         return parts.joined(separator: " ")
     }
@@ -306,11 +302,11 @@ struct CompanionPane: View {
             }
             return "\(label). No frame was taken at this time."
         }
-        let taken = "\(label). Taken \(Stamp.clock(frame.utc)) UTC."
-        if side == .cab, model.utc.timeIntervalSince(frame.date) > 45 {
-            return "\(taken) Not moved to match the clock."
+        let when = Stamp.clock(frame.utc)
+        if let gap = FrameSelection.clockGap(now: model.utc, taken: frame.date) {
+            return "\(label). Taken \(when) UTC, \(gap)."
         }
-        return taken
+        return "\(label). Taken \(when) UTC."
     }
 }
 
