@@ -395,6 +395,16 @@ async function ensureAudio() {
   return true;
 }
 
+function standingCredit() {
+  const line = (doc.attribution && doc.attribution.credit) || "Credit: NASA/Artemis II Crew";
+  return `${line}. Independent viewer, not affiliated with NASA.`;
+}
+
+function frameCredit(frame) {
+  if (!frame || !frame.credit) return standingCredit();
+  return `${frame.credit}. Independent viewer, not affiliated with NASA.`;
+}
+
 function paint() {
   const view = visiblePair(utcMs);
   const frame = view.cur;
@@ -423,9 +433,7 @@ function paint() {
     photoB.style.opacity = "0";
     photoA.style.opacity = String(fadeIn);
     applyMotion(photoA, photoB, 0, 0);
-    credit.textContent = fadeIn > 0.18
-      ? `${arrival.credit}. Independent viewer, not a NASA product.`
-      : "";
+    credit.textContent = fadeIn > 0.18 ? frameCredit(arrival) : standingCredit();
     const moon = photoA.complete && photoA.naturalWidth ? sampleMoon(photoA) * fadeIn : 0;
     stage.style.setProperty("--moon", moon.toFixed(3));
     easePlate(fadeIn > 0.2 ? photoA : null);
@@ -442,7 +450,7 @@ function paint() {
     } else {
       empty.textContent = "No shipped frame for this camera.";
     }
-    credit.textContent = "";
+    credit.textContent = standingCredit();
     stage.style.setProperty("--moon", "0");
     easePlate(null);
   } else {
@@ -478,7 +486,7 @@ function paint() {
       photoB.style.opacity = "0";
     }
     applyMotion(photoA, photoB, progress, view.index);
-    credit.textContent = `${shown.credit}. Independent viewer, not a NASA product.`;
+    credit.textContent = frameCredit(shown);
     const aOp = parseFloat(photoA.style.opacity) || 0;
     const bOp = parseFloat(photoB.style.opacity) || 0;
     const visible = aOp >= bOp ? photoA : photoB;

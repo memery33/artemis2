@@ -237,7 +237,9 @@
   function wantsSmallImage(narrow, saveData, effectiveType, fold) {
     if (saveData === true) return true;
     if (effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g") return true;
-    // The open fold has room for the shipped 1200 px frame. A slow link still
+    // The open fold, including a Duo at 3x, keeps the shipped 1200 px frame.
+    // The window is about 570 CSS px wide; at 3x that is ~1700 device pixels,
+    // so the 720 sibling would be the blurrier source. A slow link still
     // stays on the smaller sibling.
     if (fold === true) return false;
     if (narrow) return true;
