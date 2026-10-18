@@ -5,6 +5,8 @@ struct WindowPane: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @State private var turn: Double = 0
+    /// Landscape draws the clocks, quote, and credit on the glass.
+    var glassChrome: Bool = false
 
     private var side: WindowSide { model.window }
 
@@ -74,7 +76,11 @@ struct WindowPane: View {
                         .foregroundStyle(.white.opacity(0.85))
                         .padding(24)
                 }
-                subtitle
+                if glassChrome {
+                    landscapeChrome
+                } else {
+                    subtitle
+                }
                 if side == .nikon {
                     bezel
                 }
@@ -120,6 +126,39 @@ struct WindowPane: View {
                 .padding(.horizontal, side == .nikon ? 18 : 6)
                 .padding(.bottom, side == .nikon ? 20 : 6)
             }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// Clocks, the whole quote, and the credit sit on the pane. Padding keeps
+    /// them inside the bezel and clear of the rounded corners.
+    private var landscapeChrome: some View {
+        VStack(spacing: 0) {
+            ClockReadout()
+                .padding(.horizontal, 22)
+                .padding(.top, side == .nikon ? 26 : 10)
+                .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
+            Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 6) {
+                if let line = model.subtitleLine() {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(line.speaker)
+                            .font(.caption.weight(.semibold))
+                        Text(line.text)
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                FrameCaption(side: side)
+                CreditLine()
+                StatusLines()
+            }
+            .foregroundStyle(.white)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.black.opacity(0.55))
+            .padding(.horizontal, side == .nikon ? 18 : 6)
+            .padding(.bottom, side == .nikon ? 22 : 8)
         }
         .allowsHitTesting(false)
     }

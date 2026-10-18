@@ -51,7 +51,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var spatial = false
     @Published var arrived = false
     @Published var engineFailed = false
-    /// Phone layout reads the 720 sibling. The open fold reads the shipped frame.
+    /// Phone and landscape read the 720 sibling. The open fold reads the shipped frame.
     @Published var phoneImages = true
     /// Bumped when a prefetched frame lands in the cache. Views read this and stay cache-only.
     @Published private(set) var frameCacheEpoch = 0

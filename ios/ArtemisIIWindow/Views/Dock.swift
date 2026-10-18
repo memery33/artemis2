@@ -1,11 +1,33 @@
 import SwiftUI
 
+enum DockPlacement {
+    case bottom
+    case rail
+}
+
 struct DockBar: View {
     @EnvironmentObject private var model: PlaybackModel
     @State private var about = false
     @State private var transcript = false
+    var placement: DockPlacement = .bottom
 
     var body: some View {
+        controls
+            .sheet(isPresented: $about) { AboutView() }
+            .sheet(isPresented: $transcript) { TranscriptSheet() }
+    }
+
+    @ViewBuilder
+    private var controls: some View {
+        switch placement {
+        case .bottom:
+            bottomControls
+        case .rail:
+            railControls
+        }
+    }
+
+    private var bottomControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(isOn: Binding(
                 get: { model.spatial },
@@ -53,8 +75,40 @@ struct DockBar: View {
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.black.opacity(0.94))
-        .sheet(isPresented: $about) { AboutView() }
-        .sheet(isPresented: $transcript) { TranscriptSheet() }
+    }
+
+    private var railControls: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                    get: { model.spatial },
+                    set: { model.setSpatial($0) }
+                )) {
+                    Text("Spatial")
+                }
+                .accessibilityHint("Moves the real recording toward this window. Nothing is added.")
+                .toggleStyle(.switch)
+                .tint(.white)
+                .font(.subheadline)
+                .foregroundStyle(.white)
+
+                playButton
+                HStack(spacing: 8) {
+                    windowButton(.nikon, title: "2", label: "Window 2")
+                    windowButton(.cab, title: "3", label: "Window 3")
+                }
+                crewButton
+                linesButton
+                rangeButton
+                aboutButton
+                CabinCard(height: 72)
+                TargetMap()
+                    .frame(height: 120)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
+        }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private var playButton: some View {
@@ -103,7 +157,9 @@ struct DockBar: View {
                 .font(.subheadline.weight(selected ? .semibold : .regular))
                 .foregroundStyle(.white)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .frame(minWidth: 44, minHeight: 44)
+                .frame(maxWidth: placement == .rail ? .infinity : nil)
                 .padding(.horizontal, 8)
                 .background(selected ? Color.white.opacity(0.2) : Color.white.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

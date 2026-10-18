@@ -73,21 +73,26 @@ private struct ScreenSizeKey: PreferenceKey {
 struct StageView: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var screen = CGSize.zero
 
-    private var fold: Bool {
-        LayoutChoice.isOpenFold(
+    private var mode: StageMode {
+        LayoutChoice.stage(
             width: Double(screen.width),
             height: Double(screen.height),
-            regularWidth: horizontalSizeClass == .regular
+            regularWidth: horizontalSizeClass == .regular,
+            compactHeight: verticalSizeClass == .compact
         )
     }
 
     var body: some View {
         Group {
-            if fold {
+            switch mode {
+            case .fold:
                 FoldLayout()
-            } else {
+            case .landscape:
+                LandscapeLayout()
+            case .phone:
                 PhoneLayout()
             }
         }
@@ -98,9 +103,18 @@ struct StageView: View {
             .ignoresSafeArea()
         }
         .onPreferenceChange(ScreenSizeKey.self) { screen = $0 }
-        .onAppear { model.phoneImages = !fold }
-        .onChange(of: fold) { _, isFold in
-            model.phoneImages = !isFold
+        .onAppear { applyFrameTier() }
+        .onChange(of: mode) { _, _ in
+            applyFrameTier()
+        }
+    }
+
+    /// Only the open fold changes the frame tier. Turning a phone sideways
+    /// does not seek, pause, or rebuild the player.
+    private func applyFrameTier() {
+        let phone = LayoutChoice.readsPhoneFrames(mode)
+        if model.phoneImages != phone {
+            model.phoneImages = phone
         }
     }
 }
@@ -116,6 +130,26 @@ struct PhoneLayout: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             DockBar()
+        }
+    }
+}
+
+/// Landscape phone. The glass fills the safe area; the island and home
+/// indicator stay on the cabin. Controls sit in a side rail. Playback is
+/// the same object as portrait, so rotation does not touch the clock.
+struct LandscapeLayout: View {
+    var body: some View {
+        GeometryReader { geo in
+            let rail = min(156, max(128, geo.size.width * 0.18))
+            HStack(alignment: .top, spacing: 8) {
+                WindowPane(glassChrome: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                DockBar(placement: .rail)
+                    .frame(width: rail, maxHeight: .infinity)
+            }
+            .padding(.leading, 8)
+            .padding(.trailing, 4)
+            .padding(.vertical, 6)
         }
     }
 }
