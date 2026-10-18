@@ -747,7 +747,24 @@ button.on, button[aria-pressed="true"] {
     gap: 8px;
     pointer-events: auto;
   }
+  /* The dock lift would drop the cabin card onto the subtitle. Sit it in the
+     right column, above the transcript, with the photo capped so the credit fits. */
+  #stage.touch #glance {
+    left: auto;
+    right: max(12px, env(safe-area-inset-right));
+    top: max(12px, env(safe-area-inset-top));
+    bottom: auto;
+    width: min(268px, 30vw);
+    max-height: 168px;
+    z-index: 6;
+    overflow: hidden;
+  }
+  #stage.touch #glance img {
+    height: 64px;
+    object-fit: cover;
+  }
   #stage.touch #rail {
+    top: calc(max(12px, env(safe-area-inset-top)) + 176px);
     bottom: calc(max(8px, env(safe-area-inset-bottom)) + 60px);
   }
 }
