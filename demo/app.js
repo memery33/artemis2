@@ -527,6 +527,7 @@ function paint() {
       say.textContent = line.text;
       subs.replaceChildren(who, say);
     }
+    syncSubsBand();
   }
 
   const spanDoc = activeSpan();
@@ -983,11 +984,19 @@ function openingSegment() {
 
 let creditMeasured = "";
 let creditBandText = "";
+let subsMeasured = "";
 function syncCreditBand() {
   const next = `${credit.getBoundingClientRect().height.toFixed(2)}px`;
   if (next === creditMeasured) return;
   creditMeasured = next;
   stage.style.setProperty("--credit-measured", next);
+}
+
+function syncSubsBand() {
+  const next = `${subs.getBoundingClientRect().height.toFixed(2)}px`;
+  if (next === subsMeasured) return;
+  subsMeasured = next;
+  stage.style.setProperty("--subs-measured", next);
 }
 
 function layoutChrome() {
@@ -1008,6 +1017,7 @@ function layoutChrome() {
     shownRail = "";
   }
   syncCreditBand();
+  syncSubsBand();
 }
 
 function paintRail() {
@@ -1219,8 +1229,10 @@ async function boot() {
     layoutChrome();
     syncClockLane();
     syncCreditBand();
+    syncSubsBand();
   });
   if (window.ResizeObserver) new ResizeObserver(syncCreditBand).observe(credit);
+  if (window.ResizeObserver) new ResizeObserver(syncSubsBand).observe(subs);
   if (window.ResizeObserver) new ResizeObserver(syncClockLane).observe(document.getElementById("clocks"));
   const relayout = () => {
     shownId = null;
