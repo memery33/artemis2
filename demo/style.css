@@ -236,9 +236,10 @@ button, input[type="range"] { touch-action: manipulation; }
   position: absolute;
   z-index: 3;
   left: max(16px, 2vw);
-  /* Above the credit band on a centered window. 32vh clears it at 1440×900
-     and at 890×626. Phone and fold rules below place the card elsewhere. */
-  bottom: max(16px, 3vh, 32vh);
+  /* Clears the credit band at 1440×900 and at 890×626. A narrow portrait
+     window is too short for this lift; the rule below parks the card
+     under the glass instead. */
+  bottom: 32vh;
   width: min(210px, 22vw);
   margin: 0;
   padding: 8px 8px 10px;
@@ -266,6 +267,22 @@ button, input[type="range"] { touch-action: manipulation; }
 /* Dock is a 44px row inset 8px, so the credit sits above it. */
 #stage.touch #glance {
   bottom: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
+}
+
+/* A fine pointer at a phone width keeps the desktop window, centered, so
+   32vh drops the cabin card through the credit. Sit the card in the cabin
+   below that window. The same spot stays clear when the controls are open. */
+@media (orientation: portrait) and (max-width: 560px) {
+  #stage:not(.touch) #glance {
+    top: auto;
+    left: auto;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    width: min(168px, 44vw);
+    max-height: calc(50vh - 48vw / 1.58 - 28px);
+    max-height: calc(50dvh - 48vw / 1.58 - 28px);
+    overflow: hidden;
+  }
 }
 
 #subs {

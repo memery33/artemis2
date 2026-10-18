@@ -207,7 +207,8 @@ const rows = {
   deskPrefetch: logic.prefetchBeforeTap(false),
   cellPrefetch: logic.prefetchBeforeTap(true),
   foldFull: logic.wantsSmallImage(true, false, "4g", true),
-  fold3x: logic.wantsSmallImage(true, false, "4g", true),
+  fold3x: logic.wantsSmallImage(true, false, "4g", true, 3),
+  fold1x: logic.wantsSmallImage(true, false, "4g", true, 1),
   foldSave: logic.wantsSmallImage(true, true, "4g", true),
   foldSlow: logic.wantsSmallImage(false, false, "3g", true),
   modeFold: logic.screenMode(890, 626, true),
@@ -254,6 +255,7 @@ console.log(JSON.stringify(rows));
     assert row["cellPrefetch"] == {"opener": True, "otherWindow": False, "audio": False}
     assert row["foldFull"] is False
     assert row["fold3x"] is False
+    assert row["fold1x"] is True
     assert row["foldSave"] is True
     assert row["foldSlow"] is True
     assert row["modeFold"] == "fold"

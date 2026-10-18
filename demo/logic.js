@@ -234,14 +234,18 @@
     return file.replace(/\.webp$/i, ".720.webp");
   }
 
-  function wantsSmallImage(narrow, saveData, effectiveType, fold) {
+  function wantsSmallImage(narrow, saveData, effectiveType, fold, dpr) {
     if (saveData === true) return true;
     if (effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g") return true;
-    // The open fold, including a Duo at 3x, keeps the shipped 1200 px frame.
-    // The window is about 570 CSS px wide; at 3x that is ~1700 device pixels,
-    // so the 720 sibling would be the blurrier source. A slow link still
-    // stays on the smaller sibling.
-    if (fold === true) return false;
+    // The open-fold window is about 570 CSS px. Keep the shipped 1200 px frame
+    // when it is sharper than the 720 sibling. A Duo at 3x is about 1710
+    // device pixels, so it stays on the full frame. At 1x the 720 sibling
+    // already covers the window. An omitted ratio keeps the full frame.
+    // A slow link still uses the smaller sibling, above.
+    if (fold === true) {
+      if (!(Number.isFinite(dpr) && dpr > 0)) return false;
+      return 570 * dpr <= 720;
+    }
     if (narrow) return true;
     return false;
   }
