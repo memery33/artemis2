@@ -366,12 +366,13 @@ button, input[type="range"] { touch-action: manipulation; }
 }
 
 /* When the glass cannot hold the quote in three lines, the line sits on the
-   bezel, above the pane, at the window's width, so the words stay whole.
-   8px keeps the block off the glass edge. --subs-bezel-left moves the line
-   past the cabin card when that card is open; otherwise it is the window edge. */
+   bezel, above the pane. Width is the viewport minus padding, so a
+   window-width inset cannot run the words off the screen. The quote wraps.
+   --subs-bezel-left and --subs-bezel-right are that padding in glass
+   coordinates. The left edge moves past the cabin card when the card is open. */
 #stage.subs-bezel:not(.touch) #subs {
-  left: var(--subs-bezel-left, calc(8px - var(--glass-inset)));
-  right: calc(8px - var(--glass-inset));
+  left: var(--subs-bezel-left, max(16px, 2vw));
+  right: var(--subs-bezel-right, max(16px, 2vw));
   bottom: calc(100% + 8px);
   width: auto;
   max-width: none;
@@ -435,7 +436,9 @@ button, input[type="range"] { touch-action: manipulation; }
 #subs .say {
   display: block;
   margin-top: 3px;
-  overflow: hidden;
+  /* A hidden overflow clipped crew words that ran past the line. Wrap them. */
+  overflow: visible;
+  overflow-wrap: break-word;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-weight: 400;
   font-size: calc(clamp(14px, 1.45vw, 20px) * var(--subs-scale, 1));
