@@ -9,12 +9,12 @@ The Xcode project is generated. It is gitignored. These commands are for a Mac w
 ```bash
 cd ios
 xcodegen generate
-xcodebuild -project ArtemisIIWindow.xcodeproj -scheme ArtemisIIWindow -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:ArtemisIIWindowTests test
+xcodebuild -project ArtemisIIWindow.xcodeproj -scheme ArtemisIIWindow -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:ArtemisIIWindowTests test
 xcodebuild -project ArtemisIIWindow.xcodeproj -scheme ArtemisIIWindow -configuration Release -destination 'generic/platform=iOS' -archivePath "$PWD/build/ArtemisIIWindow.xcarchive" DEVELOPMENT_TEAM=NHYXW2AY53 archive
 xcodebuild -exportArchive -archivePath "$PWD/build/ArtemisIIWindow.xcarchive" -exportPath "$PWD/build/export" -exportOptionsPlist ExportOptions.plist
 ```
 
-Signing is automatic for team `NHYXW2AY53`. If the simulator is not named “iPhone 16”, pick another iPhone simulator. Export uses `app-store-connect` / `upload`, so the archive is sent to App Store Connect. The Apple ID that uploads has to be signed in, and the App Store Connect record for `com.memery33.artemis2window` has to exist. `ITSAppUsesNonExemptEncryption` is false.
+Signing is automatic for team `NHYXW2AY53`. If the simulator is not named “iPhone 17”, pick another iPhone simulator. Export uses `app-store-connect` / `upload`, so the archive is sent to App Store Connect. The Apple ID that uploads has to be signed in, and the App Store Connect record for `com.memery33.artemis2window` has to exist. `ITSAppUsesNonExemptEncryption` is false.
 
 ## Playback
 

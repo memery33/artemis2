@@ -332,7 +332,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         attenuation.referenceDistance = 10
         attenuation.maximumDistance = 50
         attenuation.rolloffFactor = 0.1
-        player.renderingAlgorithm = .equalPower
+        player.renderingAlgorithm = .equalPowerPanning
         player.volume = 1
     }
 
