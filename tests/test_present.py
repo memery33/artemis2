@@ -367,6 +367,82 @@ console.log(JSON.stringify(report));
         assert row["count"] == 6
 
 
+def _overlap_area(a, b):
+    if not a or not b:
+        return 0
+    width = min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"])
+    height = min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"])
+    if width <= 0 or height <= 0:
+        return 0
+    return width * height
+
+
+def test_desktop_card_clears_the_credit_and_subtitle():
+    """A fine pointer keeps the desktop card. It must miss the credit and the subtitle."""
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    from playwright.sync_api import sync_playwright
+
+    handler = partial(SimpleHTTPRequestHandler, directory=str(ROOT / "demo"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    sizes = [(1024, 768), (1280, 720), (1366, 768), (1440, 900)]
+    boxes = r"""
+() => {
+  const box = (el) => {
+    const r = el.getBoundingClientRect();
+    return {x: r.x, y: r.y, w: r.width, h: r.height};
+  };
+  const glance = document.getElementById('glance');
+  return {
+    glance: box(glance),
+    credit: box(document.getElementById('credit')),
+    subs: box(document.getElementById('subs')),
+    shown: !glance.hidden && glance.getBoundingClientRect().height > 0,
+  };
+}
+"""
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome", headless=True)
+            for width, height in sizes:
+                context = browser.new_context(
+                    viewport={"width": width, "height": height},
+                    has_touch=False,
+                    reduced_motion="reduce",
+                )
+                page = context.new_page()
+                page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
+                page.evaluate("() => sessionStorage.setItem('artemis2.hint','1')")
+                page.click("#enter")
+                page.evaluate(
+                    """() => {
+                      const scrub = document.getElementById('scrub');
+                      const start = Date.parse('2026-04-06T19:33:00Z');
+                      const end = Date.parse('2026-04-06T19:48:30Z');
+                      scrub.value = String(Math.round((8000 / (end - start)) * 1000));
+                      scrub.dispatchEvent(new Event('input', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_function("() => !document.getElementById('glance').hidden")
+                if page.locator("#play").inner_text().strip() == "Pause":
+                    page.click("#play")
+                page.wait_for_timeout(200)
+                row = page.evaluate(boxes)
+                context.close()
+                assert row["shown"], (width, height)
+                assert _overlap_area(row["glance"], row["credit"]) == 0, (width, height, row)
+                assert _overlap_area(row["glance"], row["subs"]) == 0, (width, height, row)
+                assert _overlap_area(row["subs"], row["credit"]) == 0, (width, height, row)
+            browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_narrow_webp_variants_are_downscales_of_the_shipped_frames():
     images = ROOT / "demo" / "data" / "images"
     sources = sorted(path for path in images.glob("*.webp") if not path.name.endswith(".720.webp"))
