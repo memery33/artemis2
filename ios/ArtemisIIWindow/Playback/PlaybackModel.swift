@@ -1013,41 +1013,55 @@ final class PlaybackModel: NSObject, ObservableObject {
         add(center.togglePlayPauseCommand) { model, _ in
             model.toggle()
         }
-        add(center.skipForwardCommand) { model, event in
-            let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
+        add(center.skipForwardCommand, read: { event in
+            (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
+        }) { model, interval in
             model.skip(by: interval)
         }
-        add(center.skipBackwardCommand) { model, event in
-            let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
-            model.skip(by: -interval)
+        add(center.skipBackwardCommand, read: { event in
+            -((event as? MPSkipIntervalCommandEvent)?.interval ?? 15)
+        }) { model, interval in
+            model.skip(by: interval)
         }
-        let positionCommand = center.changePlaybackPositionCommand
-        // Handlers are delivered on the main thread. MPRemoteCommandEvent is
-        // not Sendable, so it is not hopped onto a Task.
-        let positionToken = positionCommand.addTarget { [weak self] event in
-            guard let position = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime else {
-                return .commandFailed
-            }
-            MainActor.assumeIsolated {
-                self?.seekElapsed(position)
-            }
-            return .success
+        add(center.changePlaybackPositionCommand, read: { event in
+            (event as? MPChangePlaybackPositionCommandEvent)?.positionTime
+        }) { model, position in
+            model.seekElapsed(position)
         }
-        lifetime.commands.append((positionCommand, positionToken))
     }
 
+    /// `MPRemoteCommandEvent` is not Sendable, and these handlers are not
+    /// pinned to the main thread. The closure copies a Double, then `deliver`
+    /// runs the action on the main actor.
     private func add(
         _ command: MPRemoteCommand,
-        action: @escaping @MainActor (PlaybackModel, MPRemoteCommandEvent) -> Void
+        read: @escaping @Sendable (MPRemoteCommandEvent) -> Double? = { _ in 0 },
+        action: @escaping @MainActor (PlaybackModel, Double) -> Void
     ) {
-        let token = command.addTarget { [weak self] event in
-            MainActor.assumeIsolated {
+        let token = command.addTarget { @Sendable [weak self] event in
+            guard let number = read(event) else { return .commandFailed }
+            Self.deliver(number) { [weak self] value in
                 guard let self else { return }
-                action(self, event)
+                action(self, value)
             }
             return .success
         }
         lifetime.commands.append((command, token))
+    }
+
+    /// Hop a remote-command number onto the main actor. A handler that is
+    /// already on the main thread runs immediately; any other queue asyncs.
+    nonisolated static func deliver(
+        _ value: Double,
+        action: @escaping @MainActor (Double) -> Void
+    ) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { action(value) }
+        } else {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { action(value) }
+            }
+        }
     }
 
     private func refreshNowPlaying(force: Bool) {

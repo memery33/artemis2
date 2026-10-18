@@ -51,7 +51,11 @@ final class LayoutChoiceTests: XCTestCase {
         )
         XCTAssertEqual(
             LayoutChoice.stage(width: 0, height: 0, regularWidth: false, compactHeight: true),
-            .landscape
+            .phone
+        )
+        XCTAssertEqual(
+            LayoutChoice.stage(width: 874, height: 0, regularWidth: false, compactHeight: true),
+            .phone
         )
         XCTAssertEqual(
             LayoutChoice.stage(width: 0, height: 0, regularWidth: true, compactHeight: false),

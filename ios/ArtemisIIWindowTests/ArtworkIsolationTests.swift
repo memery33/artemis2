@@ -28,4 +28,20 @@ final class ArtworkIsolationTests: XCTestCase {
         }
         wait(for: [done], timeout: 5)
     }
+
+    /// Remote-command handlers are not pinned to the main thread. Assuming
+    /// the main actor from a background queue traps.
+    @MainActor
+    func testRemoteCommandHandlerRunsOffTheMainThread() {
+        let done = expectation(description: "remote command hopped to main")
+        DispatchQueue.global(qos: .userInitiated).async {
+            XCTAssertFalse(Thread.isMainThread)
+            PlaybackModel.deliver(15) { value in
+                XCTAssertTrue(Thread.isMainThread)
+                XCTAssertEqual(value, 15)
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 5)
+    }
 }
