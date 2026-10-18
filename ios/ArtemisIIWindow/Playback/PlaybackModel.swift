@@ -39,7 +39,8 @@ private final class PlaybackLifetime {
 final class PlaybackModel: NSObject, ObservableObject {
     static let spatialDefaultsKey = "artemis.spatial"
     /// Lock-screen skip and the dock skips use this same interval.
-    static let skipInterval: TimeInterval = 15
+    /// Nonisolated so the remote-command `??` autoclosure can read it.
+    nonisolated static let skipInterval: TimeInterval = 15
 
     private(set) var timeline: Timeline?
     private(set) var loadError: String?
@@ -549,8 +550,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func currentArtworkFile() -> String {
-        if let frames = timeline?.frames,
-           let frame = FrameSelection.visiblePair(at: utc, window: window, frames: frames).current {
+        if let frame = pair(for: window).current {
             return frame.file
         }
         return "images/art002e016184.webp"
@@ -1169,8 +1169,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func artworkID() -> String {
-        guard let frames = timeline?.frames else { return "" }
-        return FrameSelection.visiblePair(at: utc, window: window, frames: frames).current?.nasaID ?? ""
+        pair(for: window).current?.nasaID ?? ""
     }
 
     private func artworkImage() -> UIImage? {

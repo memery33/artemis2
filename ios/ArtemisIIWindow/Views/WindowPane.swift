@@ -76,6 +76,20 @@ struct WindowPane: View {
                         .foregroundStyle(.white.opacity(0.85))
                         .padding(24)
                 }
+                if pair.outsideSpan, let frame = pair.current {
+                    VStack {
+                        Text(FrameSelection.outsideSpanNotice(frame: frame, now: model.utc))
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(16)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.black.opacity(0.82))
+                        Spacer(minLength: 0)
+                    }
+                    .allowsHitTesting(false)
+                }
                 if glassChrome {
                     landscapeChrome
                 } else {
@@ -217,7 +231,12 @@ struct FrameCaption: View {
                 Text(frame.credit)
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.85))
-                if side == .cab {
+                if side == .cab, pair.outsideSpan {
+                    Text(FrameSelection.outsideSpanNotice(frame: frame, now: model.utc))
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if side == .cab {
                     Text(cabNote(frame))
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.7))
@@ -281,8 +300,8 @@ struct CompanionPane: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text(caption(pair))
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .font(pair.outsideSpan ? .headline : .caption2)
+                    .foregroundStyle(.white.opacity(pair.outsideSpan ? 1 : 0.8))
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -301,6 +320,9 @@ struct CompanionPane: View {
                 }
             }
             return "\(label). No frame was taken at this time."
+        }
+        if pair.outsideSpan {
+            return FrameSelection.outsideSpanNotice(frame: frame, now: model.utc)
         }
         let when = Stamp.clock(frame.utc)
         if let gap = FrameSelection.clockGap(now: model.utc, taken: frame.date) {
@@ -497,7 +519,17 @@ enum Stamp {
 
 extension PlaybackModel {
     func pair(for side: WindowSide) -> FramePair {
-        FrameSelection.visiblePair(at: utc, window: side, frames: timeline?.frames ?? [])
+        let frames = timeline?.frames ?? []
+        guard let span = activeSpan else {
+            return FrameSelection.visiblePair(at: utc, window: side, frames: frames)
+        }
+        return FrameSelection.visiblePair(
+            at: utc,
+            window: side,
+            frames: frames,
+            spanStart: span.start,
+            spanEnd: span.end
+        )
     }
 
     func photo(_ frame: Frame, maxPixel: CGFloat) -> UIImage? {

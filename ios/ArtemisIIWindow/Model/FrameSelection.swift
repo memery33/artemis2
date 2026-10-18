@@ -9,6 +9,9 @@ struct FramePair: Equatable {
     let current: Frame?
     let next: Frame?
     let index: Int
+    /// True when `current` was taken outside the playable span and no Window 3
+    /// frame in that span exists to show instead.
+    var outsideSpan: Bool = false
 }
 
 struct Crossfade: Equatable {
@@ -32,8 +35,21 @@ enum FrameSelection {
         }.sorted { $0.date < $1.date }
     }
 
-    static func visiblePair(at time: Date, window: WindowSide, frames all: [Frame]) -> FramePair {
+    static func visiblePair(
+        at time: Date,
+        window: WindowSide,
+        frames all: [Frame],
+        spanStart: Date? = nil,
+        spanEnd: Date? = nil
+    ) -> FramePair {
         let rows = frames(all, window: window)
+        if window == .cab, let spanStart, let spanEnd, spanEnd >= spanStart {
+            if let chosen = nearestInside(rows, time: time, start: spanStart, end: spanEnd) {
+                let index = rows.firstIndex { $0.nasaID == chosen.nasaID } ?? 0
+                let next = rows.first { $0.date > chosen.date && $0.date >= spanStart && $0.date <= spanEnd }
+                return FramePair(current: chosen, next: next, index: index)
+            }
+        }
         var index = 0
         while index < rows.count && rows[index].date <= time {
             index += 1
@@ -43,7 +59,38 @@ enum FrameSelection {
         if window == .nikon, let current, time.timeIntervalSince(current.date) > staleAfter {
             return FramePair(current: nil, next: nil, index: 0)
         }
-        return FramePair(current: current, next: next, index: max(0, index - 1))
+        let outside: Bool
+        if window == .cab, let spanStart, let spanEnd, let current {
+            outside = current.date < spanStart || current.date > spanEnd
+        } else {
+            outside = false
+        }
+        return FramePair(
+            current: current,
+            next: outside ? nil : next,
+            index: max(0, index - 1),
+            outsideSpan: outside
+        )
+    }
+
+    /// Closest capture inside the span. An equal distance keeps the frame already taken.
+    private static func nearestInside(_ rows: [Frame], time: Date, start: Date, end: Date) -> Frame? {
+        let inside = rows.filter { $0.date >= start && $0.date <= end }
+        return inside.min { lhs, rhs in
+            let left = abs(lhs.date.timeIntervalSince(time))
+            let right = abs(rhs.date.timeIntervalSince(time))
+            if left != right { return left < right }
+            if (lhs.date <= time) != (rhs.date <= time) { return lhs.date <= time }
+            return lhs.date < rhs.date
+        }
+    }
+
+    static func outsideSpanNotice(frame: Frame, now: Date) -> String {
+        var parts = ["Outside this span.", "Taken \(Stamp.clock(frame.utc)) UTC · \(frame.nasaID)."]
+        if let age = clockOffset(now: now, taken: frame.date) {
+            parts.append(age)
+        }
+        return parts.joined(separator: " ")
     }
 
     static func cabinCard(at time: Date, frames: [Frame]) -> Frame? {

@@ -40,6 +40,42 @@ final class FrameSelectionTests: XCTestCase {
         XCTAssertNil(stale.next)
     }
 
+    func testWindow3At1934PrefersTheNearestFrameInsideTheSpan() throws {
+        let atClock = try pair("2026-04-06T19:34:05Z", .cab, span: timeline.window)
+        XCTAssertEqual(atClock.current?.nasaID, "art002e041322")
+        XCTAssertEqual(atClock.current?.utc, "2026-04-06T19:34:44.000Z")
+        XCTAssertNotEqual(atClock.current?.nasaID, "art002e041321")
+        XCTAssertFalse(atClock.outsideSpan)
+
+        let early = try pair("2026-04-06T19:33:10Z", .cab, span: timeline.window)
+        XCTAssertEqual(early.current?.nasaID, "art002e041322")
+        XCTAssertFalse(early.outsideSpan)
+
+        let tie = try pair("2026-04-06T19:38:44Z", .cab, span: timeline.window)
+        XCTAssertEqual(tie.current?.nasaID, "art002e041322")
+        let afterTie = try pair("2026-04-06T19:38:45Z", .cab, span: timeline.window)
+        XCTAssertEqual(afterTie.current?.nasaID, "art002e041323")
+    }
+
+    func testWindow3WithoutAnInSpanFrameSaysItIsOutside() throws {
+        let start = try date("2026-04-06T19:33:00Z")
+        let end = try date("2026-04-06T19:33:30Z")
+        let shown = FrameSelection.visiblePair(
+            at: try date("2026-04-06T19:33:10Z"),
+            window: .cab,
+            frames: timeline.frames,
+            spanStart: start,
+            spanEnd: end
+        )
+        XCTAssertEqual(shown.current?.nasaID, "art002e041321")
+        XCTAssertTrue(shown.outsideSpan)
+        XCTAssertNil(shown.next)
+        let notice = FrameSelection.outsideSpanNotice(frame: try XCTUnwrap(shown.current), now: try date("2026-04-06T19:33:10Z"))
+        XCTAssertTrue(notice.hasPrefix("Outside this span."))
+        XCTAssertTrue(notice.contains("art002e041321"))
+        XCTAssertTrue(notice.contains("before this clock"))
+    }
+
     func testWindow3KeepsOlderCabFrameAndCabinCardStaysOffTheGlass() throws {
         let cab = try pair("2026-04-06T19:40:00Z", .cab)
         XCTAssertEqual(cab.current?.nasaID, "art002e041322")
@@ -76,8 +112,14 @@ final class FrameSelectionTests: XCTestCase {
         XCTAssertNil(MapProjection.point(lon: 0, lat: 0, width: 120, height: 85))
     }
 
-    private func pair(_ utc: String, _ window: WindowSide) throws -> FramePair {
-        FrameSelection.visiblePair(at: try date(utc), window: window, frames: timeline.frames)
+    private func pair(_ utc: String, _ window: WindowSide, span: TimeSpan? = nil) throws -> FramePair {
+        FrameSelection.visiblePair(
+            at: try date(utc),
+            window: window,
+            frames: timeline.frames,
+            spanStart: span?.start,
+            spanEnd: span?.end
+        )
     }
 
     private func date(_ utc: String) throws -> Date {
