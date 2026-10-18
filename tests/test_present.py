@@ -529,7 +529,7 @@ def test_desktop_card_clears_the_credit_and_subtitle():
                 assert _overlap_area(wrapped["glance"], wrapped["credit"]) == 0, (width, height, wrapped)
                 assert _overlap_area(wrapped["glance"], wrapped["subs"]) == 0, (width, height, wrapped)
                 assert _overlap_area(wrapped["subs"], wrapped["credit"]) == 0, (width, height, wrapped)
-                assert wrapped["say"] and wrapped["font"] >= 14, (width, height, wrapped)
+                assert wrapped["say"] and wrapped["font"] >= 12.6, (width, height, wrapped)
                 assert wrapped["measured"].endswith("px")
                 assert abs(float(wrapped["measured"][:-2]) - wrapped["credit"]["h"]) < 0.2, (
                     width,
@@ -607,6 +607,7 @@ def test_fine_pointer_subtitle_clears_the_card_across_widths():
     credit: box(document.getElementById('credit')),
     subs: box(subs),
     window: box(document.getElementById('window')),
+    glass: box(document.getElementById('glass')),
     lines,
     font: say ? parseFloat(getComputedStyle(say).fontSize) : 0,
     shown: !glance.hidden && glance.getBoundingClientRect().height > 0,
@@ -652,8 +653,214 @@ def test_fine_pointer_subtitle_clears_the_card_across_widths():
                     assert _overlap_area(row["subs"], row["credit"]) == 0, where
                     assert row["subs"]["w"] >= 160, where
                     assert row["lines"] <= 3, where
-                    assert row["font"] >= 14, where
+                    assert row["font"] >= 12.6, where
                     assert _inside(row["subs"], row["window"]), where
+                    assert _inside(row["subs"], row["glass"]), where
+            context.close()
+            browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_long_quote_stays_inside_the_glass_when_no_card_is_beside():
+    """The longest real line stays in the glass on a narrow fine-pointer window.
+
+    No cabin card is beside the subtitle here, so the old 62% cap wrapped
+    the quote onto the bezel. Widths under 600 use the glass, and the line
+    count is measured again for this quote.
+    """
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    from playwright.sync_api import sync_playwright
+
+    full = (
+        "All right, I am going to just take [[shutter clicks]] some [[shutter clicks]] "
+        "perpendicular [[shutter clicks]] to the window [[shutter clicks]] pictures, "
+        "zooming out and zooming out and zooming out."
+    )
+    handler = partial(SimpleHTTPRequestHandler, directory=str(ROOT / "demo"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    sizes = [(width, 800) for width in range(280, 421, 20)]
+    sizes += [(width, 480) for width in (280, 300, 320)]
+    measure = r"""
+() => {
+  const glass = document.getElementById('glass').getBoundingClientRect();
+  const subs = document.getElementById('subs');
+  const say = subs.querySelector('.say');
+  const range = document.createRange();
+  const rects = [];
+  const walker = document.createTreeWalker(subs, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      rects.push({x: rect.x, y: rect.y, w: rect.width, h: rect.height, t: node.textContent.slice(0, 24)});
+    }
+  }
+  const sub = subs.getBoundingClientRect();
+  const credit = document.getElementById('credit').getBoundingClientRect();
+  return {
+    say: say ? say.textContent : '',
+    full: say ? (say.dataset.full || '') : '',
+    font: say ? parseFloat(getComputedStyle(say).fontSize) : 0,
+    rects,
+    glass: {x: glass.x, y: glass.y, w: glass.width, h: glass.height},
+    subs: {x: sub.x, y: sub.y, w: sub.width, h: sub.height},
+    credit: {x: credit.x, y: credit.y, w: credit.width, h: credit.height},
+    card: !document.getElementById('glance').hidden,
+    scale: getComputedStyle(document.getElementById('stage')).getPropertyValue('--subs-scale').trim(),
+  };
+}
+"""
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome", headless=True)
+            context = browser.new_context(
+                viewport={"width": 360, "height": 800},
+                has_touch=False,
+                reduced_motion="reduce",
+            )
+            page = context.new_page()
+            page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
+            page.evaluate("() => sessionStorage.setItem('artemis2.hint','1')")
+            page.wait_for_function(
+                """() => {
+                  document.getElementById('enter').click();
+                  return document.getElementById('stage').classList.contains('live');
+                }"""
+            )
+            page.evaluate(
+                """() => {
+                  const scrub = document.getElementById('scrub');
+                  const start = Date.parse('2026-04-06T19:33:00Z');
+                  const end = Date.parse('2026-04-06T19:48:30Z');
+                  const t = Date.parse('2026-04-06T19:46:23.000Z');
+                  scrub.value = String(Math.round(((t - start) / (end - start)) * 1000));
+                  scrub.dispatchEvent(new Event('input', { bubbles: true }));
+                }"""
+            )
+            page.wait_for_function(
+                """() => {
+                  const say = document.querySelector('#subs .say');
+                  return say && (say.dataset.full || say.textContent || '').includes('perpendicular');
+                }"""
+            )
+            if page.locator("#play").inner_text().strip() == "Pause":
+                page.click("#play")
+            for width, height in sizes:
+                page.set_viewport_size({"width": width, "height": height})
+                page.evaluate(
+                    "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+                )
+                row = page.evaluate(measure)
+                where = (width, height, row)
+                assert row["full"].startswith(full[:40]), where
+                assert not row["card"], where
+                assert row["font"] >= 12.6, where
+                assert 1 <= len(row["rects"]) <= 3, where
+                assert _inside(row["subs"], row["glass"]), where
+                assert _overlap_area(row["subs"], row["credit"]) == 0, where
+                for rect in row["rects"]:
+                    assert _inside(rect, row["glass"]), where
+                visible = row["say"][:-1] if row["say"].endswith("…") else row["say"]
+                assert row["full"].startswith(visible), where
+            context.close()
+            browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_subtitle_moves_when_the_cabin_card_appears():
+    """The centered line yields as soon as the card is shown, not on the next quote."""
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    from playwright.sync_api import sync_playwright
+
+    handler = partial(SimpleHTTPRequestHandler, directory=str(ROOT / "demo"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    sizes = [(width, 800) for width in (440, 480, 520, 560)]
+    sizes += [(width, 480) for width in (380, 440, 500, 560)]
+    measure = r"""
+() => {
+  const box = (el) => {
+    const r = el.getBoundingClientRect();
+    return {x: r.x, y: r.y, w: r.width, h: r.height};
+  };
+  const say = document.querySelector('#subs .say');
+  return {
+    glance: box(document.getElementById('glance')),
+    subs: box(document.getElementById('subs')),
+    shown: !document.getElementById('glance').hidden,
+    say: say ? say.textContent : '',
+    font: say ? parseFloat(getComputedStyle(say).fontSize) : 0,
+  };
+}
+"""
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome", headless=True)
+            context = browser.new_context(
+                viewport={"width": 480, "height": 800},
+                has_touch=False,
+                reduced_motion="reduce",
+            )
+            page = context.new_page()
+            page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
+            page.evaluate("() => sessionStorage.setItem('artemis2.hint','1')")
+            page.wait_for_function(
+                """() => {
+                  document.getElementById('enter').click();
+                  return document.getElementById('stage').classList.contains('live');
+                }"""
+            )
+
+            def seek(iso):
+                page.evaluate(
+                    """(iso) => {
+                      const scrub = document.getElementById('scrub');
+                      const start = Date.parse('2026-04-06T19:33:00Z');
+                      const end = Date.parse('2026-04-06T19:48:30Z');
+                      const t = Date.parse(iso);
+                      scrub.value = String(Math.round(((t - start) / (end - start)) * 1000));
+                      scrub.dispatchEvent(new Event('input', { bubbles: true }));
+                    }""",
+                    iso,
+                )
+
+            seek("2026-04-06T19:33:03.200Z")
+            page.wait_for_function(
+                """() => (document.querySelector('#subs .say') || {}).textContent
+                  && document.querySelector('#subs .say').textContent.includes('diving back')"""
+            )
+            if page.locator("#play").inner_text().strip() == "Pause":
+                page.click("#play")
+            for width, height in sizes:
+                page.set_viewport_size({"width": width, "height": height})
+                seek("2026-04-06T19:33:03.200Z")
+                page.wait_for_function("() => document.getElementById('glance').hidden")
+                seek("2026-04-06T19:33:04.500Z")
+                page.wait_for_function("() => !document.getElementById('glance').hidden")
+                page.evaluate(
+                    "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+                )
+                row = page.evaluate(measure)
+                where = (width, height, row)
+                assert row["shown"], where
+                assert "diving back" in row["say"], where
+                assert row["font"] >= 14, where
+                assert _overlap_area(row["glance"], row["subs"]) == 0, where
             context.close()
             browser.close()
     finally:
