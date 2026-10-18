@@ -1118,7 +1118,27 @@ function bezelSitsClean() {
     const card = glance.getBoundingClientRect();
     if (card.width > 0 && overlapArea(sub, card) > 0) return false;
   }
+  if (!textGlyphsInside(subs, 0, 0, window.innerWidth, window.innerHeight)) return false;
   return !textClipped(subs.querySelector(".say")) && !textClipped(subs.querySelector(".who"));
+}
+
+function textGlyphsInside(el, left, top, right, bottom) {
+  if (!el) return true;
+  const range = document.createRange();
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      if (rect.left < left - 0.5 || rect.top < top - 0.5
+        || rect.right > right + 0.5 || rect.bottom > bottom + 0.5) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 function enableBezel() {
@@ -1126,8 +1146,23 @@ function enableBezel() {
   stage.classList.add("subs-bezel");
   const glass = document.getElementById("glass").getBoundingClientRect();
   const card = glance.getBoundingClientRect();
-  stage.style.setProperty("--subs-bezel-left", `${bezelLeft(glass, card).toFixed(2)}px`);
+  const edges = bezelEdges(glass, card);
+  stage.style.setProperty("--subs-bezel-left", `${edges.left.toFixed(2)}px`);
+  stage.style.setProperty("--subs-bezel-right", `${edges.right.toFixed(2)}px`);
   stage.style.setProperty("--subs-fit", "0px");
+}
+
+// Viewport padding, in glass coordinates. A window-width inset ran the line
+// off the left of the screen. The cabin card, when it is open, keeps 16px.
+function bezelEdges(glass, card) {
+  const pad = Math.max(16, window.innerWidth * 0.02);
+  let viewLeft = pad;
+  if (!glance.hidden && card.width > 0) viewLeft = Math.max(pad, card.right + 16);
+  const viewRight = Math.max(viewLeft, window.innerWidth - pad);
+  return {
+    left: viewLeft - glass.left,
+    right: glass.right - viewRight,
+  };
 }
 
 // The glass holds a quote only when the whole line, speaker included, is
@@ -1194,13 +1229,6 @@ function settleQuote() {
 // above it. Under 600px with no card beside the line, the quote uses the
 // glass. settleQuote moves a line the glass cannot hold onto the bezel.
 // Nothing here runs from the animation frame.
-function bezelLeft(glass, card) {
-  const win = document.getElementById("window").getBoundingClientRect();
-  const edge = win.left + 8 - glass.left;
-  if (glance.hidden || card.width <= 0) return edge;
-  return Math.max(edge, card.right + 16 - glass.left);
-}
-
 function placeSubs() {
   if (placingSubs) return;
   placingSubs = true;

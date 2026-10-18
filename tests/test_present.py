@@ -837,6 +837,7 @@ def test_narrow_bezel_keeps_the_whole_quote():
     full: say ? (say.dataset.full || '') : '',
     label: subs.getAttribute('aria-label') || '',
     sayOverflow: say ? getComputedStyle(say).overflow : '',
+    sayWrap: say ? getComputedStyle(say).overflowWrap : '',
     subs: box(subs),
     who: who ? box(who) : null,
     glass: box(glass),
@@ -894,7 +895,11 @@ def test_narrow_bezel_keeps_the_whole_quote():
                 assert "…" not in row["say"], where
                 assert "…" not in row["label"], where
                 assert full in row["label"], where
-                assert row["sayOverflow"] == "hidden", where
+                assert row["sayOverflow"] == "visible", where
+                assert row["sayWrap"] == "break-word", where
+                pad = max(16, width * 0.02)
+                assert row["subs"]["x"] >= pad - 0.5, where
+                assert row["subs"]["x"] + row["subs"]["w"] <= width - pad + 0.5, where
                 assert _overlap_area(row["subs"], row["credit"]) == 0, where
                 assert _overlap_area(row["subs"], row["clocks"]) == 0, where
                 clock_bottom = row["clocks"]["y"] + row["clocks"]["h"]
@@ -919,9 +924,10 @@ def test_narrow_bezel_keeps_the_whole_quote():
 def test_no_timeline_quote_is_cut_on_a_narrow_fine_pointer():
     """Every transcript line stays whole from 280px through 600px.
 
-    Heights 800 and 480, fine pointer. No ellipsis and no clipped line.
-    The subtitle stays in the viewport, under the clock, and clear of the
-    credit. A line the glass cannot hold in three lines sits on the bezel.
+    Heights 800 and 480, fine pointer, including 559px. No ellipsis, no
+    clipped line, and every glyph inside the viewport. The subtitle stays
+    under the clock and clear of the credit. A line the glass cannot hold
+    in three lines sits on the bezel.
     """
     import threading
     from functools import partial
@@ -935,6 +941,8 @@ def test_no_timeline_quote_is_cut_on_a_narrow_fine_pointer():
     thread.start()
     port = server.server_address[1]
     widths = list(range(280, 601, 20))
+    widths.append(559)
+    widths.sort()
     heights = (800, 480)
     check = r"""
 () => {
@@ -985,26 +993,33 @@ def test_no_timeline_quote_is_cut_on_a_narrow_fine_pointer():
     if (area(sub, credit) > 0) reasons.push("credit");
     if (!glance.hidden && card.w > 0 && area(sub, card) > 0) reasons.push("card");
     const bezel = document.getElementById("stage").classList.contains("subs-bezel");
+    const range = document.createRange();
+    const walker = document.createTreeWalker(subs, NodeFilter.SHOW_TEXT);
+    let node;
+    let linesN = 0;
+    let outside = false;
+    let glyphOut = false;
+    while ((node = walker.nextNode())) {
+      if (!node.textContent.trim()) continue;
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) {
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        linesN += 1;
+        if (rect.left < -0.5 || rect.top < -0.5
+          || rect.right > window.innerWidth + 0.5
+          || rect.bottom > window.innerHeight + 0.5) {
+          glyphOut = true;
+        }
+        if (!bezel && (rect.top < glass.y - 0.5 || rect.bottom > glass.y + glass.h + 0.5
+          || rect.left < glass.x - 0.5 || rect.right > glass.x + glass.w + 0.5)) {
+          outside = true;
+        }
+      }
+    }
+    if (glyphOut) reasons.push("glyph");
     if (bezel) {
       if (sub.y + sub.h > glass.y + 0.5) reasons.push("glass");
     } else {
-      const range = document.createRange();
-      const walker = document.createTreeWalker(subs, NodeFilter.SHOW_TEXT);
-      let node;
-      let linesN = 0;
-      let outside = false;
-      while ((node = walker.nextNode())) {
-        if (!node.textContent.trim()) continue;
-        range.selectNodeContents(node);
-        for (const rect of range.getClientRects()) {
-          if (rect.width <= 0 || rect.height <= 0) continue;
-          linesN += 1;
-          if (rect.top < glass.y - 0.5 || rect.bottom > glass.y + glass.h + 0.5
-            || rect.left < glass.x - 0.5 || rect.right > glass.x + glass.w + 0.5) {
-            outside = true;
-          }
-        }
-      }
       if (linesN < 1 || linesN > 3) reasons.push("lines");
       if (outside) reasons.push("outside");
     }
