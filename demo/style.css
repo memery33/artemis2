@@ -276,10 +276,22 @@ button, input[type="range"] { touch-action: manipulation; }
 }
 
 /* A wide window reaches the lower left, so 3vh runs through the credit.
-   124px clears it at 1440×900 and at 890×626. A narrow window does not. */
+   The card stops where the glass does: half the leftover viewport, plus the
+   three bezel steps under the glass, plus the 10px credit inset, the 22px
+   chip, and 16px for the window's drift. A narrow window does not need it. */
 @media (min-width: 800px) {
   #stage:not(.touch) #glance {
-    bottom: max(16px, 3vh, 124px);
+    bottom: max(
+      16px,
+      3vh,
+      calc(
+        max(-2vh, 50vh - 48vw / 1.58)
+        + clamp(14px, 1.7vw, 28px)
+        + clamp(12px, 1.5vw, 22px)
+        + clamp(5px, 0.45vw, 9px)
+        + 48px
+      )
+    );
   }
 }
 
