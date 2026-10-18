@@ -165,3 +165,136 @@ console.log(JSON.stringify({
     assert row["scale0"] >= 1
     assert abs(row["delta"] - 0.035) < 1e-9
     assert row["delta"] <= 0.04
+
+
+def test_phone_gate_swipe_and_small_image_plan():
+    script = r"""
+const logic = require("./demo/logic.js");
+const rows = {
+  gateDesktop: logic.gateLabel(false),
+  gateTouch: logic.gateLabel(true),
+  touchCoarse: logic.isTouchDevice(true, 0),
+  touchPoints: logic.isTouchDevice(false, 5),
+  mouse: logic.isTouchDevice(false, 0),
+  swipeLeft: logic.swipeWindow(-80, 10, 48),
+  swipeRight: logic.swipeWindow(80, 4, 48),
+  swipeShort: logic.swipeWindow(47, 0, 48),
+  swipeVertical: logic.swipeWindow(10, 90, 48),
+  swipeDiagonal: logic.swipeWindow(60, 60, 48),
+  swipeNone: logic.swipeWindow(null, 0, 48),
+  full: logic.variantFile("images/art002e009611.webp", false),
+  small: logic.variantFile("images/art002e009611.webp", true),
+  already: logic.variantFile("images/art002e009611.720.webp", true),
+  audio: logic.variantFile("audio/art002a000021.m4a", true),
+  missing: logic.variantFile(null, true),
+  narrow: logic.wantsSmallImage(true, false, "4g"),
+  wifi: logic.wantsSmallImage(false, false, "4g"),
+  save: logic.wantsSmallImage(false, true, "4g"),
+  threeG: logic.wantsSmallImage(false, false, "3g"),
+  twoG: logic.wantsSmallImage(false, false, "2g"),
+  slow: logic.wantsSmallImage(false, false, "slow-2g"),
+  emptyNet: logic.wantsSmallImage(false, false, ""),
+  deskPrefetch: logic.prefetchBeforeTap(false),
+  cellPrefetch: logic.prefetchBeforeTap(true),
+};
+console.log(JSON.stringify(rows));
+"""
+    row = _node(script)
+    assert row["gateDesktop"] == "Click or press any key to look out the window"
+    assert row["gateTouch"] == "Tap to begin"
+    assert row["touchCoarse"] is True
+    assert row["touchPoints"] is True
+    assert row["mouse"] is False
+    assert row["swipeLeft"] == "3"
+    assert row["swipeRight"] == "2"
+    assert row["swipeShort"] is None
+    assert row["swipeVertical"] is None
+    assert row["swipeDiagonal"] is None
+    assert row["swipeNone"] is None
+    assert row["full"] == "images/art002e009611.webp"
+    assert row["small"] == "images/art002e009611.720.webp"
+    assert row["already"] == "images/art002e009611.720.webp"
+    assert row["audio"] == "audio/art002a000021.m4a"
+    assert row["missing"] is None
+    assert row["narrow"] is True
+    assert row["wifi"] is False
+    assert row["save"] is True
+    assert row["threeG"] is True
+    assert row["twoG"] is True
+    assert row["slow"] is True
+    assert row["emptyNet"] is False
+    assert row["deskPrefetch"] == {"opener": True, "otherWindow": True, "audio": True}
+    assert row["cellPrefetch"] == {"opener": True, "otherWindow": False, "audio": False}
+
+
+def test_collapsed_map_keeps_readable_labels():
+    script = r"""
+const { project, placeLabels, chooseFont, overlap } = require("./demo/logic.js");
+const targets = [
+  ["Glushko Crater", 282.33, 8.11],
+  ["Ohm Crater", 246.22, 18.32],
+  ["Aristarchus Plateau", 309.26, 26.05],
+  ["Reiner Gamma", 301.64, 7.2],
+  ["Orientale Basin", 265.33, -19.37],
+  ["Vavilov Crater", 221.23, -0.87],
+];
+const measure = (name, px) => name.length * px * 0.56;
+const sizes = [[180, 130, 12], [240, 160, 13]];
+const report = sizes.map(([width, height, base]) => {
+  const font = chooseFont(targets.map((row) => row[0]), width, base, measure, 0.96);
+  const anchors = targets.map((row) => {
+    const [x, y] = project(row[1], row[2], width, height);
+    return { name: row[0], x, y, w: measure(row[0], font), h: font + 2 };
+  });
+  const placed = placeLabels(anchors, { x: 2, y: 2, x2: width - 2, y2: height - 2 });
+  let hits = 0;
+  for (let i = 0; i < placed.length; i += 1) {
+    for (let j = i + 1; j < placed.length; j += 1) {
+      if (overlap(placed[i], placed[j], 1)) hits += 1;
+    }
+  }
+  return { width, height, font, hits, count: placed.length };
+});
+console.log(JSON.stringify(report));
+"""
+    rows = _node(script)
+    assert len(rows) == 2
+    for row in rows:
+        assert row["font"] >= 12
+        assert row["hits"] == 0
+        assert row["count"] == 6
+
+
+def test_narrow_webp_variants_are_downscales_of_the_shipped_frames():
+    images = ROOT / "demo" / "data" / "images"
+    sources = sorted(path for path in images.glob("*.webp") if not path.name.endswith(".720.webp"))
+    assert sources
+
+    def dims(path: Path) -> tuple[int, int]:
+        out = subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            text=True,
+        ).strip()
+        width, height = out.split(",")
+        return int(width), int(height)
+
+    for source in sources:
+        variant = images / f"{source.stem}.720.webp"
+        assert variant.is_file(), source.name
+        assert variant.stat().st_size < source.stat().st_size
+        sw, sh = dims(source)
+        vw, vh = dims(variant)
+        assert max(vw, vh) <= 720
+        assert vw <= sw and vh <= sh
+        assert max(vw, vh) == min(720, max(sw, sh))

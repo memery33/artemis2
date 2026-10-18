@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <link rel="icon" href="data:,">
   <title>Artemis II — Orion window</title>
   <link rel="stylesheet" href="style.css">
@@ -48,6 +48,14 @@
 
     <button id="enter" type="button">Click or press any key to look out the window</button>
     <p id="hint" hidden>Space pause · ← → windows · 1–4 crew · F full screen · Esc controls</p>
+    <div id="dock">
+      <button type="button" id="dock-play" aria-label="Play or pause">Play</button>
+      <button type="button" id="dock-w2" aria-label="Window 2" aria-pressed="true">2</button>
+      <button type="button" id="dock-w3" aria-label="Window 3" aria-pressed="false">3</button>
+      <button type="button" id="dock-crew" aria-label="Cycle crew narration">Crew</button>
+      <button type="button" id="dock-full" aria-label="Full screen">Full</button>
+      <button type="button" id="dock-more" aria-label="Show controls">More</button>
+    </div>
     <div id="clocks">
       <span id="utc">19:33:00 UTC</span>
       <span id="et">15:33:00 EDT</span>

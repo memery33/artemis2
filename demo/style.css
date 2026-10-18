@@ -22,6 +22,7 @@
 html, body {
   margin: 0;
   height: 100%;
+  height: 100dvh;
   background: var(--cabin);
   color: var(--ink);
   overflow: hidden;
@@ -29,7 +30,9 @@ html, body {
 
 button, input { font: inherit; color: inherit; }
 
-#stage { position: relative; height: 100%; }
+button, input[type="range"] { touch-action: manipulation; }
+
+#stage { position: relative; height: 100%; height: 100dvh; }
 
 /* The viewport is the inner face of a cone panel, not a page with a
    picture frame on it. Aluminum pressure-vessel cone: NASA crew-module
@@ -80,6 +83,7 @@ button, input { font: inherit; color: inherit; }
   /* Face near the glass. 1.58 is the landscape rounded rectangle from
      jsc2022e045980, not a measured clear aperture. */
   width: min(96vw, calc(104vh * 1.58));
+  width: min(96vw, calc(104dvh * 1.58));
   aspect-ratio: 1.58 / 1;
   transform: translate(-50%, -50%);
   will-change: transform;
@@ -321,7 +325,7 @@ button, input { font: inherit; color: inherit; }
   text-shadow: 0 1px 6px #000;
 }
 
-#credit { bottom: 10px; text-align: left; }
+#credit { bottom: max(10px, env(safe-area-inset-bottom)); text-align: left; }
 
 #taken {
   position: absolute;
@@ -355,6 +359,7 @@ button, input { font: inherit; color: inherit; }
 
 #stage.cab #window {
   width: min(96vw, calc(100vh * 4 / 3));
+  width: min(96vw, calc(100dvh * 4 / 3));
   aspect-ratio: 4 / 3;
 }
 
@@ -405,9 +410,9 @@ button, input { font: inherit; color: inherit; }
 #clocks {
   position: absolute;
   z-index: 5;
-  top: 14px;
-  right: 16px;
-  max-width: min(28rem, calc(100% - 32px));
+  top: max(14px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  max-width: min(28rem, calc(100% - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   padding: 4px 9px 5px;
   border-radius: 8px;
   /* A chip behind the three times only. Not a band across the frame. */
@@ -433,7 +438,7 @@ button, input { font: inherit; color: inherit; }
   position: absolute;
   z-index: 5;
   left: 50%;
-  bottom: 22px;
+  bottom: max(22px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
   margin: 0;
   padding: 6px 10px;
@@ -560,8 +565,108 @@ button.on, button[aria-pressed="true"] {
   width: min(98vw, calc(108vh * 1.58));
 }
 
+#dock {
+  display: none;
+}
+
+#stage.touch #dock {
+  display: flex;
+  position: absolute;
+  z-index: 6;
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  gap: 6px;
+  justify-content: center;
+  align-items: stretch;
+  pointer-events: auto;
+}
+
+#stage.touch #dock button {
+  flex: 1 1 0;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  background: rgba(8, 9, 12, 0.78);
+  border-radius: 999px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+}
+
+#stage.touch #dock button.on {
+  background: #f4f1ea;
+  color: #14151a;
+  border-color: #f4f1ea;
+}
+
+#stage.touch #hint {
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 56px);
+}
+
+/* The collapsed map is a sibling of the HUD, so it stays up while the
+   controls fade. It hides again while that panel is open. */
+#stage.compact #map {
+  position: absolute;
+  z-index: 5;
+  width: 180px;
+  height: 130px;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  border-radius: 10px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#stage.compact:has(#hud.show) #map { opacity: 0; }
+
+@media (orientation: portrait) {
+  #stage.compact #map {
+    width: 240px;
+    height: 160px;
+    top: auto;
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 60px);
+  }
+  #stage.compact #subs {
+    bottom: 10%;
+    max-width: 78%;
+  }
+}
+
+@media (max-height: 500px) {
+  #window {
+    top: calc(50% - 6px);
+    width: min(78vw, calc((100vh - 108px) * 1.58));
+    width: min(78vw, calc((100dvh - 108px) * 1.58));
+  }
+  #stage.cab #window {
+    width: min(72vw, calc((100vh - 108px) * 4 / 3));
+    width: min(72vw, calc((100dvh - 108px) * 4 / 3));
+  }
+  #stage.compact #clocks {
+    max-width: calc(100% - 204px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  }
+  #stage.compact #subs {
+    bottom: 12%;
+    max-width: 68%;
+  }
+}
+
+#stage.touch button[data-crew],
+#stage.touch button[data-cam],
+#stage.touch button[data-track],
+#stage.touch button[data-win],
+#stage.touch #play,
+#stage.touch #full,
+#stage.touch #cabrun,
+#stage.touch #backfly,
+#stage.touch #scrub {
+  min-height: 44px;
+  min-width: 44px;
+}
+
 @media (max-width: 800px) {
-  #window { width: min(118vw, calc(96vh * 1.58)); top: 50%; }
+  #window { width: min(118vw, calc(96vh * 1.58)); width: min(118vw, calc(96dvh * 1.58)); top: 50%; }
   #near { padding: 16px; border-radius: 28px; filter: blur(1.6px); }
   .thermal { padding: 10px; border-radius: 24px; }
   .pressure { padding: 7px; border-radius: 18px; }
@@ -570,6 +675,31 @@ button.on, button[aria-pressed="true"] {
   #map { width: 100%; }
   #enter .title { font-size: 28px; }
   #glance { width: min(160px, 42vw); }
+}
+
+/* After the 800px block so a phone keeps the glass on screen. */
+@media (orientation: portrait) and (max-width: 932px) {
+  #window {
+    top: 42%;
+    width: min(94vw, calc(70vh * 1.58));
+    width: min(94vw, calc(70dvh * 1.58));
+  }
+  #stage.cab #window {
+    width: min(94vw, calc(70vh * 4 / 3));
+    width: min(94vw, calc(70dvh * 4 / 3));
+  }
+}
+
+@media (max-height: 500px) {
+  #window {
+    top: calc(50% - 6px);
+    width: min(78vw, calc((100vh - 108px) * 1.58));
+    width: min(78vw, calc((100dvh - 108px) * 1.58));
+  }
+  #stage.cab #window {
+    width: min(72vw, calc((100vh - 108px) * 4 / 3));
+    width: min(72vw, calc((100dvh - 108px) * 4 / 3));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

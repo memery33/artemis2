@@ -118,9 +118,10 @@
     return placed;
   }
 
-  function chooseFont(names, mapWidth, basePx, measure) {
+  function chooseFont(names, mapWidth, basePx, measure, widthRatio) {
     let px = basePx;
-    const limit = mapWidth * 0.46;
+    const ratio = Number.isFinite(widthRatio) ? widthRatio : 0.46;
+    const limit = mapWidth * ratio;
     while (px > 8) {
       let widest = 0;
       for (const name of names) widest = Math.max(widest, measure(name, px));
@@ -194,10 +195,54 @@
     const fy = Number.isFinite(floatY) ? floatY : 0;
     const lx = Number.isFinite(lookX) ? lookX : 0;
     const ly = Number.isFinite(lookY) ? lookY : 0;
+  return {
+    scale: 1.025 + p * 0.035,
+    x: sign * p * 0.65 + fx * 0.45 - lx * 0.45,
+    y: p * 0.3 + fy * 0.45 - ly * 0.3,
+  };
+}
+
+  const GATE_DESKTOP = "Click or press any key to look out the window";
+  const GATE_TOUCH = "Tap to begin";
+
+  function gateLabel(touch) {
+    return touch ? GATE_TOUCH : GATE_DESKTOP;
+  }
+
+  // A phone can report a fine pointer in automation and still have a touch screen.
+  function isTouchDevice(coarse, maxTouchPoints) {
+    return coarse === true || (Number(maxTouchPoints) || 0) > 0;
+  }
+
+  // Horizontal swipe between the two windows. A short drag, a vertical drag,
+  // and a pinch (more than one finger — the caller passes null) do nothing.
+  function swipeWindow(dx, dy, threshold) {
+    const limit = Number.isFinite(threshold) && threshold > 0 ? threshold : 48;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+    if (Math.abs(dx) < limit || Math.abs(dx) <= Math.abs(dy)) return null;
+    return dx < 0 ? "3" : "2";
+  }
+
+  // Sibling of the shipped WebP. Same exposure, long edge 720. Never a new file name
+  // for a non-image, and never a second downscale of an existing 720 sibling.
+  function variantFile(file, useSmall) {
+    if (!useSmall || typeof file !== "string") return file;
+    if (!/\.webp$/i.test(file) || /\.720\.webp$/i.test(file)) return file;
+    return file.replace(/\.webp$/i, ".720.webp");
+  }
+
+  function wantsSmallImage(narrow, saveData, effectiveType) {
+    if (narrow) return true;
+    if (saveData === true) return true;
+    return effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g";
+  }
+
+  // Cellular waits for the tap before the other window and the first recording.
+  function prefetchBeforeTap(cellular) {
     return {
-      scale: 1.025 + p * 0.035,
-      x: sign * p * 0.65 + fx * 0.45 - lx * 0.45,
-      y: p * 0.3 + fy * 0.45 - ly * 0.3,
+      opener: true,
+      otherWindow: !cellular,
+      audio: !cellular,
     };
   }
 
@@ -211,5 +256,13 @@
     crossfade: crossfade,
     holdMotion: holdMotion,
     HOLD_FADE_MS: HOLD_FADE_MS,
+    GATE_DESKTOP: GATE_DESKTOP,
+    GATE_TOUCH: GATE_TOUCH,
+    gateLabel: gateLabel,
+    isTouchDevice: isTouchDevice,
+    swipeWindow: swipeWindow,
+    variantFile: variantFile,
+    wantsSmallImage: wantsSmallImage,
+    prefetchBeforeTap: prefetchBeforeTap,
   };
 });
