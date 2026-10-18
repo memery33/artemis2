@@ -378,7 +378,11 @@ def _overlap_area(a, b):
 
 
 def test_desktop_card_clears_the_credit_and_subtitle():
-    """A fine pointer keeps the desktop card. It must miss the credit and the subtitle."""
+    """The cabin card misses the credit and the subtitle at every pointer.
+
+    Fine letterbox and large coarse screens share one clearance: the card
+    sits on the credit band. Phones and the open Duo keep their own cards.
+    """
     import threading
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -390,7 +394,19 @@ def test_desktop_card_clears_the_credit_and_subtitle():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     port = server.server_address[1]
-    sizes = [(1024, 768), (1280, 720), (1366, 768), (1440, 900)]
+    # width, height, coarse pointer, device scale
+    sizes = [
+        (1024, 768, False, 1),
+        (1112, 834, False, 1),
+        (1280, 720, False, 1),
+        (1366, 768, False, 1),
+        (1440, 900, False, 1),
+        (1366, 1024, True, 1),
+        (1400, 900, True, 1),
+        (390, 844, True, 1),
+        (844, 390, True, 1),
+        (890, 626, True, 3),
+    ]
     boxes = r"""
 () => {
   const box = (el) => {
@@ -409,10 +425,11 @@ def test_desktop_card_clears_the_credit_and_subtitle():
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(channel="chrome", headless=True)
-            for width, height in sizes:
+            for width, height, coarse, scale in sizes:
                 context = browser.new_context(
                     viewport={"width": width, "height": height},
-                    has_touch=False,
+                    has_touch=coarse,
+                    device_scale_factor=scale,
                     reduced_motion="reduce",
                 )
                 page = context.new_page()
