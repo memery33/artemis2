@@ -2,6 +2,7 @@ import XCTest
 
 /// Release scheme `ArtemisIIWindowRelease`. The begin-button trap is a Release
 /// isolation check inside the Now Playing artwork handler.
+@MainActor
 final class BeginLaunchUITests: XCTestCase {
     func testTapToBeginStaysRunning() {
         let app = XCUIApplication()

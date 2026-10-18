@@ -1022,13 +1022,13 @@ final class PlaybackModel: NSObject, ObservableObject {
             model.skip(by: -interval)
         }
         let positionCommand = center.changePlaybackPositionCommand
-        // MediaPlayer calls this off the main actor. Read the Sendable time
-        // here, then hop.
-        let positionToken = positionCommand.addTarget { @Sendable [weak self] event in
+        // Handlers are delivered on the main thread. MPRemoteCommandEvent is
+        // not Sendable, so it is not hopped onto a Task.
+        let positionToken = positionCommand.addTarget { [weak self] event in
             guard let position = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime else {
                 return .commandFailed
             }
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.seekElapsed(position)
             }
             return .success
@@ -1040,8 +1040,8 @@ final class PlaybackModel: NSObject, ObservableObject {
         _ command: MPRemoteCommand,
         action: @escaping @MainActor (PlaybackModel, MPRemoteCommandEvent) -> Void
     ) {
-        let token = command.addTarget { @Sendable [weak self] event in
-            Task { @MainActor in
+        let token = command.addTarget { [weak self] event in
+            MainActor.assumeIsolated {
                 guard let self else { return }
                 action(self, event)
             }
@@ -1075,12 +1075,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
-    /// MediaPlayer calls the handler on its access queue. Resolving the image
-    /// here keeps the handler off the main actor and away from model state.
-    /// `UIImage` is not Sendable; the picture is already decoded and only read.
+    /// MediaPlayer calls the handler on its access queue. The image is already
+    /// resolved, and this handler only reads it.
     nonisolated static func makeArtwork(_ image: UIImage) -> MPMediaItemArtwork {
-        nonisolated(unsafe) let image = image
-        return MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
+        MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
     }
 
     private func artworkID() -> String {
