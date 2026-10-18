@@ -365,10 +365,10 @@ button, input[type="range"] { touch-action: manipulation; }
   text-align: center;
 }
 
-/* Under 320px the glass cannot hold the quote. The line sits on the bezel,
-   above the pane, at the window's width, so the words stay whole. 8px keeps
-   the block off the glass edge. --subs-bezel-left moves the line past the
-   cabin card when that card is open; otherwise it is the window edge. */
+/* When the glass cannot hold the quote in three lines, the line sits on the
+   bezel, above the pane, at the window's width, so the words stay whole.
+   8px keeps the block off the glass edge. --subs-bezel-left moves the line
+   past the cabin card when that card is open; otherwise it is the window edge. */
 #stage.subs-bezel:not(.touch) #subs {
   left: var(--subs-bezel-left, calc(8px - var(--glass-inset)));
   right: calc(8px - var(--glass-inset));

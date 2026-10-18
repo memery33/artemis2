@@ -606,6 +606,7 @@ def test_fine_pointer_subtitle_clears_the_card_across_widths():
     glance: box(glance),
     credit: box(document.getElementById('credit')),
     subs: box(subs),
+    clocks: box(document.getElementById('clocks')),
     window: box(document.getElementById('window')),
     glass: box(document.getElementById('glass')),
     lines,
@@ -654,13 +655,19 @@ def test_fine_pointer_subtitle_clears_the_card_across_widths():
                     assert row["subs"]["w"] >= 160, where
                     assert row["lines"] <= 3, where
                     assert row["font"] >= 12.6, where
-                    # Under 320px the quote sits on the bezel, above the glass.
-                    if width < 320:
-                        sub = row["subs"]
+                    sub = row["subs"]
+                    if "subs-bezel" in row["mode"]:
+                        clock_bottom = row["clocks"]["y"] + row["clocks"]["h"]
                         assert sub["y"] + sub["h"] <= row["glass"]["y"] + 0.5, where
+                        assert sub["y"] >= clock_bottom - 0.5, where
+                        assert _overlap_area(sub, row["clocks"]) == 0, where
+                        assert sub["y"] >= -0.5, where
+                        assert sub["y"] + sub["h"] <= height + 0.5, where
+                        assert sub["x"] >= -0.5, where
+                        assert sub["x"] + sub["w"] <= width + 0.5, where
                     else:
-                        assert _inside(row["subs"], row["window"]), where
-                        assert _inside(row["subs"], row["glass"]), where
+                        assert _inside(sub, row["window"]), where
+                        assert _inside(sub, row["glass"]), where
             context.close()
             browser.close()
     finally:
@@ -668,11 +675,11 @@ def test_fine_pointer_subtitle_clears_the_card_across_widths():
 
 
 def test_long_quote_stays_inside_the_glass_when_no_card_is_beside():
-    """The longest real line stays readable on a narrow fine-pointer window.
+    """The longest PCD3 line stays whole on a narrow fine-pointer window.
 
-    No cabin card is beside the subtitle here. From 320px up the quote stays
-    in the glass. Under 320px the glass is too short, so the whole line sits
-    on the bezel instead of being cut.
+    No cabin card is beside the subtitle. If the glass can hold it in three
+    lines, it stays there. Otherwise the whole line sits on the bezel, under
+    the clock and inside the viewport. It is never cut.
     """
     import threading
     from functools import partial
@@ -711,6 +718,7 @@ def test_long_quote_stays_inside_the_glass_when_no_card_is_beside():
   }
   const sub = subs.getBoundingClientRect();
   const credit = document.getElementById('credit').getBoundingClientRect();
+  const clocks = document.getElementById('clocks').getBoundingClientRect();
   return {
     say: say ? say.textContent : '',
     full: say ? (say.dataset.full || '') : '',
@@ -719,7 +727,9 @@ def test_long_quote_stays_inside_the_glass_when_no_card_is_beside():
     glass: {x: glass.x, y: glass.y, w: glass.width, h: glass.height},
     subs: {x: sub.x, y: sub.y, w: sub.width, h: sub.height},
     credit: {x: credit.x, y: credit.y, w: credit.width, h: credit.height},
+    clocks: {x: clocks.x, y: clocks.y, w: clocks.width, h: clocks.height},
     card: !document.getElementById('glance').hidden,
+    bezel: document.getElementById('stage').classList.contains('subs-bezel'),
     scale: getComputedStyle(document.getElementById('stage')).getPropertyValue('--subs-scale').trim(),
   };
 }
@@ -767,20 +777,23 @@ def test_long_quote_stays_inside_the_glass_when_no_card_is_beside():
                 row = page.evaluate(measure)
                 where = (width, height, row)
                 assert row["full"].startswith(full[:40]), where
+                assert row["say"] == row["full"] == full, where
+                assert "…" not in row["say"], where
                 assert not row["card"], where
                 assert row["font"] >= 12.6, where
                 assert _overlap_area(row["subs"], row["credit"]) == 0, where
-                if width < 320:
-                    assert row["say"] == row["full"], where
-                    assert "…" not in row["say"], where
+                assert _overlap_area(row["subs"], row["clocks"]) == 0, where
+                clock_bottom = row["clocks"]["y"] + row["clocks"]["h"]
+                assert row["subs"]["y"] >= clock_bottom - 0.5, where
+                assert row["subs"]["y"] >= -0.5, where
+                assert row["subs"]["y"] + row["subs"]["h"] <= height + 0.5, where
+                if row["bezel"]:
                     assert row["subs"]["y"] + row["subs"]["h"] <= row["glass"]["y"] + 0.5, where
                 else:
                     assert 1 <= len(row["rects"]) <= 3, where
                     assert _inside(row["subs"], row["glass"]), where
                     for rect in row["rects"]:
                         assert _inside(rect, row["glass"]), where
-                    visible = row["say"][:-1] if row["say"].endswith("…") else row["say"]
-                    assert row["full"].startswith(visible), where
             context.close()
             browser.close()
     finally:
@@ -828,6 +841,7 @@ def test_narrow_bezel_keeps_the_whole_quote():
     who: who ? box(who) : null,
     glass: box(glass),
     credit: box(document.getElementById('credit')),
+    clocks: box(document.getElementById('clocks')),
     bezel: document.getElementById('stage').classList.contains('subs-bezel'),
   };
 }
@@ -867,7 +881,7 @@ def test_narrow_bezel_keeps_the_whole_quote():
             )
             if page.locator("#play").inner_text().strip() == "Pause":
                 page.click("#play")
-            for width, height in ((280, 800), (300, 800)):
+            for width, height in ((280, 800), (300, 800), (280, 480), (300, 480)):
                 page.set_viewport_size({"width": width, "height": height})
                 page.evaluate(
                     "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
@@ -882,10 +896,178 @@ def test_narrow_bezel_keeps_the_whole_quote():
                 assert full in row["label"], where
                 assert row["sayOverflow"] == "hidden", where
                 assert _overlap_area(row["subs"], row["credit"]) == 0, where
+                assert _overlap_area(row["subs"], row["clocks"]) == 0, where
+                clock_bottom = row["clocks"]["y"] + row["clocks"]["h"]
+                assert row["subs"]["y"] >= clock_bottom - 0.5, where
+                assert row["subs"]["y"] >= -0.5, where
+                assert row["subs"]["x"] >= -0.5, where
+                assert row["subs"]["x"] + row["subs"]["w"] <= width + 0.5, where
+                assert row["subs"]["y"] + row["subs"]["h"] <= height + 0.5, where
                 glass_top = row["glass"]["y"]
                 assert row["subs"]["y"] + row["subs"]["h"] <= glass_top + 0.5, where
                 assert row["who"], where
                 assert row["who"]["y"] + row["who"]["h"] <= glass_top - 4, where
+                if (width, height) == (280, 800):
+                    assert row["subs"]["y"] < 230, where
+                    assert row["subs"]["h"] > 110, where
+            context.close()
+            browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_no_timeline_quote_is_cut_on_a_narrow_fine_pointer():
+    """Every transcript line stays whole from 280px through 600px.
+
+    Heights 800 and 480, fine pointer. No ellipsis and no clipped line.
+    The subtitle stays in the viewport, under the clock, and clear of the
+    credit. A line the glass cannot hold in three lines sits on the bezel.
+    """
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    from playwright.sync_api import sync_playwright
+
+    handler = partial(SimpleHTTPRequestHandler, directory=str(ROOT / "demo"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    widths = list(range(280, 601, 20))
+    heights = (800, 480)
+    check = r"""
+() => {
+  const area = (a, b) => {
+    const x = Math.max(a.x, b.x);
+    const y = Math.max(a.y, b.y);
+    const right = Math.min(a.x + a.w, b.x + b.w);
+    const bottom = Math.min(a.y + a.h, b.y + b.h);
+    return right > x && bottom > y ? (right - x) * (bottom - y) : 0;
+  };
+  const box = (el) => {
+    const r = el.getBoundingClientRect();
+    return {x: r.x, y: r.y, w: r.width, h: r.height};
+  };
+  const failures = [];
+  const lines = window.__artemisLines || [];
+  for (const line of lines) {
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = line.speaker || "Crew";
+    const say = document.createElement("span");
+    say.className = "say";
+    say.dataset.full = line.text;
+    say.textContent = line.text;
+    const subs = document.getElementById("subs");
+    subs.replaceChildren(who, say);
+    placeSubs();
+    const sub = box(subs);
+    const glass = box(document.getElementById("glass"));
+    const clocks = box(document.getElementById("clocks"));
+    const credit = box(document.getElementById("credit"));
+    const glance = document.getElementById("glance");
+    const card = box(glance);
+    const sayNow = subs.querySelector(".say");
+    const clipped = sayNow.scrollHeight > sayNow.clientHeight + 1
+      || sayNow.scrollWidth > sayNow.clientWidth + 1;
+    const reasons = [];
+    if (sayNow.textContent !== line.text) reasons.push("text");
+    if (sayNow.textContent.includes("…")) reasons.push("ellipsis");
+    if ((subs.getAttribute("aria-label") || "").includes("…")) reasons.push("label");
+    if (!subs.getAttribute("aria-label") || !subs.getAttribute("aria-label").includes(line.text)) {
+      reasons.push("name");
+    }
+    if (clipped) reasons.push("clipped");
+    if (sub.y < -0.5 || sub.x < -0.5 || sub.y + sub.h > window.innerHeight + 0.5
+      || sub.x + sub.w > window.innerWidth + 0.5) reasons.push("viewport");
+    if (area(sub, clocks) > 0 || sub.y < clocks.y + clocks.h - 0.5) reasons.push("clock");
+    if (area(sub, credit) > 0) reasons.push("credit");
+    if (!glance.hidden && card.w > 0 && area(sub, card) > 0) reasons.push("card");
+    const bezel = document.getElementById("stage").classList.contains("subs-bezel");
+    if (bezel) {
+      if (sub.y + sub.h > glass.y + 0.5) reasons.push("glass");
+    } else {
+      const range = document.createRange();
+      const walker = document.createTreeWalker(subs, NodeFilter.SHOW_TEXT);
+      let node;
+      let linesN = 0;
+      let outside = false;
+      while ((node = walker.nextNode())) {
+        if (!node.textContent.trim()) continue;
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) {
+          if (rect.width <= 0 || rect.height <= 0) continue;
+          linesN += 1;
+          if (rect.top < glass.y - 0.5 || rect.bottom > glass.y + glass.h + 0.5
+            || rect.left < glass.x - 0.5 || rect.right > glass.x + glass.w + 0.5) {
+            outside = true;
+          }
+        }
+      }
+      if (linesN < 1 || linesN > 3) reasons.push("lines");
+      if (outside) reasons.push("outside");
+    }
+    if (reasons.length) {
+      failures.push({
+        utc: line.utc,
+        why: reasons.join(","),
+        n: line.text.length,
+        head: line.text.slice(0, 48),
+      });
+      if (failures.length >= 6) break;
+    }
+  }
+  return {count: lines.length, failures};
+}
+"""
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome", headless=True)
+            context = browser.new_context(
+                viewport={"width": 360, "height": 800},
+                has_touch=False,
+                reduced_motion="reduce",
+            )
+            page = context.new_page()
+            page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
+            page.evaluate("() => sessionStorage.setItem('artemis2.hint','1')")
+            page.wait_for_function(
+                """() => {
+                  document.getElementById('enter').click();
+                  return document.getElementById('stage').classList.contains('live');
+                }"""
+            )
+            page.evaluate(
+                """async () => {
+                  const doc = await fetch('data/timeline.json').then((res) => res.json());
+                  window.__artemisLines = doc.lines.filter((line) => line.text && line.text.trim());
+                }"""
+            )
+            page.evaluate(
+                """() => {
+                  const scrub = document.getElementById('scrub');
+                  const start = Date.parse('2026-04-06T19:33:00Z');
+                  const end = Date.parse('2026-04-06T19:48:30Z');
+                  const t = Date.parse('2026-04-06T19:46:23.000Z');
+                  scrub.value = String(Math.round(((t - start) / (end - start)) * 1000));
+                  scrub.dispatchEvent(new Event('input', { bubbles: true }));
+                }"""
+            )
+            page.wait_for_function(
+                """() => {
+                  const say = document.querySelector('#subs .say');
+                  return say && (say.dataset.full || '').includes('perpendicular');
+                }"""
+            )
+            if page.locator("#play").inner_text().strip() == "Pause":
+                page.click("#play")
+            for height in heights:
+                for width in widths:
+                    page.set_viewport_size({"width": width, "height": height})
+                    row = page.evaluate(check)
+                    assert row["count"] > 200, (width, height, row["count"])
+                    assert row["failures"] == [], (width, height, row["failures"])
             context.close()
             browser.close()
     finally:
