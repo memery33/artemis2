@@ -7,9 +7,9 @@ enum PlaybackTiming {
     ///
     /// `playerSeconds` is `sampleTime / sampleRate`. A segment scheduled in the
     /// future still starts the node immediately, so that value includes the
-    /// silent wait (`lead`). Host times, when both are known, are the render
-    /// clock and the host time at which the file should become audible.
-    /// The result is never negative.
+    /// silent wait (`lead`). Host time tells us whether that wait is over.
+    /// Once the file is audible, the sample clock is the position: it stops
+    /// while the node is paused, and host time does not. The result is never negative.
     static func fileSeconds(
         scheduledStart: TimeInterval,
         playerSeconds: TimeInterval,
@@ -17,16 +17,22 @@ enum PlaybackTiming {
         renderHostSeconds: TimeInterval? = nil,
         audibleHostSeconds: TimeInterval? = nil
     ) -> TimeInterval {
-        if let renderHostSeconds, let audibleHostSeconds {
-            return max(0, scheduledStart + renderHostSeconds - audibleHostSeconds)
+        if let renderHostSeconds, let audibleHostSeconds, renderHostSeconds < audibleHostSeconds {
+            return 0
         }
         return max(0, scheduledStart + playerSeconds - lead)
     }
 
     /// Where to put the playhead after the engine has stopped the node.
-    /// `missionSeconds` is `utc - segment.start`. It is clamped to the file.
-    static func recoveryOffset(missionSeconds: TimeInterval, fileDuration: TimeInterval) -> TimeInterval {
+    /// A live render sample wins over mission time, which can be stale while
+    /// the display link is paused. Either value is clamped to the file.
+    static func recoveryOffset(
+        missionSeconds: TimeInterval,
+        fileDuration: TimeInterval,
+        liveRenderSeconds: TimeInterval? = nil
+    ) -> TimeInterval {
         let duration = max(0, fileDuration)
-        return min(max(0, missionSeconds), duration)
+        let raw = liveRenderSeconds ?? missionSeconds
+        return min(max(0, raw), duration)
     }
 }

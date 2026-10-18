@@ -79,7 +79,7 @@ struct WindowPane: View {
                     bezel
                 }
             }
-            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages)) {
+            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
                 if let frame = pair.current {
                     model.prefetch(frame, maxPixel: pixels)
                 }
@@ -234,7 +234,7 @@ struct CompanionPane: View {
                                         .clipped()
                                 }
                             }
-                            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages)) {
+                            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
                                 if let frame = pair.current {
                                     model.prefetch(frame, maxPixel: pixels)
                                 }
@@ -298,7 +298,7 @@ struct CabinCard: View {
                                         .frame(width: geo.size.width, height: geo.size.height)
                                 }
                             }
-                            .task(id: "\(model.phoneImages)|\(card.file)@\(MediaStore.pixelBucket(pixels))") {
+                            .task(id: "\(model.frameCacheEpoch)|\(model.phoneImages)|\(card.file)@\(MediaStore.pixelBucket(pixels))") {
                                 model.prefetch(card, maxPixel: pixels)
                             }
                         }
@@ -411,9 +411,9 @@ struct TargetMap: View {
     }
 }
 
-private func framePrefetchToken(_ pair: FramePair, pixels: CGFloat, small: Bool) -> String {
+private func framePrefetchToken(_ pair: FramePair, pixels: CGFloat, small: Bool, epoch: Int) -> String {
     let bucket = MediaStore.pixelBucket(pixels)
-    return "\(small)|\(pair.current?.file ?? "")|\(pair.next?.file ?? "")@\(bucket)"
+    return "\(epoch)|\(small)|\(pair.current?.file ?? "")|\(pair.next?.file ?? "")@\(bucket)"
 }
 
 enum Stamp {
@@ -432,13 +432,17 @@ extension PlaybackModel {
     func photo(_ frame: Frame, maxPixel: CGFloat) -> UIImage? {
         _ = frameCacheEpoch
         let cap = maxPixel > 1 ? maxPixel : 720
-        return MediaStore.cachedImage(file: frame.file, small: phoneImages, maxPixel: cap)
+        if let image = MediaStore.cachedImage(file: frame.file, small: phoneImages, maxPixel: cap) {
+            return image
+        }
+        prefetch(frame, maxPixel: cap)
+        return nil
     }
 
     func prefetch(_ frame: Frame, maxPixel: CGFloat) {
         let cap = maxPixel > 1 ? maxPixel : 720
         MediaStore.prefetch(file: frame.file, small: phoneImages, maxPixel: cap) { [weak self] in
-            self?.noteFramesDecoded()
+            self?.noteFramesDecoded(file: frame.file)
         }
     }
 

@@ -90,6 +90,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         engine.connect(player, to: engine.mainMixerNode, format: nil)
         observeNotifications()
         observeEngineConfiguration()
+        MediaStore.observeMemoryWarning()
     }
 
     deinit {
@@ -147,7 +148,9 @@ final class PlaybackModel: NSObject, ObservableObject {
             refreshNowPlaying(force: true)
             return
         }
-        if fromHold, let file = audioFile, currentFile != nil {
+        // Resume on a fresh schedule at the saved sample. Playing the old node
+        // again would keep a host-time anchor that advanced through the pause.
+        if (fromHold || !player.isPlaying), let file = audioFile, currentFile != nil {
             reschedule(file: file, at: max(0, holdSeconds))
         }
         do {
@@ -174,6 +177,8 @@ final class PlaybackModel: NSObject, ObservableObject {
             holdSeconds = renderedSeconds()
         }
         player.pause()
+        audibleHostSeconds = nil
+        scheduledLead = 0
         playing = false
         if user {
             resumeAfterInterrupt = false
@@ -340,6 +345,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if active {
             lifetime.displayLink?.isPaused = false
             if holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
+                // Sample time, not host time, so a pause does not move the clock.
                 utc = segment.start.addingTimeInterval(renderedSeconds())
                 lastWall = nil
             }
@@ -437,9 +443,18 @@ final class PlaybackModel: NSObject, ObservableObject {
         player.stop()
     }
 
-    func noteFramesDecoded() {
+    func noteFramesDecoded(file: String) {
         frameCacheEpoch += 1
+        guard file == currentArtworkFile() else { return }
         refreshNowPlaying(force: true)
+    }
+
+    private func currentArtworkFile() -> String {
+        if let frames = timeline?.frames,
+           let frame = FrameSelection.visiblePair(at: utc, window: window, frames: frames).current {
+            return frame.file
+        }
+        return "images/art002e016184.webp"
     }
 
     private func reloadAtCurrentTime() {
@@ -799,19 +814,23 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
     }
 
-    /// The engine dropped its connections. The node is often already stopped,
-    /// so resume from `playing` and from mission time, not from the render clock.
+    /// The engine dropped its connections. If the node is still rendering, resume
+    /// from that sample. Mission time can be stale while the phone is locked.
     private func recoverEngineConfiguration() {
         guard !rebuilding else { return }
         let wasPlaying = playing
         let armed = holdUntil
         let segment = segmentForCurrentFile()
+        // The display link is paused while locked, so utc can sit at the last
+        // file boundary. The node still knows the sample if it is rendering.
+        let liveRender: TimeInterval? = (player.isPlaying && player.lastRenderTime != nil) ? renderedSeconds() : nil
         rebuilding = true
         defer { rebuilding = false }
         stopPlayer()
         graphReady = false
         usingEnvironment = false
-        if let armed, armed > utc, let segment {
+        let fileIsAudible = (liveRender ?? 0) > 0
+        if !fileIsAudible, let armed, armed > utc, let segment {
             scheduleAtRealStart(segment, delay: max(0, armed.timeIntervalSince(utc)))
             return
         }
@@ -819,7 +838,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         let missionSeconds = segment.map { utc.timeIntervalSince($0.start) } ?? 0
         let rate = file.processingFormat.sampleRate
         let duration = rate > 0 ? Double(file.length) / rate : 0
-        let position = PlaybackTiming.recoveryOffset(missionSeconds: missionSeconds, fileDuration: duration)
+        let position = PlaybackTiming.recoveryOffset(
+            missionSeconds: missionSeconds,
+            fileDuration: duration,
+            liveRenderSeconds: liveRender
+        )
+        if let segment {
+            utc = min(segment.end, max(segment.start, segment.start.addingTimeInterval(position)))
+        }
         connectGraph(format: file.processingFormat)
         reschedule(file: file, at: position)
         do {
@@ -934,11 +960,11 @@ final class PlaybackModel: NSObject, ObservableObject {
             model.skip(by: -interval)
         }
         let positionCommand = center.changePlaybackPositionCommand
-        let positionToken = positionCommand.addTarget { event in
+        let positionToken = positionCommand.addTarget { [weak self] event in
             guard let position = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime else {
                 return .commandFailed
             }
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.seekElapsed(position)
             }
             return .success
@@ -950,8 +976,8 @@ final class PlaybackModel: NSObject, ObservableObject {
         _ command: MPRemoteCommand,
         action: @escaping @MainActor (PlaybackModel, MPRemoteCommandEvent) -> Void
     ) {
-        let token = command.addTarget { event in
-            Task { @MainActor [weak self] in
+        let token = command.addTarget { [weak self] event in
+            Task { @MainActor in
                 guard let self else { return }
                 action(self, event)
             }
@@ -991,18 +1017,12 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func artworkImage() -> UIImage? {
-        let file: String
-        if let frames = timeline?.frames,
-           let frame = FrameSelection.visiblePair(at: utc, window: window, frames: frames).current {
-            file = frame.file
-        } else {
-            file = "images/art002e016184.webp"
-        }
+        let file = currentArtworkFile()
         if let image = MediaStore.cachedImage(file: file, small: true, maxPixel: 720) {
             return image
         }
         MediaStore.prefetch(file: file, small: true, maxPixel: 720) { [weak self] in
-            self?.noteFramesDecoded()
+            self?.noteFramesDecoded(file: file)
         }
         return nil
     }
@@ -1017,9 +1037,31 @@ enum MediaStore {
     }()
     private static var inflight = Set<String>()
     private static var failed = Set<String>()
+    private static var attempts: [String: Int] = [:]
     private static var waiters: [String: @MainActor () -> Void] = [:]
+    private static var pinned: [String: UIImage] = [:]
+    private static var pinOrder: [String] = []
+    private static var memoryObserver: NSObjectProtocol?
 
-    static func pixelBucket(_ maxPixel: CGFloat) -> Int {
+    static func observeMemoryWarning() {
+        guard memoryObserver == nil else { return }
+        memoryObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                MediaStore.allowRetries()
+            }
+        }
+    }
+
+    static func allowRetries() {
+        failed.removeAll()
+        attempts.removeAll()
+    }
+
+    nonisolated static func pixelBucket(_ maxPixel: CGFloat) -> Int {
         max(32, Int((max(maxPixel, 1) / 32).rounded(.up)) * 32)
     }
 
@@ -1040,16 +1082,23 @@ enum MediaStore {
         return url(for: sibling) != nil ? sibling : file
     }
 
-    /// Cache read. Does not decode.
+    /// Cache read. A few on-screen frames are also held strongly, so an eviction
+    /// does not turn the glass black.
     static func cachedImage(file: String, small: Bool, maxPixel: CGFloat) -> UIImage? {
-        cache.object(forKey: cacheKey(file: file, small: small, maxPixel: maxPixel))
+        let key = cacheKey(file: file, small: small, maxPixel: maxPixel)
+        let name = key as String
+        if let cached = cache.object(forKey: key) {
+            pin(name, cached)
+            return cached
+        }
+        return pinned[name]
     }
 
     /// Decodes off the main thread and stores the image on the main actor.
     static func prefetch(file: String, small: Bool, maxPixel: CGFloat, ready: @escaping @MainActor () -> Void) {
         let key = cacheKey(file: file, small: small, maxPixel: maxPixel)
         let name = key as String
-        if cache.object(forKey: key) != nil || inflight.contains(name) || failed.contains(name) {
+        if cache.object(forKey: key) != nil || pinned[name] != nil || inflight.contains(name) || failed.contains(name) {
             return
         }
         guard let url = url(for: variant(file, small: small)) else {
@@ -1077,12 +1126,27 @@ enum MediaStore {
         let ready = waiters.removeValue(forKey: name)
         let image = owned.map { UIImage(cgImage: $0.cgImage) } ?? fallbackImage(url: url, maxPixel: maxPixel)
         guard let image else {
-            failed.insert(name)
+            let count = (attempts[name] ?? 0) + 1
+            attempts[name] = count
+            if count >= 2 {
+                failed.insert(name)
+            }
             return
         }
         let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
         cache.setObject(image, forKey: name as NSString, cost: cost)
+        pin(name, image)
         ready?()
+    }
+
+    private static func pin(_ name: String, _ image: UIImage) {
+        pinOrder.removeAll { $0 == name }
+        pinOrder.append(name)
+        pinned[name] = image
+        while pinOrder.count > 8 {
+            let oldest = pinOrder.removeFirst()
+            pinned.removeValue(forKey: oldest)
+        }
     }
 
     /// Used only when ImageIO cannot read the file. The view never calls this.

@@ -30,7 +30,7 @@ final class PlaybackTimingTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(playerSeconds, fileDuration)
     }
 
-    func testHostTimeIgnoresTheScheduledWait() {
+    func testHostTimeOnlyHoldsTheClockDuringTheWait() {
         let duringWait = PlaybackTiming.fileSeconds(
             scheduledStart: 0,
             playerSeconds: 4,
@@ -43,11 +43,26 @@ final class PlaybackTimingTests: XCTestCase {
         let playing = PlaybackTiming.fileSeconds(
             scheduledStart: 0,
             playerSeconds: 9 + 3,
-            lead: 99,
+            lead: 9,
             renderHostSeconds: 1_012,
             audibleHostSeconds: 1_009
         )
         XCTAssertEqual(playing, 3, accuracy: 0.0001)
+    }
+
+    func testPauseAfterTheGapDoesNotFollowHostTime() {
+        let lead = 9.0
+        let intoFile = 11.0
+        let pause = 30.0
+        let position = PlaybackTiming.fileSeconds(
+            scheduledStart: 0,
+            playerSeconds: lead + intoFile,
+            lead: lead,
+            renderHostSeconds: 1_009 + intoFile + pause,
+            audibleHostSeconds: 1_009
+        )
+        XCTAssertEqual(position, intoFile, accuracy: 0.0001)
+        XCTAssertNotEqual(position, intoFile + pause)
     }
 
     func testImmediatePlaybackKeepsTheScheduledOffset() {
@@ -72,5 +87,33 @@ final class PlaybackTimingTests: XCTestCase {
         XCTAssertEqual(resumed, missionSeconds)
         XCTAssertNotEqual(resumed, overshotRenderClock)
         XCTAssertLessThan(resumed, fileDuration)
+    }
+
+    func testLockedRecoveryUsesTheLiveSampleNotTheStaleClock() {
+        let position = PlaybackTiming.recoveryOffset(
+            missionSeconds: 10,
+            fileDuration: 100,
+            liveRenderSeconds: 47
+        )
+        XCTAssertEqual(position, 47)
+        XCTAssertNotEqual(position, 10)
+    }
+
+    func testLockedRecoveryWithoutARenderClockUsesMissionTime() {
+        XCTAssertEqual(
+            PlaybackTiming.recoveryOffset(missionSeconds: 10, fileDuration: 100, liveRenderSeconds: nil),
+            10
+        )
+    }
+
+    func testLiveRenderIsClampedToTheFile() {
+        XCTAssertEqual(
+            PlaybackTiming.recoveryOffset(missionSeconds: 10, fileDuration: 100, liveRenderSeconds: 140),
+            100
+        )
+        XCTAssertEqual(
+            PlaybackTiming.recoveryOffset(missionSeconds: 10, fileDuration: 100, liveRenderSeconds: -3),
+            0
+        )
     }
 }
