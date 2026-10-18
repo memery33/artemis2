@@ -456,50 +456,63 @@ def test_desktop_card_clears_the_credit_and_subtitle():
                 assert _overlap_area(row["glance"], row["credit"]) == 0, (width, height, row)
                 assert _overlap_area(row["glance"], row["subs"]) == 0, (width, height, row)
                 assert _overlap_area(row["subs"], row["credit"]) == 0, (width, height, row)
-            # A third credit line is taller than the old 3.4em subtitle lift.
-            narrow = browser.new_context(
-                viewport={"width": 320, "height": 700},
-                has_touch=False,
-                reduced_motion="reduce",
-            )
-            page = narrow.new_page()
-            page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
-            page.evaluate("() => sessionStorage.setItem('artemis2.hint','1')")
-            page.click("#enter")
-            page.evaluate(
-                """() => {
-                  const scrub = document.getElementById('scrub');
-                  const start = Date.parse('2026-04-06T19:33:00Z');
-                  const end = Date.parse('2026-04-06T19:48:30Z');
-                  scrub.value = String(Math.round((8000 / (end - start)) * 1000));
-                  scrub.dispatchEvent(new Event('input', { bubbles: true }));
-                }"""
-            )
-            page.wait_for_timeout(300)
-            wrapped = page.evaluate(
-                """() => {
-                  const credit = document.getElementById('credit');
-                  const subs = document.getElementById('subs');
-                  const box = (el) => {
-                    const r = el.getBoundingClientRect();
-                    return {x: r.x, y: r.y, w: r.width, h: r.height};
-                  };
-                  return {
-                    credit: box(credit),
-                    subs: box(subs),
-                    text: credit.textContent,
-                    measured: getComputedStyle(document.getElementById('stage')).getPropertyValue('--credit-measured').trim(),
-                  };
-                }"""
-            )
-            narrow.close()
-            assert "not affiliated with NASA" in wrapped["text"]
-            assert wrapped["credit"]["h"] > 45, wrapped
-            assert _overlap_area(wrapped["subs"], wrapped["credit"]) == 0, wrapped
-            assert wrapped["measured"].endswith("px")
-            assert float(wrapped["measured"][:-2]) == wrapped["credit"]["h"] or abs(
-                float(wrapped["measured"][:-2]) - wrapped["credit"]["h"]
-            ) < 0.2
+            # A wrapped credit is taller than one line. The card has to use that
+            # measured box, or its bottom cuts the first line.
+            wraps = [(560, 800), (390, 844), (360, 740), (320, 700), (280, 640)]
+            for width, height in wraps:
+                narrow = browser.new_context(
+                    viewport={"width": width, "height": height},
+                    has_touch=False,
+                    reduced_motion="reduce",
+                )
+                page = narrow.new_page()
+                page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
+                page.evaluate("() => sessionStorage.setItem('artemis2.hint','1')")
+                page.click("#enter")
+                page.evaluate(
+                    """() => {
+                      const scrub = document.getElementById('scrub');
+                      const start = Date.parse('2026-04-06T19:33:00Z');
+                      const end = Date.parse('2026-04-06T19:48:30Z');
+                      scrub.value = String(Math.round((8000 / (end - start)) * 1000));
+                      scrub.dispatchEvent(new Event('input', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_function("() => !document.getElementById('glance').hidden")
+                if page.locator("#play").inner_text().strip() == "Pause":
+                    page.click("#play")
+                page.wait_for_timeout(200)
+                wrapped = page.evaluate(
+                    """() => {
+                      const credit = document.getElementById('credit');
+                      const subs = document.getElementById('subs');
+                      const glance = document.getElementById('glance');
+                      const box = (el) => {
+                        const r = el.getBoundingClientRect();
+                        return {x: r.x, y: r.y, w: r.width, h: r.height};
+                      };
+                      return {
+                        glance: box(glance),
+                        credit: box(credit),
+                        subs: box(subs),
+                        text: credit.textContent,
+                        shown: !glance.hidden && glance.getBoundingClientRect().height > 0,
+                        measured: getComputedStyle(document.getElementById('stage')).getPropertyValue('--credit-measured').trim(),
+                      };
+                    }"""
+                )
+                narrow.close()
+                assert wrapped["shown"], (width, height, wrapped)
+                assert "not affiliated with NASA" in wrapped["text"]
+                assert wrapped["credit"]["h"] > 30, (width, height, wrapped)
+                assert _overlap_area(wrapped["glance"], wrapped["credit"]) == 0, (width, height, wrapped)
+                assert _overlap_area(wrapped["subs"], wrapped["credit"]) == 0, (width, height, wrapped)
+                assert wrapped["measured"].endswith("px")
+                assert abs(float(wrapped["measured"][:-2]) - wrapped["credit"]["h"]) < 0.2, (
+                    width,
+                    height,
+                    wrapped,
+                )
             browser.close()
     finally:
         server.shutdown()

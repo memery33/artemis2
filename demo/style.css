@@ -40,10 +40,9 @@ button, input[type="range"] { touch-action: manipulation; }
   /* Credit inset from the bottom of the glass. The dock is not on the glass
      unless a touch layout's window actually reaches it. */
   --dock-clear: max(10px, env(safe-area-inset-bottom));
-  /* One credit line, plus the desktop chip's 3px + 4px padding. */
+  /* One credit line, plus the desktop chip's 3px + 4px padding.
+     The card uses this until the credit box has been measured. */
   --credit-h: calc(11px * 1.35 + 7px);
-  /* Replaced by the credit element's border box once it has wrapped. */
-  --credit-measured: 0px;
 }
 
 #stage.touch {
@@ -282,9 +281,9 @@ button, input[type="range"] { touch-action: manipulation; }
 }
 
 /* The card stops at the credit band's top: leftover viewport under the
-   window, the three bezel steps, --dock-clear, and the credit line.
-   16px covers the window's drift. Compact phones and the open fold
-   keep the positions above and below. */
+   window, the three bezel steps, --dock-clear, and the credit's measured
+   box (one line until that box exists). 16px covers the window's drift.
+   Compact phones and the open fold keep the positions above and below. */
 #stage:not(.compact):not(.fold) #glance {
   bottom: max(
     16px,
@@ -295,7 +294,7 @@ button, input[type="range"] { touch-action: manipulation; }
       + clamp(12px, 1.5vw, 22px)
       + clamp(5px, 0.45vw, 9px)
       + var(--dock-clear)
-      + var(--credit-h)
+      + var(--credit-measured, var(--credit-h))
       + 16px
     )
   );
