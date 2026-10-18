@@ -660,6 +660,186 @@ def test_fine_pointer_subtitle_clears_the_card_across_widths():
         server.shutdown()
 
 
+def test_fold_transcript_scrolls_clear_of_the_dock():
+    """Fold transcript text stays in the rail, including while the window drifts.
+
+    The rail is the open-fold column. Other coarse sizes in that shape get
+    the same check. A fine pointer never shows the rail.
+    """
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    from playwright.sync_api import sync_playwright
+
+    handler = partial(SimpleHTTPRequestHandler, directory=str(ROOT / "demo"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    # width, height, device scale. All coarse. 890×626 is the open Duo.
+    layouts = [
+        (890, 626, 1),
+        (890, 626, 3),
+        (800, 600, 1),
+        (1024, 768, 1),
+        (1200, 800, 1),
+        (624, 520, 1),
+    ]
+    # Rest, then the corners of the window's drift (look ±10px, float on top).
+    drifts = [
+        (0, 0, 0),
+        (13, 8.5, 0.11),
+        (-13, 8.5, -0.11),
+        (13, -8.5, 0.11),
+        (-13, -8.5, -0.11),
+        (13, 0, 0),
+        (-13, 0, 0),
+        (0, 8.5, 0),
+        (0, -8.5, 0),
+    ]
+    measure = r"""
+() => {
+  const boxOf = (el) => {
+    const r = el.getBoundingClientRect();
+    return {x: r.x, y: r.y, w: r.width, h: r.height};
+  };
+  const clip = (a, b) => {
+    const x = Math.max(a.x, b.x);
+    const y = Math.max(a.y, b.y);
+    const right = Math.min(a.x + a.w, b.x + b.w);
+    const bottom = Math.min(a.y + a.h, b.y + b.h);
+    if (right - x <= 0 || bottom - y <= 0) return null;
+    return {x, y, w: right - x, h: bottom - y};
+  };
+  const area = (a, b) => {
+    const hit = clip(a, b);
+    return hit ? hit.w * hit.h : 0;
+  };
+  const rail = document.getElementById('rail');
+  const transcript = document.getElementById('transcript');
+  const dock = document.getElementById('dock');
+  const railBox = boxOf(rail);
+  const transBox = boxOf(transcript);
+  const dockBox = boxOf(dock);
+  const railStyle = getComputedStyle(rail);
+  const transStyle = getComputedStyle(transcript);
+  // Line boxes keep their layout position through overflow:auto. That is the
+  // plateau line sitting on the Full button. Only a clipping rail removes it.
+  // The active line is checked against the transcript scrollport separately.
+  const clips = railStyle.overflow === 'hidden' || railStyle.overflow === 'clip';
+  const view = clips ? railBox : null;
+  const range = document.createRange();
+  let textOverlap = 0;
+  let textRects = 0;
+  const walker = document.createTreeWalker(transcript, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      const piece = {x: rect.x, y: rect.y, w: rect.width, h: rect.height};
+      const visible = view ? clip(piece, view) : piece;
+      if (!visible) continue;
+      textRects += 1;
+      textOverlap += area(visible, dockBox);
+    }
+  }
+  const now = transcript.querySelector('.now');
+  const nowBox = now ? boxOf(now) : null;
+  const companion = document.getElementById('companion');
+  companion.focus();
+  const style = getComputedStyle(companion);
+  const pad = (parseFloat(style.outlineWidth) || 0) + (parseFloat(style.outlineOffset) || 0);
+  const button = boxOf(companion);
+  const ring = {
+    x: button.x - pad,
+    y: button.y - pad,
+    w: button.w + pad * 2,
+    h: button.h + pad * 2,
+  };
+  return {
+    shown: getComputedStyle(rail).display !== 'none' && railBox.h > 0,
+    dock: getComputedStyle(dock).display !== 'none',
+    textOverlap,
+    textRects,
+    railDock: area(railBox, dockBox),
+    nowVisible: !!(nowBox && clip(nowBox, transBox)),
+    minHeight: transStyle.minHeight,
+    scroll: transcript.scrollTop,
+    nowOffset: now ? now.offsetTop : 0,
+    clientH: transcript.clientHeight,
+    scrollH: transcript.scrollHeight,
+    ringInside: area(ring, railBox) > 0 && ring.y >= railBox.y - 0.5 && ring.y + ring.h <= railBox.y + railBox.h + 0.5
+      && ring.x >= railBox.x - 0.5 && ring.x + ring.w <= railBox.x + railBox.w + 0.5,
+    outline: style.outlineStyle,
+  };
+}
+"""
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome", headless=True)
+            for scale in (1, 3):
+                group = [item for item in layouts if item[2] == scale]
+                if not group:
+                    continue
+                context = browser.new_context(
+                    viewport={"width": group[0][0], "height": group[0][1]},
+                    has_touch=True,
+                    device_scale_factor=scale,
+                    reduced_motion="reduce",
+                )
+                page = context.new_page()
+                page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
+                page.evaluate("() => sessionStorage.setItem('artemis2.hint','1')")
+                page.wait_for_function(
+                    """() => {
+                      document.getElementById('enter').click();
+                      return document.getElementById('stage').classList.contains('live');
+                    }"""
+                )
+                page.evaluate(
+                    """() => {
+                      const scrub = document.getElementById('scrub');
+                      const start = Date.parse('2026-04-06T19:33:00Z');
+                      const end = Date.parse('2026-04-06T19:48:30Z');
+                      scrub.value = String(Math.round((60000 / (end - start)) * 1000));
+                      scrub.dispatchEvent(new Event('input', { bubbles: true }));
+                    }"""
+                )
+                if page.locator("#play").inner_text().strip() == "Pause":
+                    page.click("#play")
+                page.wait_for_function("() => document.querySelector('#transcript .now')")
+                for width, height, _scale in group:
+                    page.set_viewport_size({"width": width, "height": height})
+                    page.evaluate(
+                        "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+                    )
+                    for dx, dy, rot in drifts:
+                        page.evaluate(
+                            """([x, y, turn]) => {
+                              const win = document.getElementById('window');
+                              win.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) rotate(${turn}deg)`;
+                            }""",
+                            [dx, dy, rot],
+                        )
+                        row = page.evaluate(measure)
+                        where = (width, height, scale, dx, dy, row)
+                        assert row["shown"] and row["dock"], where
+                        assert row["textRects"] > 0, where
+                        assert row["textOverlap"] == 0, where
+                        assert row["minHeight"] == "0px", where
+                        assert row["railDock"] == 0, where
+                        assert row["nowVisible"], where
+                        if row["nowOffset"] > row["clientH"]:
+                            assert row["scroll"] > 0, where
+                        assert row["ringInside"], where
+                context.close()
+            browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_narrow_webp_variants_are_downscales_of_the_shipped_frames():
     images = ROOT / "demo" / "data" / "images"
     sources = sorted(path for path in images.glob("*.webp") if not path.name.endswith(".720.webp"))
