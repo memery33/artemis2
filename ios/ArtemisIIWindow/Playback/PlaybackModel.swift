@@ -173,14 +173,15 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// That clears the interruption resume flag so a later `.shouldResume`
     /// does not start the recording again.
     func pause(user: Bool) {
-        let rendered = player.isPlaying ? renderedSeconds() : max(0, holdSeconds)
+        let nodeWasPlaying = player.isPlaying
+        let rendered = nodeWasPlaying ? renderedSeconds() : max(0, holdSeconds)
         let wait = audibleHostSeconds.map {
             PlaybackTiming.remainingWait(
                 nowHostSeconds: AVAudioTime.seconds(forHostTime: mach_absolute_time()),
                 audibleHostSeconds: $0
             )
         }
-        if player.isPlaying {
+        if nodeWasPlaying {
             holdSeconds = rendered
         }
         player.pause()
@@ -191,9 +192,11 @@ final class PlaybackModel: NSObject, ObservableObject {
                 segmentStart: segment.start,
                 segmentEnd: segment.end,
                 renderedSeconds: rendered,
+                holdSeconds: holdSeconds,
                 holdUntil: holdUntil,
                 utc: utc,
-                remainingWait: wait
+                remainingWait: wait,
+                nodeWasPlaying: nodeWasPlaying
             )
             utc = paused.utc
             holdUntil = paused.holdUntil
@@ -201,7 +204,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             if paused.resetWallClock {
                 lastWall = nil
             }
-        } else if rendered > 0 {
+        } else if nodeWasPlaying, rendered > 0 {
             holdUntil = nil
             lastWall = nil
         }
@@ -850,6 +853,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         // The display link is paused while locked, so utc can sit at the last
         // file boundary. The node still knows the sample if it is rendering.
         let liveRender: TimeInterval? = (player.isPlaying && player.lastRenderTime != nil) ? renderedSeconds() : nil
+        // Host time, read before stopPlayer() clears the anchor. `armed - utc` is
+        // too long while the display link is paused.
+        let measuredWait = audibleHostSeconds.map {
+            PlaybackTiming.remainingWait(
+                nowHostSeconds: AVAudioTime.seconds(forHostTime: mach_absolute_time()),
+                audibleHostSeconds: $0
+            )
+        }
         rebuilding = true
         defer { rebuilding = false }
         stopPlayer()
@@ -859,7 +870,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         let missionSeconds = segment.map { utc.timeIntervalSince($0.start) } ?? 0
         let rate = file.processingFormat.sampleRate
         let duration = rate > 0 ? Double(file.length) / rate : 0
-        let secondsUntilArm = armed.map { $0.timeIntervalSince(utc) }
+        let secondsUntilArm = PlaybackTiming.gapDelay(
+            remainingWait: measuredWait,
+            armedOffset: armed.map { $0.timeIntervalSince(utc) }
+        )
         switch PlaybackTiming.recoveryPlan(
             liveRenderSeconds: liveRender,
             secondsUntilArm: secondsUntilArm,

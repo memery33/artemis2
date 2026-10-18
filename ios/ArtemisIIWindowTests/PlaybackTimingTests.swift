@@ -112,9 +112,11 @@ final class PlaybackTimingTests: XCTestCase {
             segmentStart: start,
             segmentEnd: start.addingTimeInterval(40),
             renderedSeconds: 12.5,
+            holdSeconds: 0,
             holdUntil: start,
             utc: start.addingTimeInterval(-9),
-            remainingWait: nil
+            remainingWait: nil,
+            nodeWasPlaying: true
         )
         XCTAssertNil(paused.holdUntil)
         XCTAssertEqual(paused.utc, start.addingTimeInterval(12.5))
@@ -128,9 +130,11 @@ final class PlaybackTimingTests: XCTestCase {
             segmentStart: start,
             segmentEnd: start.addingTimeInterval(40),
             renderedSeconds: 0,
+            holdSeconds: 0,
             holdUntil: start,
             utc: start.addingTimeInterval(-9),
-            remainingWait: 4
+            remainingWait: 4,
+            nodeWasPlaying: true
         )
         XCTAssertEqual(paused.holdUntil, start)
         XCTAssertEqual(paused.utc, start.addingTimeInterval(-4))
@@ -158,5 +162,57 @@ final class PlaybackTimingTests: XCTestCase {
             fileDuration: 100
         )
         XCTAssertEqual(plan, .rearmGap(delay: 4))
+    }
+
+    func testPauseMidGapLeavesTheClock() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let end = start.addingTimeInterval(40)
+        let utc = end.addingTimeInterval(12)
+        let paused = PlaybackTiming.clockAfterPause(
+            segmentStart: start,
+            segmentEnd: end,
+            renderedSeconds: 40,
+            holdSeconds: 40,
+            holdUntil: nil,
+            utc: utc,
+            remainingWait: nil,
+            nodeWasPlaying: false
+        )
+        XCTAssertEqual(paused.utc, utc)
+        XCTAssertNil(paused.holdUntil)
+        XCTAssertEqual(paused.holdSeconds, 40, accuracy: 0.0001)
+        XCTAssertFalse(paused.resetWallClock)
+    }
+
+    func testLockedGapRecoveryUsesHostWaitNotTheStaleClock() {
+        let delay = PlaybackTiming.gapDelay(remainingWait: 4, armedOffset: 30)
+        XCTAssertEqual(delay, 4)
+        XCTAssertNotEqual(delay, 30)
+        XCTAssertEqual(PlaybackTiming.gapDelay(remainingWait: 0, armedOffset: 30), 0)
+        XCTAssertEqual(PlaybackTiming.gapDelay(remainingWait: nil, armedOffset: 6), 6)
+        let plan = PlaybackTiming.recoveryPlan(
+            liveRenderSeconds: 0,
+            secondsUntilArm: delay,
+            missionSeconds: 0,
+            fileDuration: 100
+        )
+        XCTAssertEqual(plan, .rearmGap(delay: 4))
+    }
+
+    func testExpiredArmClearsHoldUntil() {
+        let due = PlaybackTiming.recoveryPlan(
+            liveRenderSeconds: 0,
+            secondsUntilArm: 0,
+            missionSeconds: 10,
+            fileDuration: 100
+        )
+        XCTAssertEqual(due, .resumeFile(position: 10, clearHoldUntil: true))
+        let past = PlaybackTiming.recoveryPlan(
+            liveRenderSeconds: nil,
+            secondsUntilArm: -2,
+            missionSeconds: 10,
+            fileDuration: 100
+        )
+        XCTAssertEqual(past, .resumeFile(position: 10, clearHoldUntil: true))
     }
 }

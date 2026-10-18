@@ -49,18 +49,24 @@ enum PlaybackTiming {
     }
 
     /// Pause while a locked gap is still armed.
-    /// Once the file is audible, mission time becomes that sample and the arm is cleared
-    /// so resume does not schedule the file from 0:00. Before it is audible, mission time
-    /// moves forward only by the wait that has already elapsed.
+    /// The sample becomes mission time only when this node is actually playing inside
+    /// the file, or when that file is still armed. A finished file leaves its length in
+    /// `renderedSeconds` and `currentFile` pointing at it; a pause in the quiet that
+    /// follows must not pull the clock back to that end. Before an armed file is
+    /// audible, mission time moves forward only by the wait that has already elapsed.
     static func clockAfterPause(
         segmentStart: Date,
         segmentEnd: Date,
         renderedSeconds: TimeInterval,
+        holdSeconds: TimeInterval,
         holdUntil: Date?,
         utc: Date,
-        remainingWait: TimeInterval?
+        remainingWait: TimeInterval?,
+        nodeWasPlaying: Bool
     ) -> PausedClock {
-        if renderedSeconds > 0 {
+        let armed = holdUntil != nil
+        let playingInsideFile = nodeWasPlaying && utc < segmentEnd
+        if renderedSeconds > 0, playingInsideFile || armed {
             let span = max(0, segmentEnd.timeIntervalSince(segmentStart))
             let position = min(max(0, renderedSeconds), span)
             return PausedClock(
@@ -86,7 +92,13 @@ enum PlaybackTiming {
                 resetWallClock: true
             )
         }
-        return PausedClock(utc: utc, holdUntil: holdUntil, holdSeconds: 0, resetWallClock: false)
+        return PausedClock(utc: utc, holdUntil: holdUntil, holdSeconds: holdSeconds, resetWallClock: false)
+    }
+
+    /// Seconds until an armed file. Host time left before it becomes audible wins
+    /// over `holdUntil - utc`, which stays long while the display link is paused.
+    static func gapDelay(remainingWait: TimeInterval?, armedOffset: TimeInterval?) -> TimeInterval? {
+        remainingWait ?? armedOffset
     }
 
     enum RecoveryPlan: Equatable {
@@ -102,16 +114,19 @@ enum PlaybackTiming {
         missionSeconds: TimeInterval,
         fileDuration: TimeInterval
     ) -> RecoveryPlan {
-        if (liveRenderSeconds ?? 0) <= 0, let secondsUntilArm, secondsUntilArm > 0 {
+        let live = liveRenderSeconds ?? 0
+        if live <= 0, let secondsUntilArm, secondsUntilArm > 0 {
             return .rearmGap(delay: secondsUntilArm)
         }
+        // An arm that has already come due must come down too, or the next file never loads.
+        let armIsDue = secondsUntilArm.map { $0 <= 0 } ?? false
         return .resumeFile(
             position: recoveryOffset(
                 missionSeconds: missionSeconds,
                 fileDuration: fileDuration,
                 liveRenderSeconds: liveRenderSeconds
             ),
-            clearHoldUntil: (liveRenderSeconds ?? 0) > 0
+            clearHoldUntil: live > 0 || armIsDue
         )
     }
 }
