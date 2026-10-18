@@ -24,15 +24,22 @@ enum PlaybackTiming {
     }
 
     /// Where to put the playhead after the engine has stopped the node.
-    /// A live render sample wins over mission time, which can be stale while
-    /// the display link is paused. Either value is clamped to the file.
+    /// A positive live sample wins over mission time, which can be stale while
+    /// the display link is paused. A reading of 0 or less is unknown: the node
+    /// is playing through the lead, or the arm has just come due, and that 0
+    /// would restart the file. Either value is clamped to the file.
     static func recoveryOffset(
         missionSeconds: TimeInterval,
         fileDuration: TimeInterval,
         liveRenderSeconds: TimeInterval? = nil
     ) -> TimeInterval {
         let duration = max(0, fileDuration)
-        let raw = liveRenderSeconds ?? missionSeconds
+        let raw: TimeInterval
+        if let liveRenderSeconds, liveRenderSeconds > 0 {
+            raw = liveRenderSeconds
+        } else {
+            raw = missionSeconds
+        }
         return min(max(0, raw), duration)
     }
 
@@ -119,22 +126,13 @@ enum PlaybackTiming {
             return .rearmGap(delay: secondsUntilArm)
         }
         // An arm that has already come due must come down too, or the next file never loads.
-        // A render of 0 is the silent wait, not elapsed time, so that resume position is
-        // mission time clamped to the file. A positive sample still wins.
+        // recoveryOffset treats a render of 0 as unknown, so this passes the reading through.
         let armIsDue = secondsUntilArm.map { $0 <= 0 } ?? false
-        let sample: TimeInterval?
-        if live > 0 {
-            sample = liveRenderSeconds
-        } else if armIsDue {
-            sample = nil
-        } else {
-            sample = liveRenderSeconds
-        }
         return .resumeFile(
             position: recoveryOffset(
                 missionSeconds: missionSeconds,
                 fileDuration: fileDuration,
-                liveRenderSeconds: sample
+                liveRenderSeconds: liveRenderSeconds
             ),
             clearHoldUntil: live > 0 || armIsDue
         )

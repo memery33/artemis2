@@ -199,6 +199,29 @@ final class PlaybackTimingTests: XCTestCase {
         XCTAssertEqual(plan, .rearmGap(delay: 4))
     }
 
+    func testRecoveryAtTheMomentAnArmComesDueUsesMissionTime() {
+        // The node is playing, so the render clock is non-nil, but the lead still reads 0.
+        let offset = PlaybackTiming.recoveryOffset(
+            missionSeconds: 10,
+            fileDuration: 100,
+            liveRenderSeconds: 0
+        )
+        XCTAssertEqual(offset, 10)
+        XCTAssertNotEqual(offset, 0)
+        XCTAssertEqual(
+            PlaybackTiming.recoveryOffset(missionSeconds: 10, fileDuration: 100, liveRenderSeconds: -1),
+            10
+        )
+
+        let plan = PlaybackTiming.recoveryPlan(
+            liveRenderSeconds: 0,
+            secondsUntilArm: 0,
+            missionSeconds: 10,
+            fileDuration: 100
+        )
+        XCTAssertEqual(plan, .resumeFile(position: 10, clearHoldUntil: true))
+    }
+
     func testExpiredArmClearsHoldUntil() {
         // A render of 0 is not elapsed time. Mission time, clamped to the file, is.
         let due = PlaybackTiming.recoveryPlan(
