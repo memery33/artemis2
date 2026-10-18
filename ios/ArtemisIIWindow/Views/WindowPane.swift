@@ -79,6 +79,14 @@ struct WindowPane: View {
                     bezel
                 }
             }
+            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages)) {
+                if let frame = pair.current {
+                    model.prefetch(frame, maxPixel: pixels)
+                }
+                if let frame = pair.next {
+                    model.prefetch(frame, maxPixel: pixels)
+                }
+            }
         }
     }
 
@@ -216,13 +224,23 @@ struct CompanionPane: View {
                     .overlay {
                         GeometryReader { geo in
                             let pixels = max(geo.size.width, geo.size.height) * displayScale
-                            if let frame = pair.current,
-                               let image = model.photo(frame, maxPixel: pixels) {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: geo.size.width, height: geo.size.height)
-                                    .clipped()
+                            ZStack {
+                                if let frame = pair.current,
+                                   let image = model.photo(frame, maxPixel: pixels) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: geo.size.width, height: geo.size.height)
+                                        .clipped()
+                                }
+                            }
+                            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages)) {
+                                if let frame = pair.current {
+                                    model.prefetch(frame, maxPixel: pixels)
+                                }
+                                if let frame = pair.next {
+                                    model.prefetch(frame, maxPixel: pixels)
+                                }
                             }
                         }
                     }
@@ -272,11 +290,16 @@ struct CabinCard: View {
                     .overlay {
                         GeometryReader { geo in
                             let pixels = max(geo.size.width, geo.size.height) * displayScale
-                            if let image = model.photo(card, maxPixel: pixels) {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: geo.size.width, height: geo.size.height)
+                            ZStack {
+                                if let image = model.photo(card, maxPixel: pixels) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: geo.size.width, height: geo.size.height)
+                                }
+                            }
+                            .task(id: "\(model.phoneImages)|\(card.file)@\(MediaStore.pixelBucket(pixels))") {
+                                model.prefetch(card, maxPixel: pixels)
                             }
                         }
                     }
@@ -388,6 +411,11 @@ struct TargetMap: View {
     }
 }
 
+private func framePrefetchToken(_ pair: FramePair, pixels: CGFloat, small: Bool) -> String {
+    let bucket = MediaStore.pixelBucket(pixels)
+    return "\(small)|\(pair.current?.file ?? "")|\(pair.next?.file ?? "")@\(bucket)"
+}
+
 enum Stamp {
     static func clock(_ utc: String) -> String {
         guard let separator = utc.firstIndex(of: "T") else { return utc }
@@ -402,8 +430,16 @@ extension PlaybackModel {
     }
 
     func photo(_ frame: Frame, maxPixel: CGFloat) -> UIImage? {
+        _ = frameCacheEpoch
         let cap = maxPixel > 1 ? maxPixel : 720
-        return MediaStore.image(file: frame.file, small: phoneImages, maxPixel: cap)
+        return MediaStore.cachedImage(file: frame.file, small: phoneImages, maxPixel: cap)
+    }
+
+    func prefetch(_ frame: Frame, maxPixel: CGFloat) {
+        let cap = maxPixel > 1 ? maxPixel : 720
+        MediaStore.prefetch(file: frame.file, small: phoneImages, maxPixel: cap) { [weak self] in
+            self?.noteFramesDecoded()
+        }
     }
 
     func subtitleLine() -> TranscriptLine? {

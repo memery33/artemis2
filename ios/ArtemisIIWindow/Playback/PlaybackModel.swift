@@ -1,6 +1,5 @@
 import AVFoundation
 import Combine
-import ImageIO
 import MediaPlayer
 import UIKit
 
@@ -51,6 +50,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var engineFailed = false
     /// Phone layout reads the 720 sibling. The open fold reads the shipped frame.
     @Published var phoneImages = true
+    /// Bumped when a prefetched frame lands in the cache. Views read this and stay cache-only.
+    @Published private(set) var frameCacheEpoch = 0
 
     private var engine = AVAudioEngine()
     private var player = AVAudioPlayerNode()
@@ -59,6 +60,10 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var currentFile: String?
     private var scheduledStart: TimeInterval = 0
     private var holdSeconds: TimeInterval = 0
+    /// Silent wait before a future-scheduled file. The node counts it as play time.
+    private var scheduledLead: TimeInterval = 0
+    /// Host time when that future-scheduled file should become audible.
+    private var audibleHostSeconds: TimeInterval?
     /// Mission time when a file scheduled in the future should become audible.
     private var holdUntil: Date?
     private var scheduleGeneration = 0
@@ -238,9 +243,8 @@ final class PlaybackModel: NSObject, ObservableObject {
                 if playing { loadSegment(segment) }
             }
         } else {
-            scheduleGeneration += 1
             holdSeconds = 0
-            player.stop()
+            stopPlayer()
         }
         refreshNowPlaying(force: true)
     }
@@ -279,8 +283,8 @@ final class PlaybackModel: NSObject, ObservableObject {
         seek(to: line.date)
         guard playing, !engineFailed else { return }
         do {
+            try activateSpokenSession()
             if !engine.isRunning {
-                try AVAudioSession.sharedInstance().setActive(true)
                 try engine.start()
             }
             if let segment = segment(at: utc), currentFile == segment.file, audioFile != nil, !player.isPlaying {
@@ -309,14 +313,19 @@ final class PlaybackModel: NSObject, ObservableObject {
         UserDefaults.standard.set(enabled, forKey: Self.spatialDefaultsKey)
         guard let file = audioFile else { return }
         let seconds = renderedSeconds()
-        let wasPlaying = playing && player.isPlaying
+        let wasPlaying = playing && (player.isPlaying || holdUntil != nil)
+        let armed = holdUntil
+        let armedSegment = segmentForCurrentFile()
         rebuilding = true
         defer { rebuilding = false }
-        scheduleGeneration += 1
-        player.stop()
+        stopPlayer()
         engine.stop()
         graphReady = false
         usingEnvironment = false
+        if let armed, armed > utc, let armedSegment {
+            scheduleAtRealStart(armedSegment, delay: max(0, armed.timeIntervalSince(utc)))
+            return
+        }
         connectGraph(format: file.processingFormat)
         reschedule(file: file, at: seconds)
         do {
@@ -415,7 +424,21 @@ final class PlaybackModel: NSObject, ObservableObject {
         playing = false
         holdUntil = nil
         engineFailed = true
+        stopPlayer()
+        refreshNowPlaying(force: true)
+    }
+
+    /// Invalidates a scheduled completion, then stops the node.
+    /// Every `player.stop()` goes through here so a stale completion cannot move `utc`.
+    private func stopPlayer() {
+        scheduleGeneration += 1
+        scheduledLead = 0
+        audibleHostSeconds = nil
         player.stop()
+    }
+
+    func noteFramesDecoded() {
+        frameCacheEpoch += 1
         refreshNowPlaying(force: true)
     }
 
@@ -423,8 +446,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         currentFile = nil
         audioFile = nil
         holdUntil = nil
-        scheduleGeneration += 1
-        player.stop()
+        stopPlayer()
         if playing { followSegment() }
         refreshNowPlaying(force: true)
     }
@@ -447,14 +469,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         if unavailableFiles.contains(segment.file) {
             currentFile = segment.file
             audioFile = nil
-            player.stop()
+            stopPlayer()
             return
         }
         guard let url = MediaStore.url(for: segment.file) else {
             unavailableFiles.insert(segment.file)
             currentFile = segment.file
             audioFile = nil
-            player.stop()
+            stopPlayer()
             return
         }
         let file: AVAudioFile
@@ -464,7 +486,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             unavailableFiles.insert(segment.file)
             currentFile = segment.file
             audioFile = nil
-            player.stop()
+            stopPlayer()
             return
         }
         audioFile = file
@@ -497,10 +519,13 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
     }
 
-    private func reschedule(file: AVAudioFile, at seconds: TimeInterval, when: AVAudioTime? = nil) {
-        scheduleGeneration += 1
+    private func reschedule(file: AVAudioFile, at seconds: TimeInterval, when: AVAudioTime? = nil, lead: TimeInterval = 0) {
+        stopPlayer()
         let generation = scheduleGeneration
-        player.stop()
+        if let when, when.isHostTimeValid {
+            audibleHostSeconds = AVAudioTime.seconds(forHostTime: when.hostTime)
+            scheduledLead = max(0, lead)
+        }
         let rate = file.processingFormat.sampleRate
         guard rate > 0 else { return }
         let clamped = max(0, seconds)
@@ -624,7 +649,7 @@ final class PlaybackModel: NSObject, ObservableObject {
                 }
             }
         }
-        reschedule(file: file, at: 0, when: hostTime(after: delay))
+        reschedule(file: file, at: 0, when: hostTime(after: delay), lead: delay)
         holdUntil = segment.start
         do {
             if !engine.isRunning {
@@ -644,18 +669,25 @@ final class PlaybackModel: NSObject, ObservableObject {
         return AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: seconds))
     }
 
-    /// Sample time is relative to the scheduled segment, which itself starts
-    /// at `scheduledStart` seconds into the file.
+    /// Sample time includes a future schedule's silent wait. That wait is removed
+    /// before the clock uses the value, and the result is never negative.
     private func renderedSeconds() -> TimeInterval {
         guard player.isPlaying,
               let nodeTime = player.lastRenderTime,
-              nodeTime.isSampleTimeValid,
               let playerTime = player.playerTime(forNodeTime: nodeTime),
               playerTime.isSampleTimeValid,
               playerTime.sampleRate > 0 else {
-            return holdSeconds
+            return max(0, holdSeconds)
         }
-        return scheduledStart + Double(playerTime.sampleTime) / playerTime.sampleRate
+        let playerSeconds = Double(playerTime.sampleTime) / playerTime.sampleRate
+        let renderHost = nodeTime.isHostTimeValid ? AVAudioTime.seconds(forHostTime: nodeTime.hostTime) : nil
+        return PlaybackTiming.fileSeconds(
+            scheduledStart: scheduledStart,
+            playerSeconds: playerSeconds,
+            lead: scheduledLead,
+            renderHostSeconds: renderHost,
+            audibleHostSeconds: audibleHostSeconds
+        )
     }
 
     private func segmentForCurrentFile() -> Segment? {
@@ -674,33 +706,39 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     @objc nonisolated private func tick(_ link: CADisplayLink) {
+        let timestamp = link.timestamp
         MainActor.assumeIsolated {
-            self.tickOnMain(link)
+            self.tickOnMain(timestamp)
         }
     }
 
-    private func tickOnMain(_ link: CADisplayLink) {
+    private func tickOnMain(_ timestamp: CFTimeInterval) {
         guard !rebuilding else { return }
-        let now = link.timestamp
+        let now = timestamp
         let rawDelta = lastWall.map { max(0, now - $0) } ?? 0
         lastWall = now
 
         if playing {
-            if let armed = holdUntil, utc < armed {
-                utc = utc.addingTimeInterval(rawDelta)
-                if utc >= armed {
-                    holdUntil = nil
+            if player.isPlaying, let segment = segmentForCurrentFile() {
+                let seconds = renderedSeconds()
+                if let armed = holdUntil, seconds <= 0, utc < armed {
+                    utc = min(utc.addingTimeInterval(rawDelta), armed)
+                } else {
+                    if seconds > 0 {
+                        holdUntil = nil
+                    }
+                    utc = segment.start.addingTimeInterval(seconds)
+                    if utc >= segment.end {
+                        utc = segment.end
+                        holdSeconds = utc.timeIntervalSince(segment.start)
+                        player.pause()
+                    }
                 }
-            } else if player.isPlaying, let segment = segmentForCurrentFile() {
-                utc = segment.start.addingTimeInterval(renderedSeconds())
-                if utc >= segment.end {
-                    utc = segment.end
-                    holdSeconds = utc.timeIntervalSince(segment.start)
-                    player.pause()
-                }
+            } else if let armed = holdUntil, utc < armed {
+                utc = min(utc.addingTimeInterval(rawDelta), armed)
             } else {
-                // A large step here is real time spent in a silent gap,
-                // including time the display link was paused in the background.
+                // The display link was paused in the background. This step is that
+                // real silence, and it is not added on top of a file that is already playing.
                 utc = utc.addingTimeInterval(rawDelta)
             }
             if let end = activeSpan?.end, utc >= end {
@@ -761,29 +799,29 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
     }
 
-    /// The engine dropped its connections. Put the same file back at the same sample.
+    /// The engine dropped its connections. The node is often already stopped,
+    /// so resume from `playing` and from mission time, not from the render clock.
     private func recoverEngineConfiguration() {
         guard !rebuilding else { return }
-        let seconds = renderedSeconds()
-        let wasPlaying = playing && (player.isPlaying || holdUntil != nil)
+        let wasPlaying = playing
         let armed = holdUntil
-        let armedSegment = segmentForCurrentFile()
+        let segment = segmentForCurrentFile()
         rebuilding = true
         defer { rebuilding = false }
-        scheduleGeneration += 1
-        player.stop()
+        stopPlayer()
         graphReady = false
         usingEnvironment = false
-        if let armed, armed > utc, let armedSegment {
-            scheduleAtRealStart(armedSegment, delay: max(0, armed.timeIntervalSince(utc)))
-            if !wasPlaying {
-                player.pause()
-            }
+        if let armed, armed > utc, let segment {
+            scheduleAtRealStart(segment, delay: max(0, armed.timeIntervalSince(utc)))
             return
         }
         guard let file = audioFile else { return }
+        let missionSeconds = segment.map { utc.timeIntervalSince($0.start) } ?? 0
+        let rate = file.processingFormat.sampleRate
+        let duration = rate > 0 ? Double(file.length) / rate : 0
+        let position = PlaybackTiming.recoveryOffset(missionSeconds: missionSeconds, fileDuration: duration)
         connectGraph(format: file.processingFormat)
-        reschedule(file: file, at: seconds)
+        reschedule(file: file, at: position)
         do {
             try engine.start()
             if wasPlaying {
@@ -832,8 +870,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     private func rebuildEngine() {
         rebuilding = true
         defer { rebuilding = false }
+        stopPlayer()
         engine.stop()
-        player.stop()
         engine = AVAudioEngine()
         player = AVAudioPlayerNode()
         environment = AVAudioEnvironmentNode()
@@ -953,12 +991,20 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func artworkImage() -> UIImage? {
+        let file: String
         if let frames = timeline?.frames,
-           let frame = FrameSelection.visiblePair(at: utc, window: window, frames: frames).current,
-           let image = MediaStore.image(file: frame.file, small: true, maxPixel: 720) {
+           let frame = FrameSelection.visiblePair(at: utc, window: window, frames: frames).current {
+            file = frame.file
+        } else {
+            file = "images/art002e016184.webp"
+        }
+        if let image = MediaStore.cachedImage(file: file, small: true, maxPixel: 720) {
             return image
         }
-        return MediaStore.image(file: "images/art002e016184.webp", small: true, maxPixel: 720)
+        MediaStore.prefetch(file: file, small: true, maxPixel: 720) { [weak self] in
+            self?.noteFramesDecoded()
+        }
+        return nil
     }
 }
 
@@ -969,6 +1015,13 @@ enum MediaStore {
         cache.totalCostLimit = 64 * 1024 * 1024
         return cache
     }()
+    private static var inflight = Set<String>()
+    private static var failed = Set<String>()
+    private static var waiters: [String: @MainActor () -> Void] = [:]
+
+    static func pixelBucket(_ maxPixel: CGFloat) -> Int {
+        max(32, Int((max(maxPixel, 1) / 32).rounded(.up)) * 32)
+    }
 
     static func demoRoot() -> URL? {
         guard let root = Bundle.main.resourceURL?.appendingPathComponent("DemoData") else { return nil }
@@ -987,30 +1040,53 @@ enum MediaStore {
         return url(for: sibling) != nil ? sibling : file
     }
 
-    static func image(file: String, small: Bool, maxPixel: CGFloat) -> UIImage? {
-        let name = variant(file, small: small)
-        let bucket = max(32, Int((max(maxPixel, 1) / 32).rounded(.up)) * 32)
-        let key = "\(name)@\(bucket)" as NSString
-        if let cached = cache.object(forKey: key) { return cached }
-        guard let url = url(for: name), let image = downsample(url: url, maxPixel: CGFloat(bucket)) else { return nil }
-        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
-        cache.setObject(image, forKey: key, cost: cost)
-        return image
+    /// Cache read. Does not decode.
+    static func cachedImage(file: String, small: Bool, maxPixel: CGFloat) -> UIImage? {
+        cache.object(forKey: cacheKey(file: file, small: small, maxPixel: maxPixel))
     }
 
-    private static func downsample(url: URL, maxPixel: CGFloat) -> UIImage? {
-        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        if let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) {
-            let options = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: max(1, maxPixel),
-            ] as CFDictionary
-            if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options) {
-                return UIImage(cgImage: cgImage)
+    /// Decodes off the main thread and stores the image on the main actor.
+    static func prefetch(file: String, small: Bool, maxPixel: CGFloat, ready: @escaping @MainActor () -> Void) {
+        let key = cacheKey(file: file, small: small, maxPixel: maxPixel)
+        let name = key as String
+        if cache.object(forKey: key) != nil || inflight.contains(name) || failed.contains(name) {
+            return
+        }
+        guard let url = url(for: variant(file, small: small)) else {
+            failed.insert(name)
+            return
+        }
+        inflight.insert(name)
+        waiters[name] = ready
+        let pixels = CGFloat(pixelBucket(maxPixel))
+        Task.detached(priority: .userInitiated) {
+            let owned = ImageDecode.thumbnail(url: url, maxPixel: pixels)
+            await MainActor.run {
+                MediaStore.finishPrefetch(name: name, owned: owned, url: url, maxPixel: pixels)
             }
         }
+    }
+
+    private static func cacheKey(file: String, small: Bool, maxPixel: CGFloat) -> NSString {
+        let name = variant(file, small: small)
+        return "\(name)@\(pixelBucket(maxPixel))" as NSString
+    }
+
+    private static func finishPrefetch(name: String, owned: ImageDecode.Owned?, url: URL, maxPixel: CGFloat) {
+        inflight.remove(name)
+        let ready = waiters.removeValue(forKey: name)
+        let image = owned.map { UIImage(cgImage: $0.cgImage) } ?? fallbackImage(url: url, maxPixel: maxPixel)
+        guard let image else {
+            failed.insert(name)
+            return
+        }
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        cache.setObject(image, forKey: name as NSString, cost: cost)
+        ready?()
+    }
+
+    /// Used only when ImageIO cannot read the file. The view never calls this.
+    private static func fallbackImage(url: URL, maxPixel: CGFloat) -> UIImage? {
         guard let full = UIImage(contentsOfFile: url.path) else { return nil }
         let longest = max(full.size.width, full.size.height) * full.scale
         let ratio = min(1, maxPixel / max(longest, 1))
