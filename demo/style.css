@@ -702,6 +702,102 @@ button.on, button[aria-pressed="true"] {
   }
 }
 
+#rail { display: none; }
+
+/* Open fold: wider than tall, taller than a phone on its side, narrower than a desktop.
+   890×626 CSS px matches. 844×390 and 1280×720 do not. */
+@media (min-aspect-ratio: 6/5) and (max-aspect-ratio: 8/5) and (min-height: 520px) and (max-width: 1200px) {
+  #window {
+    left: 33%;
+    top: 46%;
+    width: min(64vw, calc((100vh - 56px) * 1.58));
+    width: min(64vw, calc((100dvh - 56px) * 1.58));
+  }
+  #stage.cab #window {
+    width: min(58vw, calc((100vh - 56px) * 4 / 3));
+    width: min(58vw, calc((100dvh - 56px) * 4 / 3));
+  }
+  #clocks {
+    top: max(12px, env(safe-area-inset-top));
+    right: auto;
+    left: max(12px, env(safe-area-inset-left));
+    text-align: left;
+  }
+  #rail {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    z-index: 5;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: min(268px, 30vw);
+    gap: 8px;
+    pointer-events: auto;
+  }
+  #stage.touch #rail {
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 60px);
+  }
+}
+
+#companion {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(8, 9, 12, 0.78);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+#companion img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #07080c;
+}
+
+#stage.cab #companion img { aspect-ratio: 1.58 / 1; }
+
+#companionCap {
+  display: block;
+  padding: 8px 10px 0;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+#transcript {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(8, 9, 12, 0.55);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+  color: rgba(244, 241, 234, 0.88);
+}
+
+#transcript .line { margin: 0 0 8px; }
+#transcript .line.now { color: #fff; }
+#transcript .who {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244, 241, 234, 0.7);
+}
+
 @media (prefers-reduced-motion: reduce) {
   #glass img, #wall, .reflect, #cabin { transform: none; filter: none; }
   #window { transform: translate(-50%, -50%); }

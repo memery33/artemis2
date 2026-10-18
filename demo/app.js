@@ -46,6 +46,7 @@ const touchDevice = ArtemisLogic.isTouchDevice(
 );
 const narrowQuery = window.matchMedia("(max-width: 932px)");
 const compactQuery = window.matchMedia("(max-width: 932px), (max-height: 500px)");
+const foldQuery = window.matchMedia("(min-aspect-ratio: 6/5) and (max-aspect-ratio: 8/5) and (min-height: 520px) and (max-width: 1200px)");
 const net = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
 const cellular = ArtemisLogic.wantsSmallImage(false, !!(net && net.saveData), net && net.effectiveType);
 if (cellular) audio.preload = "none";
@@ -64,6 +65,7 @@ function useSmallImages() {
     narrowQuery.matches,
     !!(link && link.saveData),
     link && link.effectiveType,
+    foldQuery.matches,
   );
 }
 function media(file) {
@@ -130,6 +132,8 @@ let shownClock = "";
 let shownPlate = "";
 let shownTaken = "";
 let shownRange = "";
+let shownRail = "";
+let lastFold = null;
 let scrubStamp = null;
 let lastNudge = 0;
 let turnToken = 0;
@@ -517,6 +521,7 @@ function paint() {
   }
   syncDock();
   if (!hud.hidden || stage.classList.contains("compact")) drawMap(view.cur);
+  paintRail();
 }
 
 function drawMap(current) {
@@ -929,7 +934,9 @@ function openingSegment() {
 }
 
 function layoutChrome() {
-  const compact = compactQuery.matches;
+  const fold = foldQuery.matches;
+  const compact = !fold && compactQuery.matches;
+  stage.classList.toggle("fold", fold);
   stage.classList.toggle("compact", compact);
   const home = document.querySelector("#hud .bottom");
   if (compact) {
@@ -937,6 +944,71 @@ function layoutChrome() {
   } else if (home && map.parentElement !== home) {
     home.insertBefore(map, home.firstChild);
   }
+  // A fold or unfold only changes the picture size. The recording stays put.
+  if (lastFold !== fold) {
+    lastFold = fold;
+    shownId = null;
+    shownRail = "";
+  }
+}
+
+function paintRail() {
+  if (!foldQuery.matches || !doc) return;
+  const otherWin = windowView === "3" ? "2" : "3";
+  const saved = windowView;
+  windowView = otherWin;
+  let otherView;
+  try {
+    otherView = visiblePair(utcMs);
+  } finally {
+    windowView = saved;
+  }
+  const frame = otherView.cur;
+  const img = document.getElementById("companionImg");
+  const cap = document.getElementById("companionCap");
+  const label = otherWin === "3" ? "Window 3 · Cab Cam" : "Window 2 · Nikon";
+  document.getElementById("companion").setAttribute("aria-label", `Show ${label}`);
+  if (frame) {
+    showFile(img, frame.file, `${frame.credit}. ${label}.`);
+    const taken = `${label}. Taken ${frame.utc.slice(11, 19)} UTC.`;
+    const age = utcMs - tOf(frame.utc);
+    cap.textContent = otherWin === "3" && age > 45000
+      ? `${taken} Not moved to match the clock.`
+      : taken;
+  } else {
+    if (img.getAttribute("src")) img.removeAttribute("src");
+    img.alt = "";
+    cap.textContent = otherView.stale
+      ? `${label}. No frame at this clock. The last matching picture was not moved.`
+      : `${label}. No frame was taken at this time.`;
+  }
+  const slice = ArtemisLogic.transcriptSlice(doc.lines, utcMs, track, 25000, 12000);
+  const key = slice.map((row) => `${row.utc}|${row.current ? 1 : 0}`).join(";");
+  if (key === shownRail) return;
+  shownRail = key;
+  const box = document.getElementById("transcript");
+  box.replaceChildren();
+  if (!slice.length) {
+    const empty = document.createElement("p");
+    empty.className = "line";
+    empty.textContent = "No transcript line in this stretch.";
+    box.appendChild(empty);
+    return;
+  }
+  for (const row of slice) {
+    const item = document.createElement("p");
+    item.className = row.current ? "line now" : "line";
+    if (row.speaker) {
+      const who = document.createElement("span");
+      who.className = "who";
+      who.textContent = row.speaker;
+      item.appendChild(who);
+    }
+    item.appendChild(document.createTextNode(row.text));
+    box.appendChild(item);
+  }
+  const current = box.querySelector(".now");
+  if (current) box.scrollTop = Math.max(0, current.offsetTop - 12);
 }
 
 function syncDock() {
@@ -1020,6 +1092,9 @@ async function boot() {
   document.getElementById("dock-crew").addEventListener("click", cycleCrew);
   document.getElementById("dock-full").addEventListener("click", toggleFull);
   document.getElementById("dock-more").addEventListener("click", poke);
+  document.getElementById("companion").addEventListener("click", () => {
+    setWindow(windowView === "3" ? "2" : "3");
+  });
   // Pointer events cover a finger swipe on current iPhones. A second finger
   // cancels it, and nothing calls preventDefault, so a pinch can still zoom.
   let swipe = null;
@@ -1093,6 +1168,7 @@ async function boot() {
   };
   if (narrowQuery.addEventListener) narrowQuery.addEventListener("change", relayout);
   if (compactQuery.addEventListener) compactQuery.addEventListener("change", relayout);
+  if (foldQuery.addEventListener) foldQuery.addEventListener("change", relayout);
   window.addEventListener("mousemove", () => {
     if (touchDevice) return;
     poke();

@@ -231,10 +231,50 @@
     return file.replace(/\.webp$/i, ".720.webp");
   }
 
-  function wantsSmallImage(narrow, saveData, effectiveType) {
-    if (narrow) return true;
+  function wantsSmallImage(narrow, saveData, effectiveType, fold) {
     if (saveData === true) return true;
-    return effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g";
+    if (effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g") return true;
+    // The open fold has room for the shipped 1200 px frame. A slow link still
+    // stays on the smaller sibling.
+    if (fold === true) return false;
+    if (narrow) return true;
+    return false;
+  }
+
+  // Shape only. An open fold is wider than tall, tall enough not to be a
+  // phone on its side, and narrower than a desktop. 6/5 is 1.2, 8/5 is 1.6.
+  function screenMode(width, height) {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return "desktop";
+    const aspect = width / height;
+    if (aspect >= 1.2 && aspect <= 1.6 && height >= 520 && width <= 1200) return "fold";
+    if (aspect < 1 || height <= 500) return "phone";
+    return "desktop";
+  }
+
+  // Real transcript rows already in the timeline. Nothing is added.
+  function transcriptSlice(lines, utcMs, track, beforeMs, afterMs) {
+    const before = Number.isFinite(beforeMs) ? beforeMs : 25000;
+    const after = Number.isFinite(afterMs) ? afterMs : 12000;
+    if (!Array.isArray(lines) || !Number.isFinite(utcMs)) return [];
+    const rows = [];
+    for (const line of lines) {
+      if (!line || typeof line.utc !== "string" || typeof line.text !== "string") continue;
+      if (track && line.track !== track) continue;
+      const t = Date.parse(line.utc);
+      if (!Number.isFinite(t) || t < utcMs - before || t > utcMs + after) continue;
+      rows.push({ utc: line.utc, t: t, speaker: line.speaker || "", text: line.text });
+    }
+    rows.sort((a, b) => a.t - b.t);
+    let currentUtc = null;
+    for (const row of rows) {
+      if (row.t <= utcMs) currentUtc = row.utc;
+    }
+    return rows.map((row) => ({
+      utc: row.utc,
+      speaker: row.speaker,
+      text: row.text,
+      current: row.utc === currentUtc,
+    }));
   }
 
   // Cellular waits for the tap before the other window and the first recording.
@@ -264,5 +304,7 @@
     variantFile: variantFile,
     wantsSmallImage: wantsSmallImage,
     prefetchBeforeTap: prefetchBeforeTap,
+    screenMode: screenMode,
+    transcriptSlice: transcriptSlice,
   };
 });

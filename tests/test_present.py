@@ -196,6 +196,14 @@ const rows = {
   emptyNet: logic.wantsSmallImage(false, false, ""),
   deskPrefetch: logic.prefetchBeforeTap(false),
   cellPrefetch: logic.prefetchBeforeTap(true),
+  foldFull: logic.wantsSmallImage(true, false, "4g", true),
+  foldSave: logic.wantsSmallImage(true, true, "4g", true),
+  foldSlow: logic.wantsSmallImage(false, false, "3g", true),
+  modeFold: logic.screenMode(890, 626),
+  modeClosed: logic.screenMode(466, 678),
+  modePhone: logic.screenMode(390, 844),
+  modeSide: logic.screenMode(844, 390),
+  modeDesk: logic.screenMode(1280, 720),
 };
 console.log(JSON.stringify(rows));
 """
@@ -225,6 +233,38 @@ console.log(JSON.stringify(rows));
     assert row["emptyNet"] is False
     assert row["deskPrefetch"] == {"opener": True, "otherWindow": True, "audio": True}
     assert row["cellPrefetch"] == {"opener": True, "otherWindow": False, "audio": False}
+    assert row["foldFull"] is False
+    assert row["foldSave"] is True
+    assert row["foldSlow"] is True
+    assert row["modeFold"] == "fold"
+    assert row["modeClosed"] == "phone"
+    assert row["modePhone"] == "phone"
+    assert row["modeSide"] == "phone"
+    assert row["modeDesk"] == "desktop"
+
+
+def test_transcript_slice_uses_only_real_lines():
+    script = r"""
+const { transcriptSlice } = require("./demo/logic.js");
+const lines = [
+  { utc: "2026-04-06T19:40:10.000Z", speaker: "Koch", text: "Earlier.", track: "pcd3" },
+  { utc: "2026-04-06T19:40:16.489Z", speaker: "Wiseman", text: "Out the north side, yeah, this is just weird, man.", track: "pcd3" },
+  { utc: "2026-04-06T19:40:22.000Z", speaker: "Glover", text: "Other loop.", track: "pcd2" },
+  { utc: "2026-04-06T19:40:24.000Z", speaker: "Koch", text: "Next.", track: "pcd3" },
+];
+const now = Date.parse("2026-04-06T19:40:18.000Z");
+const slice = transcriptSlice(lines, now, "pcd3", 25000, 12000);
+console.log(JSON.stringify(slice));
+"""
+    rows = _node(script)
+    assert [row["text"] for row in rows] == [
+        "Earlier.",
+        "Out the north side, yeah, this is just weird, man.",
+        "Next.",
+    ]
+    assert rows[1]["current"] is True
+    assert rows[0]["speaker"] == "Koch"
+    assert all(row["text"] != "Other loop." for row in rows)
 
 
 def test_collapsed_map_keeps_readable_labels():
