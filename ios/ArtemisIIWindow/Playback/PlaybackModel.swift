@@ -35,7 +35,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     static let spatialDefaultsKey = "artemis.spatial"
     /// Lock-screen skip and the dock skips use this same interval.
     /// Nonisolated so the remote-command `??` autoclosure can read it.
-    nonisolated static let skipInterval: TimeInterval = 15
+    nonisolated static let skipInterval: TimeInterval = ClockNudge.interval
 
     private(set) var timeline: Timeline?
     private(set) var loadError: String?

@@ -200,9 +200,10 @@ final class MilestonesTests: XCTestCase {
     }
 
     func testVoiceOverAdjustSkipsWithoutScrubbing() {
-        XCTAssertEqual(ClockNudge.forward.seconds, PlaybackModel.skipInterval)
-        XCTAssertEqual(ClockNudge.back.seconds, -PlaybackModel.skipInterval)
-        XCTAssertEqual(ClockNudge.forward.seconds, 15)
+        XCTAssertEqual(ClockNudge.interval, 15)
+        XCTAssertEqual(ClockNudge.forward.seconds, ClockNudge.interval)
+        XCTAssertEqual(ClockNudge.back.seconds, -ClockNudge.interval)
+        XCTAssertEqual(PlaybackModel.skipInterval, ClockNudge.interval)
         XCTAssertFalse(ClockNudge.forward.scrubs)
         XCTAssertFalse(ClockNudge.back.scrubs)
     }
