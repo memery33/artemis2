@@ -5,8 +5,21 @@ import XCTest
 /// running past the bottom.
 @MainActor
 final class LayoutFrameUITests: XCTestCase {
+    nonisolated override func setUp() {
+        super.setUp()
+        MainActor.assumeIsolated {
+            XCUIDevice.shared.orientation = .portrait
+        }
+    }
+
+    nonisolated override func tearDown() {
+        MainActor.assumeIsolated {
+            XCUIDevice.shared.orientation = .portrait
+        }
+        super.tearDown()
+    }
+
     func testFramesStayInsideTheScreenInBothOrientations() {
-        defer { XCUIDevice.shared.orientation = .portrait }
         let app = XCUIApplication()
         app.launch()
         let begin = app.buttons["Tap to begin"]
@@ -30,13 +43,10 @@ final class LayoutFrameUITests: XCTestCase {
         }
 
         XCUIDevice.shared.orientation = .landscapeLeft
-        let turned = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "frame.size.width > frame.size.height"),
-            object: app
-        )
-        wait(for: [turned], timeout: 8)
-
-        let rail = scroller("landscape-rail", in: app)
+        // XCUIApplication.frame stays portrait after rotation. The rail is the
+        // landscape layout, and it is already on screen when the app is 874×402.
+        let rail = app.scrollViews["landscape-rail"]
+        XCTAssertTrue(rail.waitForExistence(timeout: 8))
         assertInside(rail, screen: app.frame)
         assertInside(spatial, screen: app.frame)
         reveal(map, using: rail)

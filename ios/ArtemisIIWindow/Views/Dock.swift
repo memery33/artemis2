@@ -76,7 +76,10 @@ struct DockBar: View {
         .padding(.top, 8)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.94))
+        .background {
+            Color.black
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private var railControls: some View {

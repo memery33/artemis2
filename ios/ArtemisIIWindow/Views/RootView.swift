@@ -121,12 +121,17 @@ struct StageView: View {
 
 struct PhoneLayout: View {
     var body: some View {
-        ScrollView {
-            PhoneColumn()
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .accessibilityIdentifier("phone-column")
-        .safeAreaInset(edge: .bottom, spacing: 8) {
+        // The column ends where the dock starts. A safe-area inset would
+        // leave this scroll view full height, so the caption draws through
+        // the dock at the default offset.
+        VStack(spacing: 0) {
+            ScrollView {
+                PhoneColumn()
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .accessibilityIdentifier("phone-column")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             DockBar()
         }
     }
