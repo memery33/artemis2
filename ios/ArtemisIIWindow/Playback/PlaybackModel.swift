@@ -38,6 +38,8 @@ private final class PlaybackLifetime {
 @MainActor
 final class PlaybackModel: NSObject, ObservableObject {
     static let spatialDefaultsKey = "artemis.spatial"
+    /// Lock-screen skip and the dock skips use this same interval.
+    static let skipInterval: TimeInterval = 15
 
     private(set) var timeline: Timeline?
     private(set) var loadError: String?
@@ -1057,8 +1059,8 @@ final class PlaybackModel: NSObject, ObservableObject {
         center.changePlaybackPositionCommand.isEnabled = true
         center.skipForwardCommand.isEnabled = true
         center.skipBackwardCommand.isEnabled = true
-        center.skipForwardCommand.preferredIntervals = [NSNumber(value: 15)]
-        center.skipBackwardCommand.preferredIntervals = [NSNumber(value: 15)]
+        center.skipForwardCommand.preferredIntervals = [NSNumber(value: Self.skipInterval)]
+        center.skipBackwardCommand.preferredIntervals = [NSNumber(value: Self.skipInterval)]
 
         add(center.playCommand) { model, _ in
             model.play()
@@ -1097,7 +1099,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         // The addTarget handler must stay @Sendable. The unit test covers
         // deliver, not this closure.
         let token = command.addTarget { @Sendable [weak self] event in
-            let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
+            let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? Self.skipInterval
             let positionTime = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime
             let number: Double?
             switch read {

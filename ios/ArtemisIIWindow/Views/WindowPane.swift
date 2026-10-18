@@ -367,6 +367,7 @@ struct ClockReadout: View {
         .font(.caption.monospacedDigit())
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("mission-clock")
     }
 }
 

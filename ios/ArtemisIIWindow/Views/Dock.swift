@@ -31,7 +31,7 @@ struct DockBar: View {
 
     private var bottomControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            MissionScrubber()
+            timelineControls
             Toggle(isOn: Binding(
                 get: { model.spatial },
                 set: { model.setSpatial($0) }
@@ -52,7 +52,6 @@ struct DockBar: View {
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
-                    playButton
                     windowButton(.nikon, title: "2", label: "Window 2")
                     windowButton(.cab, title: "3", label: "Window 3")
                     crewButton
@@ -63,7 +62,6 @@ struct DockBar: View {
                 }
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
-                        playButton
                         windowButton(.nikon, title: "2", label: "Window 2")
                         windowButton(.cab, title: "3", label: "Window 3")
                         crewButton
@@ -90,7 +88,7 @@ struct DockBar: View {
     private var railControls: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                MissionScrubber()
+                timelineControls
                 Toggle(isOn: Binding(
                     get: { model.spatial },
                     set: { model.setSpatial($0) }
@@ -104,7 +102,6 @@ struct DockBar: View {
                 .font(.subheadline)
                 .foregroundStyle(.white)
 
-                playButton
                 HStack(spacing: 8) {
                     windowButton(.nikon, title: "2", label: "Window 2")
                     windowButton(.cab, title: "3", label: "Window 3")
@@ -125,10 +122,81 @@ struct DockBar: View {
         .accessibilityIdentifier("landscape-rail")
     }
 
-    private var playButton: some View {
-        dockButton(model.playing ? "Pause" : "Play", label: model.playing ? "Pause" : "Play") {
-            model.toggle()
+    /// Scrubber with the play control beside it. Skip uses the lock-screen interval.
+    private var timelineControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 10) {
+                    MissionScrubber()
+                    playPauseButton
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    MissionScrubber()
+                    playPauseButton
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            HStack(spacing: 8) {
+                skipButton(
+                    system: "gobackward.15",
+                    title: "Back",
+                    label: "Skip back 15 seconds",
+                    identifier: "skip-back"
+                ) {
+                    model.skip(by: -PlaybackModel.skipInterval)
+                }
+                skipButton(
+                    system: "goforward.15",
+                    title: "Forward",
+                    label: "Skip forward 15 seconds",
+                    identifier: "skip-forward"
+                ) {
+                    model.skip(by: PlaybackModel.skipInterval)
+                }
+            }
         }
+    }
+
+    private var playPauseButton: some View {
+        let playing = model.playing
+        return Button(action: { model.toggle() }) {
+            Label(playing ? "Pause" : "Play", systemImage: playing ? "pause.fill" : "play.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.black)
+                .lineLimit(1)
+                .frame(minWidth: 112, minHeight: 48)
+                .padding(.horizontal, 12)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("playback-toggle")
+        .accessibilityLabel(playing ? "Pause" : "Play")
+    }
+
+    private func skipButton(
+        system: String,
+        title: String,
+        label: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: system)
+                    .font(.title2)
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(minWidth: 64, minHeight: 44)
+            .frame(maxWidth: .infinity)
+            .background(Color.white.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .accessibilityLabel(label)
     }
 
     private var crewButton: some View {
