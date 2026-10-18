@@ -32,23 +32,73 @@ const playBtn = document.getElementById("play");
 const taken = document.getElementById("taken");
 const clockNote = document.getElementById("clocknote");
 const backFly = document.getElementById("backfly");
+const coverageBar = document.getElementById("coverage");
+const momentsBtn = document.getElementById("moments");
+const momentsPanel = document.getElementById("moments-panel");
 
 const audio = new Audio();
 audio.id = "voice";
 audio.preload = "auto";
+audio.setAttribute("playsinline", "");
+audio.setAttribute("webkit-playsinline", "");
 document.body.appendChild(audio);
+
+const coarseQuery = window.matchMedia("(pointer: coarse)");
+const touchDevice = ArtemisLogic.isTouchDevice(
+  coarseQuery.matches,
+  window.matchMedia("(hover: none)").matches,
+  window.matchMedia("(pointer: fine)").matches,
+);
+const narrowQuery = window.matchMedia("(max-width: 932px)");
+const compactQuery = window.matchMedia("(max-width: 932px), (max-height: 500px)");
+const foldQuery = window.matchMedia("(min-aspect-ratio: 6/5) and (max-aspect-ratio: 8/5) and (min-height: 520px) and (max-width: 1200px) and (pointer: coarse)");
+const net = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
+const cellular = ArtemisLogic.wantsSmallImage(false, !!(net && net.saveData), net && net.effectiveType);
+if (cellular) audio.preload = "none";
+if (touchDevice) {
+  stage.classList.add("touch");
+  enter.textContent = ArtemisLogic.gateLabel(true);
+  hint.textContent = "Swipe between windows. Pause, crew, full screen, and the rest are the buttons along the bottom.";
+}
 
 // Timeline paths are relative to demo/data/, next to timeline.json.
 // The page itself is served from demo/.
 const DATA = new URL("data/", document.baseURI);
+function useSmallImages() {
+  const link = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  return ArtemisLogic.wantsSmallImage(
+    coarseQuery.matches && narrowQuery.matches,
+    !!(link && link.saveData),
+    link && link.effectiveType,
+    foldQuery.matches,
+    window.devicePixelRatio || 1,
+  );
+}
 function media(file) {
-  return new URL(file, DATA).href;
+  return new URL(ArtemisLogic.variantFile(file, useSmallImages()), DATA).href;
+}
+
+function showFile(img, file, alt) {
+  const url = media(file);
+  if (img.src !== url) img.src = url;
+  if (useSmallImages()) {
+    const set = `${url} 720w`;
+    if (img.getAttribute("srcset") !== set) {
+      img.setAttribute("srcset", set);
+      img.setAttribute("sizes", "100vw");
+    }
+  } else if (img.hasAttribute("srcset")) {
+    img.removeAttribute("srcset");
+    img.removeAttribute("sizes");
+  }
+  if (alt != null && img.alt !== alt) img.alt = alt;
 }
 
 const warmImgs = new Map();
 function warm(file) {
   if (!file) return Promise.resolve();
-  let row = warmImgs.get(file);
+  const url = media(file);
+  let row = warmImgs.get(url);
   if (row) return row.ready;
   const img = new Image();
   const ready = new Promise((resolve) => {
@@ -59,8 +109,8 @@ function warm(file) {
     };
     img.onerror = finish;
   });
-  img.src = media(file);
-  warmImgs.set(file, { img, ready });
+  img.src = url;
+  warmImgs.set(url, { img, ready });
   return ready;
 }
 
@@ -87,7 +137,10 @@ let shownNote = "";
 let shownClock = "";
 let shownPlate = "";
 let shownTaken = "";
+let shownCoverage = "";
 let shownRange = "";
+let shownRail = "";
+let lastFold = null;
 let scrubStamp = null;
 let lastNudge = 0;
 let turnToken = 0;
@@ -161,6 +214,23 @@ function cabinAt(t) {
 
 function pair(t) {
   const list = frames();
+  if (windowView === "3") {
+    const span = activeSpan();
+    const picked = ArtemisLogic.visibleCabPair(
+      list,
+      t,
+      span ? tOf(span.start) : null,
+      span ? tOf(span.end) : null,
+      offsetS * 1000,
+    );
+    return {
+      cur: picked.current,
+      next: picked.next,
+      index: picked.index,
+      list,
+      outside: picked.outside,
+    };
+  }
   let index = 0;
   for (; index < list.length; index += 1) {
     if (tOf(list[index].utc) + offsetS * 1000 > t) break;
@@ -186,19 +256,19 @@ function visiblePair(t) {
   return view;
 }
 
-function takenText(frame) {
+function takenText(frame, outside) {
   if (!frame || windowView !== "3") return "";
   const when = `${frame.utc.slice(11, 19)} UTC`;
-  const age = utcMs - tOf(frame.utc);
+  const age = ArtemisLogic.clockOffset(utcMs, tOf(frame.utc));
+  if (outside) {
+    const parts = ["Outside this span.", `Taken ${when} UTC · ${frame.nasa_id}.`];
+    if (age) parts.push(age);
+    return parts.join(" ");
+  }
   const parts = [`Taken ${when} · ${frame.nasa_id}.`];
-  if (frame.look === "dark") {
-    parts.push("Real GoPro exposure, nearly black. Not a mask, and not brightened.");
-  } else {
-    parts.push("Shown as photographed. No window frame is drawn over this picture.");
-  }
-  if (age > 45000) {
-    parts.push(`Orion clock is ${fmt(utcMs)} UTC. This frame was not moved to match it.`);
-  }
+  const look = ArtemisLogic.appearance(frame);
+  if (look) parts.push(look);
+  if (age) parts.push(age);
   return parts.join(" ");
 }
 
@@ -225,13 +295,16 @@ function lineAt(t) {
 // the m4a as not seekable. A blob URL is seekable, so the scrubber and the
 // crew switch can land inside a recording.
 const audioBlobs = new Map();
+const audioReady = new Map();
 
 function sourceUrl(file) {
   let pending = audioBlobs.get(file);
   if (!pending) {
     pending = fetch(media(file)).then(async (response) => {
       if (!response.ok) throw new Error("audio");
-      return URL.createObjectURL(await response.blob());
+      const url = URL.createObjectURL(await response.blob());
+      audioReady.set(file, url);
+      return url;
     }).catch((err) => {
       audioBlobs.delete(file);
       throw err;
@@ -297,11 +370,61 @@ async function ensureAudio() {
   if (gen !== loadGen || segmentAt(utcMs)?.file !== seg.file) return false;
   audio.playbackRate = rate;
   if (playing && audio.paused) {
-    try { await audio.play(); } catch (_err) { /* gesture already happened; ignore autoplay races */ }
+    try {
+      await audio.play();
+    } catch (_err) {
+      // A src swap after the tap can lose the iOS gesture. Keep the file
+      // URL that play() already unlocked, instead of staying on the blob.
+      // Putting the position and rate back waits until the new file has a duration.
+      const direct = media(seg.file);
+      if (audio.dataset.direct === "1" && audio.src !== direct) {
+        const held = audio.currentTime;
+        const speed = audio.playbackRate;
+        audio.src = direct;
+        audio.dataset.file = seg.file;
+        try {
+          await new Promise((resolve, reject) => {
+            const ready = () => {
+              cleanup();
+              resolve();
+            };
+            const fail = () => {
+              cleanup();
+              reject(new Error("audio"));
+            };
+            const cleanup = () => {
+              audio.removeEventListener("loadedmetadata", ready);
+              audio.removeEventListener("error", fail);
+            };
+            if (audio.readyState >= 1 && audio.currentSrc === direct) {
+              resolve();
+              return;
+            }
+            audio.addEventListener("loadedmetadata", ready);
+            audio.addEventListener("error", fail);
+          });
+          if (gen === loadGen) {
+            if (Number.isFinite(held)) audio.currentTime = held;
+            if (Number.isFinite(speed) && speed > 0) audio.playbackRate = speed;
+            await audio.play();
+          }
+        } catch (_err2) { /* a real phone has to confirm this */ }
+      }
+    }
   }
   if (gen !== loadGen) return false;
   if (!playing && !audio.paused) audio.pause();
   return true;
+}
+
+function standingCredit() {
+  const line = (doc.attribution && doc.attribution.credit) || "Credit: NASA/Artemis II Crew";
+  return `${line}. Independent viewer, not affiliated with NASA.`;
+}
+
+function frameCredit(frame) {
+  if (!frame || !frame.credit) return standingCredit();
+  return `${frame.credit}. Independent viewer, not affiliated with NASA.`;
 }
 
 function paint() {
@@ -316,8 +439,8 @@ function paint() {
     etEl.textContent = clocks.eastern;
     metEl.textContent = clocks.met || "";
   }
-  if (view.next) warm(view.next.file);
-  if (view.cur) warm(view.cur.file);
+  if (view.cur && (!cellular || arrived)) warm(view.cur.file);
+  if (view.next && (!cellular || arrived)) warm(view.next.file);
   if (!frame && view.next) {
     // The glass stays on the next real exposure and fades it up to the
     // timestamp. Nothing is invented for the gap before 19:33:26.
@@ -332,9 +455,7 @@ function paint() {
     photoB.style.opacity = "0";
     photoA.style.opacity = String(fadeIn);
     applyMotion(photoA, photoB, 0, 0);
-    credit.textContent = fadeIn > 0.18
-      ? `${arrival.credit}. Independent viewer, not a NASA product.`
-      : "";
+    credit.textContent = fadeIn > 0.18 ? frameCredit(arrival) : standingCredit();
     const moon = photoA.complete && photoA.naturalWidth ? sampleMoon(photoA) * fadeIn : 0;
     stage.style.setProperty("--moon", moon.toFixed(3));
     easePlate(fadeIn > 0.2 ? photoA : null);
@@ -351,7 +472,7 @@ function paint() {
     } else {
       empty.textContent = "No shipped frame for this camera.";
     }
-    credit.textContent = "";
+    credit.textContent = standingCredit();
     stage.style.setProperty("--moon", "0");
     easePlate(null);
   } else {
@@ -360,13 +481,9 @@ function paint() {
       ? Math.min(1, Math.max(0, (utcMs - (tOf(frame.utc) + offsetS * 1000)) / (tOf(view.next.utc) - tOf(frame.utc))))
       : 0;
     // Decode the next exposure as soon as it is known, before the dissolve.
-    if (view.next) {
+    if (view.next && (!cellular || arrived)) {
       warm(view.next.file);
-      const nextUrl = media(view.next.file);
-      if (photoB.src !== nextUrl) {
-        photoB.src = nextUrl;
-        photoB.alt = view.next.credit;
-      }
+      showFile(photoB, view.next.file, view.next.credit);
     }
     let shown = frame;
     useFrame(frame);
@@ -391,7 +508,7 @@ function paint() {
       photoB.style.opacity = "0";
     }
     applyMotion(photoA, photoB, progress, view.index);
-    credit.textContent = `${shown.credit}. Independent viewer, not a NASA product.`;
+    credit.textContent = frameCredit(shown);
     const aOp = parseFloat(photoA.style.opacity) || 0;
     const bOp = parseFloat(photoB.style.opacity) || 0;
     const visible = aOp >= bOp ? photoA : photoB;
@@ -399,17 +516,23 @@ function paint() {
     easePlate(visible.complete && visible.naturalWidth ? visible : null);
   }
 
+  if (credit.textContent !== creditBandText) {
+    creditBandText = credit.textContent;
+    syncCreditBand();
+  }
+
   const cabin = cabinAt(utcMs);
-  if (!cabin) {
+  const open = !!cabin;
+  if (!open) {
     glance.hidden = true;
   } else {
     glance.hidden = false;
-    const src = media(cabin.file);
-    if (glanceImg.src !== src) {
-      glanceImg.src = src;
-      glanceImg.alt = `${cabin.credit}. Cabin interior, not the view through the window.`;
-    }
+    showFile(glanceImg, cabin.file, `${cabin.credit}. Cabin interior, not the view through the window.`);
     glanceCap.textContent = `${cabin.credit}. This Z9 frame is inside the cabin, so it stays off the glass.`;
+  }
+  if (open !== glanceOpen) {
+    glanceOpen = open;
+    placeSubs();
   }
 
   const line = lineAt(utcMs);
@@ -427,13 +550,15 @@ function paint() {
       who.textContent = line.role ? `${line.speaker} · ${line.role}` : (line.speaker || "Crew");
       const say = document.createElement("span");
       say.className = "say";
+      say.dataset.full = line.text;
       say.textContent = line.text;
       subs.replaceChildren(who, say);
     }
+    syncSubsBand();
   }
 
   const spanDoc = activeSpan();
-  const takenLine = takenText(shownFrame(view));
+  const takenLine = takenText(shownFrame(view), view.outside);
   if (takenLine !== shownTaken) {
     shownTaken = takenLine;
     taken.textContent = takenLine;
@@ -453,6 +578,7 @@ function paint() {
       scrub.value = next;
     }
   }
+  paintCoverage();
   const gap = !segmentAt(utcMs);
   const who = highlight || "the crew";
   const noteText = [
@@ -467,15 +593,21 @@ function paint() {
     shownNote = noteText;
     note.textContent = noteText;
   }
-  if (!hud.hidden) drawMap(view.cur);
+  syncDock();
+  if (!hud.hidden || stage.classList.contains("compact")) drawMap(view.cur);
+  paintRail();
 }
 
 function drawMap(current) {
   const ctx = map.getContext("2d");
-  const cssW = map.clientWidth || 360;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.max(160, Math.round(cssW * dpr));
-  const h = Math.max(106, Math.round(w * 2 / 3));
+  const compactMap = stage.classList.contains("compact");
+  const cssW = map.clientWidth || (compactMap ? 186 : 360);
+  const dpr = compactMap ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(compactMap ? 120 : 160, Math.round(cssW * dpr));
+  const cssH = map.clientHeight || (compactMap ? 176 : 0);
+  const h = compactMap
+    ? Math.max(106, Math.round(cssH * dpr))
+    : Math.max(106, Math.round(w * 2 / 3));
   if (map.width !== w || map.height !== h) {
     map.width = w;
     map.height = h;
@@ -535,10 +667,16 @@ function drawMap(current) {
     visible.push(target);
   }
   const names = visible.map((target) => target.name);
-  const fontPx = ArtemisLogic.chooseFont(names, w, Math.max(11, Math.round(11 * dpr)), (name, px) => {
-    ctx.font = `${px}px Helvetica, sans-serif`;
-    return ctx.measureText(name).width;
-  });
+  const fontPx = ArtemisLogic.chooseFont(
+    names,
+    w,
+    compactMap ? (cssW >= 220 ? 13 : 12) : Math.max(11, Math.round(11 * dpr)),
+    (name, px) => {
+      ctx.font = `${px}px Helvetica, sans-serif`;
+      return ctx.measureText(name).width;
+    },
+    compactMap ? 0.96 : 0.46,
+  );
   ctx.font = `${fontPx}px Helvetica, sans-serif`;
   const anchors = visible.map((target) => {
     const [x, y] = xy(target.lon, target.lat);
@@ -648,8 +786,8 @@ function applyMotion(a, b, progress, index) {
 }
 
 function useFrame(frame) {
-  if (shownId === frame.nasa_id) return;
   const url = media(frame.file);
+  if (shownId === frame.nasa_id && photoA.src === url) return;
   const alt = `${frame.credit}. ${frame.camera_label}.`;
   // The back buffer already holds this exposure from the dissolve. Promote
   // that decoded bitmap instead of assigning a new src, which blanks the glass.
@@ -659,8 +797,7 @@ function useFrame(frame) {
     photoB = hold;
     photoA.alt = alt;
   } else {
-    photoA.src = url;
-    photoA.alt = alt;
+    showFile(photoA, frame.file, alt);
   }
   shownId = frame.nasa_id;
 }
@@ -720,6 +857,7 @@ function loop(now) {
 async function toggle() {
   playing = !playing;
   playBtn.textContent = playing ? "Pause" : "Play";
+  syncDock();
   if (playing) await ensureAudio();
   else {
     const seg = segmentAt(utcMs);
@@ -734,6 +872,82 @@ function seekTo(ms) {
   const span = activeSpan();
   utcMs = Math.min(tOf(span.end), Math.max(tOf(span.start), ms));
   ensureAudio();
+}
+
+function paintCoverage() {
+  if (!coverageBar || !doc) return;
+  const key = `${rangeKey}|${track}|${windowView}`;
+  if (key === shownCoverage) return;
+  shownCoverage = key;
+  const cov = ArtemisLogic.coverage(doc, rangeKey, track, windowView);
+  const spanDoc = activeSpan();
+  const span = tOf(spanDoc.end) - tOf(spanDoc.start);
+  if (!(span > 0)) return;
+  const origin = tOf(spanDoc.start);
+  coverageBar.replaceChildren();
+  for (const row of cov.audio) {
+    const mark = document.createElement("span");
+    mark.className = "audio";
+    mark.style.left = `${((tOf(row.start) - origin) / span) * 100}%`;
+    mark.style.width = `${((tOf(row.end) - tOf(row.start)) / span) * 100}%`;
+    coverageBar.appendChild(mark);
+  }
+  for (const utc of cov.photos) {
+    const mark = document.createElement("span");
+    mark.className = "photo";
+    mark.style.left = `${((tOf(utc) - origin) / span) * 100}%`;
+    coverageBar.appendChild(mark);
+  }
+}
+
+function fillMoments() {
+  if (!momentsPanel || !doc) return;
+  momentsPanel.replaceChildren();
+  const epoch = doc.mission_start ? tOf(doc.mission_start.utc) : null;
+  for (const row of ArtemisLogic.milestones(doc)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    const clocks = ArtemisLogic.formatClocks(tOf(row.utc), epoch);
+    const lines = [`${clocks.utc} · ${clocks.eastern} · ${clocks.met}`, row.label, ArtemisLogic.sourceLabel(row.source)];
+    if (row.jumpUtc) {
+      lines.push(`Opens at ${row.jumpUtc.slice(11, 19)} UTC. This capture is outside the playable span.`);
+    }
+    button.textContent = lines.join("\n");
+    button.addEventListener("click", () => goToMilestone(row));
+    momentsPanel.appendChild(button);
+  }
+}
+
+function goToMilestone(row) {
+  if (row.range === "cab" && rangeKey !== "cab") {
+    savedFlybyMs = utcMs;
+    savedTrack = track;
+    rangeKey = "cab";
+    backFly.hidden = false;
+  } else if (row.range === "flyby" && rangeKey !== "flyby") {
+    rangeKey = "flyby";
+    backFly.hidden = true;
+  }
+  if (row.track) setTrack(row.track);
+  if (row.window && row.window !== windowView) presentWindow(row.window);
+  shownCoverage = "";
+  seekTo(tOf(row.jumpUtc || row.utc));
+  closeMoments();
+}
+
+function capMomentsPanel() {
+  if (!momentsPanel || momentsPanel.hidden) return;
+  // Read the top at the 240px cap, then keep the bottom 8px inside the viewport.
+  momentsPanel.style.setProperty("--moments-top", "0px");
+  const top = momentsPanel.getBoundingClientRect().top;
+  momentsPanel.style.setProperty("--moments-top", `${Math.max(0, top)}px`);
+}
+
+function closeMoments() {
+  if (!momentsPanel || !momentsBtn) return;
+  momentsPanel.hidden = true;
+  momentsBtn.setAttribute("aria-expanded", "false");
+  momentsBtn.focus();
 }
 
 function setTrack(next) {
@@ -756,6 +970,7 @@ function setCrew(name) {
     const row = doc.crew.find((person) => person.id === on);
     if (row) setTrack(row.track);
   }
+  syncDock();
 }
 
 function setCamera(next) {
@@ -775,6 +990,7 @@ function presentWindow(next) {
     button.setAttribute("aria-pressed", button.dataset.win === next ? "true" : "false");
   });
   document.querySelector(".cameras").hidden = next === "3";
+  syncDock();
 }
 
 function frameFor(win, t) {
@@ -870,6 +1086,443 @@ function openingSegment() {
   return doc.segments.find((seg) => seg.track === track && tOf(seg.end) > utcMs) || null;
 }
 
+let creditMeasured = "";
+let creditBandText = "";
+let subsMeasured = "";
+let subsMode = "";
+let subsQuote = "";
+let besideRoom = -1;
+let besideTooTight = false;
+let glanceOpen = false;
+let placingSubs = false;
+function syncCreditBand() {
+  const next = `${credit.getBoundingClientRect().height.toFixed(2)}px`;
+  if (next === creditMeasured) return;
+  creditMeasured = next;
+  stage.style.setProperty("--credit-measured", next);
+  placeSubs();
+}
+
+function subtitleLineCount(root) {
+  const range = document.createRange();
+  let lines = 0;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (node.parentElement && node.parentElement.classList.contains("sr-full")) continue;
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      if (rect.width > 0 && rect.height > 0) lines += 1;
+    }
+  }
+  return lines;
+}
+
+// Width of the centered subtitle: the longer of the speaker and the quote,
+// capped by the 62% rule. Independent of the beside/stack placement.
+function centeredSubsWidth(glassWidth) {
+  if (!subs.firstChild) return 0;
+  const probe = subs.cloneNode(true);
+  probe.style.cssText = "position:fixed;left:0;top:0;visibility:hidden;width:max-content;max-width:none;transform:none;";
+  probe.querySelectorAll(".who, .say").forEach((el) => {
+    el.style.whiteSpace = "nowrap";
+  });
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return Math.min(width, glassWidth * 0.62);
+}
+
+function rememberSubsHeight() {
+  const next = `${subs.getBoundingClientRect().height.toFixed(2)}px`;
+  if (next === subsMeasured) return;
+  subsMeasured = next;
+  stage.style.setProperty("--subs-measured", next);
+}
+
+function quoteFits() {
+  const glass = document.getElementById("glass").getBoundingClientRect();
+  const sub = subs.getBoundingClientRect();
+  const creditBox = credit.getBoundingClientRect();
+  if (sub.width <= 0 || sub.height <= 0) return false;
+  const range = document.createRange();
+  const walker = document.createTreeWalker(subs, NodeFilter.SHOW_TEXT);
+  let node;
+  let lines = 0;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      lines += 1;
+      if (
+        rect.top < glass.top - 0.5
+        || rect.bottom > glass.bottom + 0.5
+        || rect.left < glass.left - 0.5
+        || rect.right > glass.right + 0.5
+      ) return false;
+    }
+  }
+  if (lines < 1 || lines > 3) return false;
+  const overlaps = sub.bottom > creditBox.top + 0.5
+    && sub.top < creditBox.bottom
+    && sub.right > creditBox.left
+    && sub.left < creditBox.right;
+  return !overlaps;
+}
+
+function publishQuote(say, full) {
+  const extra = subs.querySelector(".sr-full");
+  if (extra) extra.remove();
+  if (!say || !full) {
+    subs.removeAttribute("aria-label");
+    return;
+  }
+  const who = subs.querySelector(".who");
+  const spoken = who && who.textContent ? `${who.textContent}. ${full}` : full;
+  subs.setAttribute("role", "paragraph");
+  subs.setAttribute("aria-label", spoken);
+}
+
+function overlapArea(a, b) {
+  const x = Math.max(a.left, b.left);
+  const y = Math.max(a.top, b.top);
+  const right = Math.min(a.right, b.right);
+  const bottom = Math.min(a.bottom, b.bottom);
+  if (right <= x || bottom <= y) return 0;
+  return (right - x) * (bottom - y);
+}
+
+function textClipped(el) {
+  if (!el) return false;
+  return el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1;
+}
+
+// The clock chip is the top chrome. A bezel line has to sit under it, inside
+// the viewport, and still above the glass.
+function bezelSitsClean() {
+  const sub = subs.getBoundingClientRect();
+  const glass = document.getElementById("glass").getBoundingClientRect();
+  const clocks = document.getElementById("clocks").getBoundingClientRect();
+  const creditBox = credit.getBoundingClientRect();
+  if (sub.width <= 0 || sub.height <= 0) return false;
+  if (sub.top < clocks.bottom - 0.5 || overlapArea(sub, clocks) > 0) return false;
+  if (sub.left < -0.5 || sub.right > window.innerWidth + 0.5) return false;
+  if (sub.bottom > window.innerHeight + 0.5) return false;
+  if (sub.bottom > glass.top + 0.5) return false;
+  if (overlapArea(sub, creditBox) > 0) return false;
+  if (!glance.hidden) {
+    const card = glance.getBoundingClientRect();
+    if (card.width > 0 && overlapArea(sub, card) > 0) return false;
+  }
+  if (!textGlyphsInside(subs, 0, 0, window.innerWidth, window.innerHeight)) return false;
+  return !textClipped(subs.querySelector(".say")) && !textClipped(subs.querySelector(".who"));
+}
+
+function textGlyphsInside(el, left, top, right, bottom) {
+  if (!el) return true;
+  const range = document.createRange();
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      if (rect.left < left - 0.5 || rect.top < top - 0.5
+        || rect.right > right + 0.5 || rect.bottom > bottom + 0.5) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function enableBezel() {
+  stage.classList.remove("subs-beside", "subs-stack", "subs-wide");
+  stage.classList.add("subs-bezel");
+  const glass = document.getElementById("glass").getBoundingClientRect();
+  const card = glance.getBoundingClientRect();
+  const edges = bezelEdges(glass, card);
+  stage.style.setProperty("--subs-bezel-left", `${edges.left.toFixed(2)}px`);
+  stage.style.setProperty("--subs-bezel-right", `${edges.right.toFixed(2)}px`);
+  stage.style.setProperty("--subs-fit", "0px");
+}
+
+// Viewport padding, in glass coordinates. A window-width inset ran the line
+// off the left of the screen. The cabin card, when it is open, keeps 16px.
+function bezelEdges(glass, card) {
+  const pad = Math.max(16, window.innerWidth * 0.02);
+  let viewLeft = pad;
+  if (!glance.hidden && card.width > 0) viewLeft = Math.max(pad, card.right + 16);
+  const viewRight = Math.max(viewLeft, window.innerWidth - pad);
+  return {
+    left: viewLeft - glass.left,
+    right: glass.right - viewRight,
+  };
+}
+
+// The glass holds a quote only when the whole line, speaker included, is
+// inside it in three lines or fewer. 0.9em is the first step down. If that
+// still does not fit, the quote moves onto the bezel at full text. Smaller
+// steps are only so that bezel stays under the clock. Crew words are never cut.
+function settleQuote() {
+  const say = subs.querySelector(".say");
+  if (!say || stage.classList.contains("touch")) {
+    stage.style.setProperty("--subs-scale", "1");
+    publishQuote(say, say ? (say.dataset.full || say.textContent) : "");
+    return;
+  }
+  const full = say.dataset.full || say.textContent;
+  say.dataset.full = full;
+  say.textContent = full;
+  const tryGlass = (scale) => {
+    stage.classList.remove("subs-bezel");
+    stage.style.setProperty("--subs-scale", scale);
+    fitSubsInWindow();
+    return quoteFits();
+  };
+  const tryGlassScales = (scales) => {
+    for (const scale of scales) {
+      if (tryGlass(scale)) return true;
+    }
+    return false;
+  };
+  if (tryGlassScales(["1", "0.9"])) {
+    publishQuote(say, full);
+    return;
+  }
+  const beside = stage.classList.contains("subs-beside");
+  const stacked = stage.classList.contains("subs-stack");
+  if (!beside && !stacked && !stage.classList.contains("subs-wide") && glance.hidden) {
+    stage.classList.add("subs-wide");
+    if (tryGlassScales(["1", "0.9"])) {
+      publishQuote(say, full);
+      return;
+    }
+  }
+  const tryBezel = (scales) => {
+    enableBezel();
+    for (const scale of scales) {
+      stage.style.setProperty("--subs-scale", scale);
+      if (bezelSitsClean()) return scale;
+    }
+    return "";
+  };
+  let used = tryBezel(["1", "0.9"]);
+  if (!used && tryGlassScales(["0.8", "0.72", "0.64"])) {
+    publishQuote(say, full);
+    return;
+  }
+  if (!used) used = tryBezel(["0.8", "0.72", "0.64"]);
+  stage.style.setProperty("--subs-scale", used || "0.64");
+  if (!stage.classList.contains("subs-bezel")) enableBezel();
+  publishQuote(say, full);
+}
+
+// Fine pointer only. The subtitle stays centered until its box would meet
+// the card. Then it runs from the card's right edge to the window edge, or,
+// when that column is under 160px or wraps past three lines, the card stacks
+// above it. Under 600px with no card beside the line, the quote uses the
+// glass. settleQuote moves a line the glass cannot hold onto the bezel.
+// Nothing here runs from the animation frame.
+function placeSubs() {
+  if (placingSubs) return;
+  placingSubs = true;
+  try {
+    const say = subs.querySelector(".say");
+    if (say) {
+      const full = say.dataset.full || say.textContent;
+      if (full !== subsQuote) {
+        subsQuote = full;
+        besideTooTight = false;
+      }
+      say.dataset.full = full;
+      say.textContent = full;
+    }
+    stage.style.setProperty("--subs-scale", "1");
+    const glass = document.getElementById("glass").getBoundingClientRect();
+    const card = glance.getBoundingClientRect();
+    const edge = Math.max(16, window.innerWidth * 0.02);
+    const gap = 16;
+    const narrow = window.innerWidth < 600;
+    let mode = "";
+    if (!stage.classList.contains("touch") && !glance.hidden && card.width > 0 && glass.width > 0) {
+      const room = glass.right - edge - (card.right + gap);
+      if (Math.abs(room - besideRoom) > 1) {
+        besideRoom = room;
+        besideTooTight = false;
+      }
+      const box = narrow ? Math.max(0, glass.width - edge * 2) : centeredSubsWidth(glass.width);
+      const centeredLeft = glass.left + (glass.width - box) / 2;
+      const hitsCard = box > 0 && centeredLeft < card.right + gap && centeredLeft + box > card.left;
+      if (hitsCard) mode = room < 160 || besideTooTight ? "stack" : "beside";
+      else if (narrow) mode = "wide";
+      stage.style.setProperty("--subs-left", `${Math.max(0, card.right + gap - glass.left).toFixed(2)}px`);
+    } else {
+      besideTooTight = false;
+      besideRoom = -1;
+      if (!stage.classList.contains("touch") && narrow) mode = "wide";
+    }
+    subsMode = mode;
+    stage.classList.toggle("subs-beside", mode === "beside");
+    stage.classList.toggle("subs-stack", mode === "stack");
+    stage.classList.toggle("subs-wide", mode === "wide");
+    stage.classList.toggle("subs-bezel", mode === "bezel");
+    if (mode === "beside" && (subs.getBoundingClientRect().width < 160 || subtitleLineCount(subs) > 3)) {
+      besideTooTight = true;
+      subsMode = "stack";
+      stage.classList.remove("subs-beside");
+      stage.classList.remove("subs-wide");
+      stage.classList.add("subs-stack");
+    }
+    settleQuote();
+    rememberSubsHeight();
+  } finally {
+    placingSubs = false;
+  }
+}
+
+// Pull the line down until it sits in the glass, and stop short of the credit.
+function fitSubsInWindow() {
+  if (stage.classList.contains("touch") || !subs.firstChild) {
+    stage.style.setProperty("--subs-fit", "0px");
+    return;
+  }
+  stage.style.setProperty("--subs-fit", "0px");
+  const glass = document.getElementById("glass").getBoundingClientRect();
+  const sub = subs.getBoundingClientRect();
+  const creditBox = credit.getBoundingClientRect();
+  const overflowTop = Math.max(0, glass.top - sub.top);
+  if (overflowTop <= 0.25) return;
+  const creditGap = creditBox.top - sub.bottom;
+  const fit = Math.min(overflowTop + 0.5, Math.max(0, creditGap - 0.5));
+  stage.style.setProperty("--subs-fit", `${fit.toFixed(2)}px`);
+}
+
+function syncSubsBand() {
+  rememberSubsHeight();
+  placeSubs();
+}
+
+function layoutChrome() {
+  const fold = foldQuery.matches;
+  const compact = coarseQuery.matches && !fold && compactQuery.matches;
+  stage.classList.toggle("fold", fold);
+  stage.classList.toggle("compact", compact);
+  const home = document.querySelector("#hud .bottom");
+  if (compact) {
+    if (map.parentElement !== stage) stage.appendChild(map);
+  } else if (home && map.parentElement !== home) {
+    home.insertBefore(map, home.firstChild);
+  }
+  // A fold or unfold only changes the picture size. The recording stays put.
+  if (lastFold !== fold) {
+    lastFold = fold;
+    shownId = null;
+    shownRail = "";
+  }
+  syncCreditBand();
+  syncSubsBand();
+}
+
+function paintRail() {
+  if (!foldQuery.matches || !doc) return;
+  const otherWin = windowView === "3" ? "2" : "3";
+  const saved = windowView;
+  windowView = otherWin;
+  let otherView;
+  try {
+    otherView = visiblePair(utcMs);
+  } finally {
+    windowView = saved;
+  }
+  const frame = otherView.cur;
+  const img = document.getElementById("companionImg");
+  const cap = document.getElementById("companionCap");
+  const label = otherWin === "3" ? "Window 3 · Cab Cam" : "Window 2 · Nikon";
+  document.getElementById("companion").setAttribute("aria-label", `Show ${label}`);
+  if (frame) {
+    showFile(img, frame.file, `${frame.credit}. ${label}.`);
+    const when = frame.utc.slice(11, 19);
+    const gap = ArtemisLogic.clockGap(utcMs, tOf(frame.utc));
+    const where = otherView.outside ? "Outside this span. " : "";
+    cap.textContent = gap
+      ? `${label}. ${where}Taken ${when} UTC, ${gap}.`
+      : `${label}. ${where}Taken ${when} UTC.`;
+  } else {
+    if (img.getAttribute("src")) img.removeAttribute("src");
+    img.alt = "";
+    cap.textContent = otherView.stale
+      ? `${label}. No frame at this clock. The last matching picture was not moved.`
+      : `${label}. No frame was taken at this time.`;
+  }
+  const slice = ArtemisLogic.transcriptSlice(doc.lines, utcMs, track, 25000, 12000);
+  const key = slice.map((row) => `${row.utc}|${row.current ? 1 : 0}`).join(";");
+  if (key === shownRail) return;
+  shownRail = key;
+  const box = document.getElementById("transcript");
+  box.replaceChildren();
+  if (!slice.length) {
+    const empty = document.createElement("p");
+    empty.className = "line";
+    empty.textContent = "No transcript line in this stretch.";
+    box.appendChild(empty);
+    return;
+  }
+  for (const row of slice) {
+    const item = document.createElement("p");
+    item.className = row.current ? "line now" : "line";
+    if (row.speaker) {
+      const who = document.createElement("span");
+      who.className = "who";
+      who.textContent = row.speaker;
+      item.appendChild(who);
+    }
+    item.appendChild(document.createTextNode(row.text));
+    box.appendChild(item);
+  }
+  const current = box.querySelector(".now");
+  if (current) box.scrollTop = Math.max(0, current.offsetTop - 12);
+}
+
+function syncDock() {
+  const play = document.getElementById("dock-play");
+  if (!play) return;
+  const label = playing ? "Pause" : "Play";
+  if (play.textContent !== label) play.textContent = label;
+  const crewBtn = document.getElementById("dock-crew");
+  const crewLabel = highlight || "Crew";
+  if (crewBtn.textContent !== crewLabel) crewBtn.textContent = crewLabel;
+  const w2 = document.getElementById("dock-w2");
+  const w3 = document.getElementById("dock-w3");
+  w2.classList.toggle("on", windowView === "2");
+  w3.classList.toggle("on", windowView === "3");
+  w2.setAttribute("aria-pressed", windowView === "2" ? "true" : "false");
+  w3.setAttribute("aria-pressed", windowView === "3" ? "true" : "false");
+}
+
+function cycleCrew() {
+  const order = ["Wiseman", "Glover", "Koch", "Hansen"];
+  const next = order[(order.indexOf(highlight) + 1) % order.length];
+  highlight = null;
+  setCrew(next);
+}
+
+function toggleFull() {
+  const open = document.fullscreenElement || document.webkitFullscreenElement;
+  if (open) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document);
+    return;
+  }
+  const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
+  if (!req) return;
+  const pending = req.call(stage);
+  if (pending && pending.catch) pending.catch(() => {});
+}
+
 async function arrive() {
   if (arrived) return;
   arrived = true;
@@ -877,14 +1530,19 @@ async function arrive() {
   enter.classList.add("dismiss");
   playing = true;
   playBtn.textContent = "Pause";
-  // play() has to be called in this gesture or the later start is blocked.
-  // The first recording begins a couple of seconds after 19:33:00, so this
-  // only unlocks the element. Nothing is heard until that file's real start.
+  // play() has to be called in this gesture, with no await before it, or
+  // Safari drops the unlock. The first recording begins a couple of seconds
+  // after 19:33:00, so this only unlocks the element until that file's start.
   const seg = openingSegment();
-  if (seg && !audio.src) audio.src = media(seg.file);
+  if (seg && !audio.src) {
+    const ready = audioReady.get(seg.file);
+    audio.src = ready || media(seg.file);
+    audio.dataset.direct = ready ? "" : "1";
+  }
   const kick = audio.play();
   if (kick) kick.catch(() => {});
   if (!segmentAt(utcMs)) audio.pause();
+  syncDock();
   await ensureAudio();
   showHintOnce();
   window.setTimeout(() => { enter.hidden = true; }, 1100);
@@ -893,17 +1551,63 @@ async function arrive() {
 async function boot() {
   doc = await fetch("data/timeline.json").then((response) => response.json());
   utcMs = tOf(doc.window.start);
+  layoutChrome();
+  const plan = ArtemisLogic.prefetchBeforeTap(cellular);
   const opener = frameFor("2", utcMs);
-  if (opener) warm(opener.file);
+  if (opener && plan.opener) warm(opener.file);
   const other = frameFor("3", utcMs);
-  if (other) warm(other.file);
+  if (other && plan.otherWindow) warm(other.file);
   const firstAudio = doc.segments.find((seg) => seg.track === track);
-  if (firstAudio) sourceUrl(firstAudio.file);
+  if (firstAudio && plan.audio) sourceUrl(firstAudio.file);
   enter.addEventListener("click", () => { arrive(); });
   playBtn.addEventListener("click", toggle);
-  document.getElementById("full").addEventListener("click", () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else stage.requestFullscreen();
+  document.getElementById("full").addEventListener("click", toggleFull);
+  document.getElementById("dock-play").addEventListener("click", toggle);
+  document.getElementById("dock-w2").addEventListener("click", () => setWindow("2"));
+  document.getElementById("dock-w3").addEventListener("click", () => setWindow("3"));
+  document.getElementById("dock-crew").addEventListener("click", cycleCrew);
+  document.getElementById("dock-full").addEventListener("click", toggleFull);
+  document.getElementById("dock-more").addEventListener("click", poke);
+  document.getElementById("companion").addEventListener("click", () => {
+    setWindow(windowView === "3" ? "2" : "3");
+  });
+  // Pointer events cover a finger swipe on current iPhones. A second finger
+  // cancels it, and nothing calls preventDefault, so a pinch can still zoom.
+  let swipe = null;
+  let pointers = 0;
+  const swipeTarget = (event) => event.target.closest && event.target.closest("button, input, label, a");
+  window.addEventListener("pointerdown", (event) => {
+    if (!touchDevice || event.pointerType === "mouse") return;
+    pointers += 1;
+    if (pointers > 1 || swipeTarget(event)) {
+      swipe = null;
+      return;
+    }
+    swipe = { x: event.clientX, y: event.clientY, id: event.pointerId };
+  });
+  window.addEventListener("pointerup", (event) => {
+    if (touchDevice && event.pointerType !== "mouse") pointers = Math.max(0, pointers - 1);
+    if (!swipe || swipe.id !== event.pointerId || !arrived) {
+      swipe = null;
+      return;
+    }
+    const next = ArtemisLogic.swipeWindow(event.clientX - swipe.x, event.clientY - swipe.y, 48);
+    swipe = null;
+    if (next) setWindow(next);
+  });
+  window.addEventListener("pointercancel", () => {
+    pointers = Math.max(0, pointers - 1);
+    swipe = null;
+  });
+  momentsBtn.addEventListener("click", () => {
+    const open = momentsPanel.hidden;
+    momentsPanel.hidden = !open;
+    momentsBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (!open) return;
+    fillMoments();
+    capMomentsPanel();
+    const first = momentsPanel.querySelector("button");
+    if (first) first.focus();
   });
   scrub.addEventListener("pointerdown", () => { seeking = true; });
   scrub.addEventListener("input", () => {
@@ -939,9 +1643,29 @@ async function boot() {
   document.querySelectorAll("[data-track]").forEach((button) => {
     button.addEventListener("click", () => setTrack(button.dataset.track));
   });
-  window.addEventListener("resize", syncClockLane);
+  window.addEventListener("resize", () => {
+    layoutChrome();
+    syncClockLane();
+    syncCreditBand();
+    syncSubsBand();
+    capMomentsPanel();
+  });
+  if (window.ResizeObserver) new ResizeObserver(syncCreditBand).observe(credit);
+  if (window.ResizeObserver) new ResizeObserver(syncSubsBand).observe(subs);
+  if (window.ResizeObserver) new ResizeObserver(() => placeSubs()).observe(glance);
   if (window.ResizeObserver) new ResizeObserver(syncClockLane).observe(document.getElementById("clocks"));
-  window.addEventListener("mousemove", poke);
+  const relayout = () => {
+    shownId = null;
+    layoutChrome();
+  };
+  if (narrowQuery.addEventListener) narrowQuery.addEventListener("change", relayout);
+  if (compactQuery.addEventListener) compactQuery.addEventListener("change", relayout);
+  if (foldQuery.addEventListener) foldQuery.addEventListener("change", relayout);
+  if (coarseQuery.addEventListener) coarseQuery.addEventListener("change", relayout);
+  window.addEventListener("mousemove", () => {
+    if (touchDevice) return;
+    poke();
+  });
   window.addEventListener("pointermove", (event) => {
     if (reduceMotion) return;
     aimX = (event.clientX / window.innerWidth) * 2 - 1;
@@ -961,6 +1685,10 @@ async function boot() {
     }
     const key = event.key;
     if (key === "Escape") {
+      if (momentsPanel && !momentsPanel.hidden) {
+        closeMoments();
+        return;
+      }
       poke();
       return;
     }
