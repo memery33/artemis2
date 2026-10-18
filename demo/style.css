@@ -864,6 +864,10 @@ button.on, button[aria-pressed="true"] {
     bottom: max(12px, env(safe-area-inset-bottom));
     width: min(268px, 30vw);
     gap: 8px;
+    /* The transcript used to paint past this box onto the dock. 3px keeps
+       the companion's focus ring inside the clip. */
+    padding: 3px;
+    overflow: hidden;
     pointer-events: auto;
   }
   /* The dock lift would drop the cabin card onto the subtitle. Sit it in the
@@ -925,6 +929,7 @@ button.on, button[aria-pressed="true"] {
 #transcript {
   position: relative;
   flex: 1;
+  min-height: 0;
   overflow: auto;
   margin: 0;
   padding: 10px 12px;
