@@ -42,6 +42,8 @@ button, input[type="range"] { touch-action: manipulation; }
   --dock-clear: max(10px, env(safe-area-inset-bottom));
   /* One credit line, plus the desktop chip's 3px + 4px padding. */
   --credit-h: calc(11px * 1.35 + 7px);
+  /* Replaced by the credit element's border box once it has wrapped. */
+  --credit-measured: 0px;
 }
 
 #stage.touch {
@@ -311,11 +313,16 @@ button, input[type="range"] { touch-action: manipulation; }
   pointer-events: none;
 }
 
-/* A phone-width desktop window wraps the credit to two lines. 7% sits on
-   that second line. Keep the subtitle just above it. */
+/* A phone-width desktop window wraps the credit. 3.4em clears two lines.
+   A third line is taller than that, so the measured box wins and the
+   subtitle stays 16px above it. The affiliation line is not clipped. */
 @media (max-width: 560px) {
   #stage:not(.touch) #subs {
-    bottom: max(7%, calc(var(--dock-clear) + 3.4em));
+    bottom: max(
+      7%,
+      calc(var(--dock-clear) + 3.4em),
+      calc(var(--dock-clear) + var(--credit-measured) + 16px)
+    );
   }
 }
 
