@@ -1011,6 +1011,7 @@ function subtitleLineCount(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node;
   while ((node = walker.nextNode())) {
+    if (node.parentElement && node.parentElement.classList.contains("sr-full")) continue;
     if (!node.textContent.trim()) continue;
     range.selectNodeContents(node);
     for (const rect of range.getClientRects()) {
@@ -1073,6 +1074,19 @@ function quoteFits() {
   return !overlaps;
 }
 
+function publishQuote(say, full) {
+  const extra = subs.querySelector(".sr-full");
+  if (extra) extra.remove();
+  if (!say || !full) {
+    subs.removeAttribute("aria-label");
+    return;
+  }
+  const who = subs.querySelector(".who");
+  const spoken = who && who.textContent ? `${who.textContent}. ${full}` : full;
+  subs.setAttribute("role", "paragraph");
+  subs.setAttribute("aria-label", spoken);
+}
+
 function prefixQuote(full, count) {
   if (count >= full.length) return full;
   const raw = full.slice(0, Math.max(1, count));
@@ -1084,19 +1098,29 @@ function prefixQuote(full, count) {
 // Long quotes on a narrow glass wrap past three lines and leave the pane.
 // Full width is applied first. 0.9em is the readable step down. Whatever
 // still does not fit is cut, with an ellipsis, until the text is inside.
+// Under 320px the quote moves onto the bezel instead, and the words stay whole.
 function settleQuote() {
   const say = subs.querySelector(".say");
   if (!say || stage.classList.contains("touch")) {
     stage.style.setProperty("--subs-scale", "1");
+    publishQuote(say, say ? (say.dataset.full || say.textContent) : "");
     return;
   }
   const full = say.dataset.full || say.textContent;
   say.dataset.full = full;
+  if (stage.classList.contains("subs-bezel")) {
+    say.textContent = full;
+    stage.style.setProperty("--subs-scale", "1");
+    stage.style.setProperty("--subs-fit", "0px");
+    publishQuote(say, full);
+    return;
+  }
   const narrowFree = window.innerWidth < 600 && !stage.classList.contains("subs-beside");
   if (!narrowFree) {
     say.textContent = full;
     stage.style.setProperty("--subs-scale", "1");
     fitSubsInWindow();
+    publishQuote(say, full);
     return;
   }
   const tryFull = (scale) => {
@@ -1105,7 +1129,10 @@ function settleQuote() {
     fitSubsInWindow();
     return quoteFits();
   };
-  if (tryFull("1") || tryFull("0.9")) return;
+  if (tryFull("1") || tryFull("0.9")) {
+    publishQuote(say, full);
+    return;
+  }
   const clampAt = (scale) => {
     stage.style.setProperty("--subs-scale", scale);
     let best = "";
@@ -1128,13 +1155,22 @@ function settleQuote() {
     return true;
   };
   if (!clampAt("1")) clampAt("0.9");
+  publishQuote(say, full);
 }
 
 // Fine pointer only. The subtitle stays centered until its box would meet
 // the card. Then it runs from the card's right edge to the window edge, or,
 // when that column is under 160px or wraps past three lines, the card stacks
 // above it. Under 600px with no card beside the line, the quote uses the
-// glass. Nothing here runs from the animation frame.
+// glass. Under 320px the quote leaves the glass and sits on the bezel.
+// Nothing here runs from the animation frame.
+function bezelLeft(glass, card) {
+  const win = document.getElementById("window").getBoundingClientRect();
+  const edge = win.left + 8 - glass.left;
+  if (glance.hidden || card.width <= 0) return edge;
+  return Math.max(edge, card.right + 16 - glass.left);
+}
+
 function placeSubs() {
   if (placingSubs) return;
   placingSubs = true;
@@ -1155,8 +1191,14 @@ function placeSubs() {
     const edge = Math.max(16, window.innerWidth * 0.02);
     const gap = 16;
     const narrow = window.innerWidth < 600;
+    const bezel = window.innerWidth < 320;
     let mode = "";
-    if (!stage.classList.contains("touch") && !glance.hidden && card.width > 0 && glass.width > 0) {
+    if (!stage.classList.contains("touch") && bezel) {
+      mode = "bezel";
+      besideTooTight = false;
+      besideRoom = -1;
+      stage.style.setProperty("--subs-bezel-left", `${bezelLeft(glass, card).toFixed(2)}px`);
+    } else if (!stage.classList.contains("touch") && !glance.hidden && card.width > 0 && glass.width > 0) {
       const room = glass.right - edge - (card.right + gap);
       if (Math.abs(room - besideRoom) > 1) {
         besideRoom = room;
@@ -1177,6 +1219,7 @@ function placeSubs() {
     stage.classList.toggle("subs-beside", mode === "beside");
     stage.classList.toggle("subs-stack", mode === "stack");
     stage.classList.toggle("subs-wide", mode === "wide");
+    stage.classList.toggle("subs-bezel", mode === "bezel");
     if (mode === "beside" && (subs.getBoundingClientRect().width < 160 || subtitleLineCount(subs) > 3)) {
       besideTooTight = true;
       subsMode = "stack";

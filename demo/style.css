@@ -206,9 +206,8 @@ button, input[type="range"] { touch-action: manipulation; }
   position: relative;
   height: 100%;
   border-radius: clamp(12px, 1.8vw, 30px);
-  /* The photograph is clipped by #aperture. The credit and the subtitle
-     stay in this box. A long quote narrows or shortens until it fits
-     here, so it does not climb onto the bezel. */
+  /* The photograph is clipped by #aperture. From 320px up the subtitle
+     stays in this box. Narrower fine-pointer windows move it onto the bezel. */
   overflow: visible;
   background: #000;
   box-shadow:
@@ -366,6 +365,21 @@ button, input[type="range"] { touch-action: manipulation; }
   text-align: center;
 }
 
+/* Under 320px the glass cannot hold the quote. The line sits on the bezel,
+   above the pane, at the window's width, so the words stay whole. 8px keeps
+   the block off the glass edge. --subs-bezel-left moves the line past the
+   cabin card when that card is open; otherwise it is the window edge. */
+#stage.subs-bezel:not(.touch) #subs {
+  left: var(--subs-bezel-left, calc(8px - var(--glass-inset)));
+  right: calc(8px - var(--glass-inset));
+  bottom: calc(100% + 8px);
+  width: auto;
+  max-width: none;
+  transform: none;
+  text-align: center;
+  z-index: 4;
+}
+
 #stage.subs-stack:not(.touch):not(.compact):not(.fold) #glance {
   bottom: max(
     16px,
@@ -421,6 +435,7 @@ button, input[type="range"] { touch-action: manipulation; }
 #subs .say {
   display: block;
   margin-top: 3px;
+  overflow: hidden;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-weight: 400;
   font-size: calc(clamp(14px, 1.45vw, 20px) * var(--subs-scale, 1));
