@@ -432,11 +432,7 @@ extension PlaybackModel {
     func photo(_ frame: Frame, maxPixel: CGFloat) -> UIImage? {
         _ = frameCacheEpoch
         let cap = maxPixel > 1 ? maxPixel : 720
-        if let image = MediaStore.cachedImage(file: frame.file, small: phoneImages, maxPixel: cap) {
-            return image
-        }
-        prefetch(frame, maxPixel: cap)
-        return nil
+        return MediaStore.cachedImage(file: frame.file, small: phoneImages, maxPixel: cap)
     }
 
     func prefetch(_ frame: Frame, maxPixel: CGFloat) {

@@ -106,14 +106,57 @@ final class PlaybackTimingTests: XCTestCase {
         )
     }
 
-    func testLiveRenderIsClampedToTheFile() {
-        XCTAssertEqual(
-            PlaybackTiming.recoveryOffset(missionSeconds: 10, fileDuration: 100, liveRenderSeconds: 140),
-            100
+    func testPauseAfterAudibleFileClearsTheArm() throws {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let paused = PlaybackTiming.clockAfterPause(
+            segmentStart: start,
+            segmentEnd: start.addingTimeInterval(40),
+            renderedSeconds: 12.5,
+            holdUntil: start,
+            utc: start.addingTimeInterval(-9),
+            remainingWait: nil
         )
-        XCTAssertEqual(
-            PlaybackTiming.recoveryOffset(missionSeconds: 10, fileDuration: 100, liveRenderSeconds: -3),
-            0
+        XCTAssertNil(paused.holdUntil)
+        XCTAssertEqual(paused.utc, start.addingTimeInterval(12.5))
+        XCTAssertEqual(paused.holdSeconds, 12.5, accuracy: 0.0001)
+        XCTAssertTrue(paused.resetWallClock)
+    }
+
+    func testPauseBeforeAudibleKeepsTheRemainingWait() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let paused = PlaybackTiming.clockAfterPause(
+            segmentStart: start,
+            segmentEnd: start.addingTimeInterval(40),
+            renderedSeconds: 0,
+            holdUntil: start,
+            utc: start.addingTimeInterval(-9),
+            remainingWait: 4
         )
+        XCTAssertEqual(paused.holdUntil, start)
+        XCTAssertEqual(paused.utc, start.addingTimeInterval(-4))
+        XCTAssertEqual(paused.holdSeconds, 0)
+        XCTAssertEqual(paused.holdUntil?.timeIntervalSince(paused.utc) ?? 0, 4, accuracy: 0.0001)
+        XCTAssertTrue(paused.resetWallClock)
+        XCTAssertEqual(PlaybackTiming.remainingWait(nowHostSeconds: 1_005, audibleHostSeconds: 1_009), 4)
+    }
+
+    func testAudibleRecoveryClearsTheArm() {
+        let plan = PlaybackTiming.recoveryPlan(
+            liveRenderSeconds: 47,
+            secondsUntilArm: 9,
+            missionSeconds: 10,
+            fileDuration: 100
+        )
+        XCTAssertEqual(plan, .resumeFile(position: 47, clearHoldUntil: true))
+    }
+
+    func testSilentRecoveryRearmsTheRemainingGap() {
+        let plan = PlaybackTiming.recoveryPlan(
+            liveRenderSeconds: 0,
+            secondsUntilArm: 4,
+            missionSeconds: 0,
+            fileDuration: 100
+        )
+        XCTAssertEqual(plan, .rearmGap(delay: 4))
     }
 }

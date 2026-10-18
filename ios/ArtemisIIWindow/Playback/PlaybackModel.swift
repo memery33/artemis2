@@ -173,12 +173,38 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// That clears the interruption resume flag so a later `.shouldResume`
     /// does not start the recording again.
     func pause(user: Bool) {
+        let rendered = player.isPlaying ? renderedSeconds() : max(0, holdSeconds)
+        let wait = audibleHostSeconds.map {
+            PlaybackTiming.remainingWait(
+                nowHostSeconds: AVAudioTime.seconds(forHostTime: mach_absolute_time()),
+                audibleHostSeconds: $0
+            )
+        }
         if player.isPlaying {
-            holdSeconds = renderedSeconds()
+            holdSeconds = rendered
         }
         player.pause()
         audibleHostSeconds = nil
         scheduledLead = 0
+        if let segment = segmentForCurrentFile() {
+            let paused = PlaybackTiming.clockAfterPause(
+                segmentStart: segment.start,
+                segmentEnd: segment.end,
+                renderedSeconds: rendered,
+                holdUntil: holdUntil,
+                utc: utc,
+                remainingWait: wait
+            )
+            utc = paused.utc
+            holdUntil = paused.holdUntil
+            holdSeconds = paused.holdSeconds
+            if paused.resetWallClock {
+                lastWall = nil
+            }
+        } else if rendered > 0 {
+            holdUntil = nil
+            lastWall = nil
+        }
         playing = false
         if user {
             resumeAfterInterrupt = false
@@ -829,32 +855,39 @@ final class PlaybackModel: NSObject, ObservableObject {
         stopPlayer()
         graphReady = false
         usingEnvironment = false
-        let fileIsAudible = (liveRender ?? 0) > 0
-        if !fileIsAudible, let armed, armed > utc, let segment {
-            scheduleAtRealStart(segment, delay: max(0, armed.timeIntervalSince(utc)))
-            return
-        }
         guard let file = audioFile else { return }
         let missionSeconds = segment.map { utc.timeIntervalSince($0.start) } ?? 0
         let rate = file.processingFormat.sampleRate
         let duration = rate > 0 ? Double(file.length) / rate : 0
-        let position = PlaybackTiming.recoveryOffset(
+        let secondsUntilArm = armed.map { $0.timeIntervalSince(utc) }
+        switch PlaybackTiming.recoveryPlan(
+            liveRenderSeconds: liveRender,
+            secondsUntilArm: secondsUntilArm,
             missionSeconds: missionSeconds,
-            fileDuration: duration,
-            liveRenderSeconds: liveRender
-        )
-        if let segment {
-            utc = min(segment.end, max(segment.start, segment.start.addingTimeInterval(position)))
-        }
-        connectGraph(format: file.processingFormat)
-        reschedule(file: file, at: position)
-        do {
-            try engine.start()
-            if wasPlaying {
-                player.play()
+            fileDuration: duration
+        ) {
+        case .rearmGap(let delay):
+            if let segment {
+                scheduleAtRealStart(segment, delay: delay)
             }
-        } catch {
-            failEngine()
+            return
+        case .resumeFile(let position, let clearHoldUntil):
+            if clearHoldUntil {
+                holdUntil = nil
+            }
+            if let segment {
+                utc = min(segment.end, max(segment.start, segment.start.addingTimeInterval(position)))
+            }
+            connectGraph(format: file.processingFormat)
+            reschedule(file: file, at: position)
+            do {
+                try engine.start()
+                if wasPlaying {
+                    player.play()
+                }
+            } catch {
+                failEngine()
+            }
         }
     }
 
@@ -1059,6 +1092,10 @@ enum MediaStore {
     static func allowRetries() {
         failed.removeAll()
         attempts.removeAll()
+        while pinOrder.count > 2 {
+            let oldest = pinOrder.removeFirst()
+            pinned.removeValue(forKey: oldest)
+        }
     }
 
     nonisolated static func pixelBucket(_ maxPixel: CGFloat) -> Int {

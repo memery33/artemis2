@@ -24,7 +24,7 @@ One `AVAudioEngine` clock. While a real m4a is playing, mission time follows tha
 
 The session category is `.playback`, mode `.spokenAudio`, policy `.longFormAudio`, with an empty options list, so the silent switch does not mute it and Bluetooth output is the system’s normal playback route. The session becomes active on Tap to begin, not at launch.
 
-While the app is in the background the display link pauses. When a file ends, the next real recording on that track is scheduled to start at its own timestamp. The wait is the gap in the archive, and it is not added to the file clock. Once that file is audible, mission time follows the sample clock, which stops while playback is paused. If nothing remains in the span, playback pauses and the Now Playing rate is 0. Lock-screen artwork is the 720-pixel sibling of the current frame, decoded off the main thread.
+While the app is in the background the display link pauses. When a file ends, the next real recording on that track is scheduled to start at its own timestamp. The wait is the gap in the archive, and it is not added to the file clock. Once that file is audible, mission time follows the sample clock, which stops while playback is paused. Pausing then records that sample as the mission time, so resume does not play the gap again. A pause during the wait keeps only the remaining silence. If nothing remains in the span, playback pauses and the Now Playing rate is 0. Lock-screen artwork is the 720-pixel sibling of the current frame, decoded off the main thread.
 
 `PrivacyInfo.xcprivacy` declares UserDefaults access for the spatial switch (reason `CA92.1`). The app does not track and collects no data.
 
