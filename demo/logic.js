@@ -409,6 +409,41 @@
     return null;
   }
 
+  function sourceLabel(source) {
+    const names = {
+      "window.start": "Flyby start",
+      "window.end": "Flyby end",
+      "window.label": "Window name",
+      "cab_run.start": "Cab run start",
+      "cab_run.end": "Cab run end",
+      "cab_run.label": "Cab run name",
+      "segments.start": "Audio start",
+      "segments.end": "Audio end",
+      "segments.nasa_id": "NASA ID",
+      "segments.track": "Audio track",
+      "segments.target_id": "Target",
+      "lines.utc": "Transcript time",
+      "lines.speaker": "Speaker",
+      "lines.text": "Words",
+      "lines.track": "Audio track",
+      "lines.nasa_id": "NASA ID",
+      "targets.name": "Target name",
+      "frames.utc": "Photo time",
+      "frames.nasa_id": "NASA ID",
+      "frames.look": "Look",
+      "frames.camera_label": "Camera",
+      "frames.target_id": "Target",
+      "frames.instrument": "Instrument",
+    };
+    return String(source || "")
+      .split(",")
+      .map((part) => {
+        const field = part.trim();
+        return names[field] || field.replace(/\./g, " ");
+      })
+      .join(", ");
+  }
+
   // Every row is a timestamp already stored on the timeline. Nothing is added.
   // Closest approach is omitted when no source field names it.
   function milestones(doc) {
@@ -622,6 +657,7 @@
     clockGap: clockGap,
     visibleCabPair: visibleCabPair,
     milestones: milestones,
+    sourceLabel: sourceLabel,
     coverage: coverage,
   };
 });

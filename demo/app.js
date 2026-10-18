@@ -881,7 +881,8 @@ function paintCoverage() {
   shownCoverage = key;
   const cov = ArtemisLogic.coverage(doc, rangeKey, track, windowView);
   const spanDoc = activeSpan();
-  const span = Math.max(1, tOf(spanDoc.end) - tOf(spanDoc.start));
+  const span = tOf(spanDoc.end) - tOf(spanDoc.start);
+  if (!(span > 0)) return;
   const origin = tOf(spanDoc.start);
   coverageBar.replaceChildren();
   for (const row of cov.audio) {
@@ -907,7 +908,7 @@ function fillMoments() {
     const button = document.createElement("button");
     button.type = "button";
     const clocks = ArtemisLogic.formatClocks(tOf(row.utc), epoch);
-    const lines = [`${clocks.utc} · ${clocks.eastern} · ${clocks.met}`, row.label, row.source];
+    const lines = [`${clocks.utc} · ${clocks.eastern} · ${clocks.met}`, row.label, ArtemisLogic.sourceLabel(row.source)];
     if (row.jumpUtc) {
       lines.push(`Opens at ${row.jumpUtc.slice(11, 19)} UTC. This capture is outside the playable span.`);
     }
@@ -931,6 +932,14 @@ function goToMilestone(row) {
   if (row.window && row.window !== windowView) presentWindow(row.window);
   shownCoverage = "";
   seekTo(tOf(row.jumpUtc || row.utc));
+  closeMoments();
+}
+
+function closeMoments() {
+  if (!momentsPanel || !momentsBtn) return;
+  momentsPanel.hidden = true;
+  momentsBtn.setAttribute("aria-expanded", "false");
+  momentsBtn.focus();
 }
 
 function setTrack(next) {
@@ -1586,7 +1595,10 @@ async function boot() {
     const open = momentsPanel.hidden;
     momentsPanel.hidden = !open;
     momentsBtn.setAttribute("aria-expanded", open ? "true" : "false");
-    if (open) fillMoments();
+    if (!open) return;
+    fillMoments();
+    const first = momentsPanel.querySelector("button");
+    if (first) first.focus();
   });
   scrub.addEventListener("pointerdown", () => { seeking = true; });
   scrub.addEventListener("input", () => {
@@ -1663,6 +1675,10 @@ async function boot() {
     }
     const key = event.key;
     if (key === "Escape") {
+      if (momentsPanel && !momentsPanel.hidden) {
+        closeMoments();
+        return;
+      }
       poke();
       return;
     }
