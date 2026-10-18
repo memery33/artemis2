@@ -415,11 +415,14 @@ def test_desktop_card_clears_the_credit_and_subtitle():
     return {x: r.x, y: r.y, w: r.width, h: r.height};
   };
   const glance = document.getElementById('glance');
+  const say = document.querySelector('#subs .say');
   return {
     glance: box(glance),
     credit: box(document.getElementById('credit')),
     subs: box(document.getElementById('subs')),
     shown: !glance.hidden && glance.getBoundingClientRect().height > 0,
+    say: say ? say.textContent : '',
+    font: say ? parseFloat(getComputedStyle(say).fontSize) : 0,
   };
 }
 """
@@ -456,9 +459,10 @@ def test_desktop_card_clears_the_credit_and_subtitle():
                 assert _overlap_area(row["glance"], row["credit"]) == 0, (width, height, row)
                 assert _overlap_area(row["glance"], row["subs"]) == 0, (width, height, row)
                 assert _overlap_area(row["subs"], row["credit"]) == 0, (width, height, row)
+                assert row["say"] and row["font"] >= 14, (width, height, row)
             # A wrapped credit is taller than one line. The card has to use that
             # measured box, or its bottom cuts the first line.
-            wraps = [(560, 800), (390, 844), (360, 740), (320, 700), (280, 640)]
+            wraps = [(600, 800), (560, 800), (390, 844), (360, 740), (320, 700), (280, 640)]
             for width, height in wraps:
                 narrow = browser.new_context(
                     viewport={"width": width, "height": height},
@@ -491,11 +495,14 @@ def test_desktop_card_clears_the_credit_and_subtitle():
                         const r = el.getBoundingClientRect();
                         return {x: r.x, y: r.y, w: r.width, h: r.height};
                       };
+                      const say = document.querySelector('#subs .say');
                       return {
                         glance: box(glance),
                         credit: box(credit),
                         subs: box(subs),
                         text: credit.textContent,
+                        say: say ? say.textContent : '',
+                        font: say ? parseFloat(getComputedStyle(say).fontSize) : 0,
                         shown: !glance.hidden && glance.getBoundingClientRect().height > 0,
                         measured: getComputedStyle(document.getElementById('stage')).getPropertyValue('--credit-measured').trim(),
                       };
@@ -506,7 +513,9 @@ def test_desktop_card_clears_the_credit_and_subtitle():
                 assert "not affiliated with NASA" in wrapped["text"]
                 assert wrapped["credit"]["h"] > 30, (width, height, wrapped)
                 assert _overlap_area(wrapped["glance"], wrapped["credit"]) == 0, (width, height, wrapped)
+                assert _overlap_area(wrapped["glance"], wrapped["subs"]) == 0, (width, height, wrapped)
                 assert _overlap_area(wrapped["subs"], wrapped["credit"]) == 0, (width, height, wrapped)
+                assert wrapped["say"] and wrapped["font"] >= 14, (width, height, wrapped)
                 assert wrapped["measured"].endswith("px")
                 assert abs(float(wrapped["measured"][:-2]) - wrapped["credit"]["h"]) < 0.2, (
                     width,
