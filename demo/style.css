@@ -43,6 +43,13 @@ button, input[type="range"] { touch-action: manipulation; }
   /* One credit line, plus the desktop chip's 3px + 4px padding.
      The card uses this until the credit box has been measured. */
   --credit-h: calc(11px * 1.35 + 7px);
+  /* How far the glass sits inside the window: padding on .thermal,
+     .pressure, and .acrylic. */
+  --glass-inset: calc(
+    clamp(14px, 1.7vw, 28px)
+    + clamp(12px, 1.5vw, 22px)
+    + clamp(5px, 0.45vw, 9px)
+  );
 }
 
 #stage.touch {
@@ -199,11 +206,21 @@ button, input[type="range"] { touch-action: manipulation; }
   position: relative;
   height: 100%;
   border-radius: clamp(12px, 1.8vw, 30px);
-  overflow: hidden;
+  /* The photograph is clipped by #aperture. The credit and the subtitle
+     stay in this box, and a too-tall line may paint over the bezel
+     rather than lose its first row. */
+  overflow: visible;
   background: #000;
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.65),
     inset 0 18px 28px rgba(0, 0, 0, 0.28);
+}
+
+#aperture {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 #glass img {
@@ -281,20 +298,17 @@ button, input[type="range"] { touch-action: manipulation; }
 }
 
 /* The card stops at the credit band's top: leftover viewport under the
-   window, then the three bezel steps. Those clamps are the padding on
-   .thermal, .pressure, and .acrylic, which is how far the glass sits
-   inside the window. Then --dock-clear and the credit's measured box
-   (one line until that box exists). 16px covers the window's drift.
-   Compact phones and the open fold keep the positions above and below. */
+   window, then --glass-inset (the .thermal, .pressure, and .acrylic
+   padding). Then --dock-clear and the credit's measured box (one line
+   until that box exists). 16px covers the window's drift. Compact phones
+   and the open fold keep the positions above and below. */
 #stage:not(.compact):not(.fold) #glance {
   bottom: max(
     16px,
     3vh,
     calc(
       max(-2vh, 50vh - 48vw / 1.58)
-      + clamp(14px, 1.7vw, 28px)
-      + clamp(12px, 1.5vw, 22px)
-      + clamp(5px, 0.45vw, 9px)
+      + var(--glass-inset)
       + var(--dock-clear)
       + var(--credit-measured, var(--credit-h))
       + 16px
@@ -314,57 +328,56 @@ button, input[type="range"] { touch-action: manipulation; }
   pointer-events: none;
 }
 
-/* A narrow desktop window wraps the credit, and a centered subtitle
-   runs into the card. 3.4em clears two credit lines; a taller measured
-   box wins. The line runs from the card's right edge to the window edge.
-   width: auto is what lets left and right stretch; the base rule is
-   max-content. Wrapping stays at 14px. */
-@media (max-width: 600px) {
-  #stage:not(.touch) #subs {
-    bottom: max(
-      7%,
-      calc(var(--dock-clear) + 3.4em),
-      calc(var(--dock-clear) + var(--credit-measured) + 16px)
-    );
-    left: calc(min(210px, 22vw) + max(16px, 2vw) + 8px);
-    right: max(16px, 2vw);
-    width: auto;
-    max-width: none;
-    transform: none;
-    text-align: center;
-  }
+/* #subs lives inside #glass, so its bottom is already inside the bezel.
+   Every fine-pointer width clears the credit's measured box by 16px.
+   --subs-fit gives back a few pixels only when that box would leave the
+   window. Touch layouts keep the percentage above. */
+#stage:not(.touch) #subs {
+  bottom: calc(
+    var(--dock-clear)
+    + var(--credit-measured, var(--credit-h))
+    + 16px
+    - var(--subs-fit, 0px)
+  );
 }
 
-/* Under ~420px that column is still under 160px, and the quote wraps past
-   three lines. Stack the card above the subtitle and give the line the
-   glass. The extra lift is the subtitle's measured border box plus 8px.
-   The clamps above it are still .thermal, .pressure, and .acrylic. */
-@media (max-width: 420px) {
-  #stage:not(.touch) #subs {
-    left: max(16px, 2vw);
-    right: max(16px, 2vw);
-    width: auto;
-    max-width: none;
-    transform: none;
-    text-align: center;
-  }
-  #stage:not(.touch):not(.compact):not(.fold) #glance {
-    bottom: max(
-      16px,
-      3vh,
-      calc(
-        max(-2vh, 50vh - 48vw / 1.58)
-        + clamp(14px, 1.7vw, 28px)
-        + clamp(12px, 1.5vw, 22px)
-        + clamp(5px, 0.45vw, 9px)
-        + var(--dock-clear)
-        + var(--credit-measured, var(--credit-h))
-        + 16px
-        + var(--subs-measured, 0px)
-        + 8px
-      )
-    );
-  }
+/* The card shares the subtitle's band. --subs-left is the card's measured
+   right edge, plus 16px, in glass coordinates. The line then runs to the
+   window edge. width: auto is what lets left and right stretch. */
+#stage.subs-beside:not(.touch) #subs {
+  left: var(--subs-left, 0px);
+  right: max(16px, 2vw);
+  width: auto;
+  max-width: none;
+  transform: none;
+  text-align: center;
+}
+
+/* The column beside the card is under 160px, or the quote would wrap past
+   three lines. The card sits above the subtitle and the line uses the glass. */
+#stage.subs-stack:not(.touch) #subs {
+  left: max(16px, 2vw);
+  right: max(16px, 2vw);
+  width: auto;
+  max-width: none;
+  transform: none;
+  text-align: center;
+}
+
+#stage.subs-stack:not(.touch):not(.compact):not(.fold) #glance {
+  bottom: max(
+    16px,
+    3vh,
+    calc(
+      max(-2vh, 50vh - 48vw / 1.58)
+      + var(--glass-inset)
+      + var(--dock-clear)
+      + var(--credit-measured, var(--credit-h))
+      + 16px
+      + var(--subs-measured, 0px)
+      + 16px
+    )
+  );
 }
 
 /* A dim that hugs the words. The wide plate across the Moon is gone.
