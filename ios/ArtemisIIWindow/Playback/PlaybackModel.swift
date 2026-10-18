@@ -597,13 +597,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         let actual = Double(start) / rate
         scheduledStart = actual
         holdSeconds = actual
+        let endSeconds = actual + Double(count) / rate
+        // The audio thread calls this. It must not inherit MainActor isolation.
         player.scheduleSegment(
             file,
             startingFrame: start,
             frameCount: count,
             at: when,
-            completionHandler: { [weak self] in
-                let endSeconds = actual + Double(count) / rate
+            completionHandler: { @Sendable [weak self] in
                 Task { @MainActor in
                     guard let model = self, model.scheduleGeneration == generation else { return }
                     model.holdSeconds = endSeconds
@@ -818,6 +819,8 @@ final class PlaybackModel: NSObject, ObservableObject {
         try session.setActive(true)
     }
 
+    // The session posts these on an arbitrary queue. The selectors stay
+    // nonisolated and hop to the main actor before touching the player.
     private func observeNotifications() {
         let center = NotificationCenter.default
         center.addObserver(
@@ -848,7 +851,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             forName: .AVAudioEngineConfigurationChange,
             object: engine,
             queue: .main
-        ) { [weak self] _ in
+        ) { @Sendable [weak self] _ in
             MainActor.assumeIsolated {
                 self?.recoverEngineConfiguration()
             }
@@ -1019,7 +1022,9 @@ final class PlaybackModel: NSObject, ObservableObject {
             model.skip(by: -interval)
         }
         let positionCommand = center.changePlaybackPositionCommand
-        let positionToken = positionCommand.addTarget { [weak self] event in
+        // MediaPlayer calls this off the main actor. Read the Sendable time
+        // here, then hop.
+        let positionToken = positionCommand.addTarget { @Sendable [weak self] event in
             guard let position = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime else {
                 return .commandFailed
             }
@@ -1035,7 +1040,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         _ command: MPRemoteCommand,
         action: @escaping @MainActor (PlaybackModel, MPRemoteCommandEvent) -> Void
     ) {
-        let token = command.addTarget { [weak self] event in
+        let token = command.addTarget { @Sendable [weak self] event in
             Task { @MainActor in
                 guard let self else { return }
                 action(self, event)
@@ -1065,9 +1070,17 @@ final class PlaybackModel: NSObject, ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
         ]
         if let image = artworkImage() {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    /// MediaPlayer calls the handler on its access queue. Resolving the image
+    /// here keeps the handler off the main actor and away from model state.
+    /// `UIImage` is not Sendable; the picture is already decoded and only read.
+    nonisolated static func makeArtwork(_ image: UIImage) -> MPMediaItemArtwork {
+        nonisolated(unsafe) let image = image
+        return MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
     }
 
     private func artworkID() -> String {
@@ -1108,7 +1121,7 @@ enum MediaStore {
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
-        ) { _ in
+        ) { @Sendable _ in
             MainActor.assumeIsolated {
                 MediaStore.allowRetries()
             }
