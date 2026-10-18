@@ -1013,33 +1013,46 @@ final class PlaybackModel: NSObject, ObservableObject {
         add(center.togglePlayPauseCommand) { model, _ in
             model.toggle()
         }
-        add(center.skipForwardCommand, read: { event in
-            (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
-        }) { model, interval in
+        add(center.skipForwardCommand, read: .skipForward) { model, interval in
             model.skip(by: interval)
         }
-        add(center.skipBackwardCommand, read: { event in
-            -((event as? MPSkipIntervalCommandEvent)?.interval ?? 15)
-        }) { model, interval in
+        add(center.skipBackwardCommand, read: .skipBackward) { model, interval in
             model.skip(by: interval)
         }
-        add(center.changePlaybackPositionCommand, read: { event in
-            (event as? MPChangePlaybackPositionCommandEvent)?.positionTime
-        }) { model, position in
+        add(center.changePlaybackPositionCommand, read: .position) { model, position in
             model.seekElapsed(position)
         }
     }
 
-    /// `MPRemoteCommandEvent` is not Sendable, and these handlers are not
-    /// pinned to the main thread. The closure copies a Double, then `deliver`
-    /// runs the action on the main actor.
+    private enum RemoteRead: Sendable {
+        case unused
+        case skipForward
+        case skipBackward
+        case position
+    }
+
+    /// `MPRemoteCommandEvent` is not Sendable. The handler copies `interval`
+    /// and `positionTime` into locals, then hops only that number.
     private func add(
         _ command: MPRemoteCommand,
-        read: @escaping @Sendable (MPRemoteCommandEvent) -> Double? = { _ in 0 },
+        read: RemoteRead = .unused,
         action: @escaping @MainActor (PlaybackModel, Double) -> Void
     ) {
         let token = command.addTarget { @Sendable [weak self] event in
-            guard let number = read(event) else { return .commandFailed }
+            let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
+            let positionTime = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime
+            let number: Double?
+            switch read {
+            case .unused:
+                number = 0
+            case .skipForward:
+                number = interval
+            case .skipBackward:
+                number = -interval
+            case .position:
+                number = positionTime
+            }
+            guard let number else { return .commandFailed }
             Self.deliver(number) { [weak self] value in
                 guard let self else { return }
                 action(self, value)

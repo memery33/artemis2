@@ -43,16 +43,19 @@ final class LayoutFrameUITests: XCTestCase {
         }
 
         XCUIDevice.shared.orientation = .landscapeLeft
-        // XCUIApplication.frame stays portrait after rotation. The rail is the
-        // landscape layout, and it is already on screen when the app is 874×402.
+        // XCUIApplication.frame stays portrait after rotation. The window
+        // bounds are the landscape screen.
         let rail = app.scrollViews["landscape-rail"]
         XCTAssertTrue(rail.waitForExistence(timeout: 8))
-        assertInside(rail, screen: app.frame)
-        assertInside(spatial, screen: app.frame)
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 8))
+        let screen = window.frame
+        assertInside(rail, screen: screen)
+        assertInside(spatial, screen: screen)
         reveal(map, using: rail)
-        assertInside(map, screen: app.frame)
+        assertInside(map, screen: screen)
         assertInside(map, screen: rail.frame.insetBy(dx: -1, dy: -1))
-        if spatial.exists && spatial.frame.intersects(app.frame) {
+        if spatial.exists && spatial.frame.intersects(screen) {
             XCTAssertFalse(map.frame.intersects(spatial.frame))
         }
     }

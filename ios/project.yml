@@ -48,6 +48,10 @@ targets:
       configs:
         Debug:
           ENABLE_TESTABILITY: YES
+        # The Release scheme runs the isolation unit tests, which need
+        # @testable. The archive uses this same config.
+        Release:
+          ENABLE_TESTABILITY: YES
     preBuildScripts:
       - name: Copy demo data into the app bundle
         basedOnDependencyAnalysis: false
@@ -117,12 +121,13 @@ schemes:
         - ArtemisIIWindowTests
     archive:
       config: Release
-  # The begin-button crash is a Release isolation trap. This scheme builds
-  # the app without testability and runs the launch UI test in Release.
+  # The begin-button crash is a Release isolation trap. This scheme runs
+  # the launch UI test and the artwork and remote-command unit tests in Release.
   ArtemisIIWindowRelease:
     build:
       targets:
         ArtemisIIWindow: all
+        ArtemisIIWindowTests: [test]
         ArtemisIIWindowUITests: [test]
     run:
       config: Release
@@ -130,5 +135,9 @@ schemes:
       config: Release
       targets:
         - ArtemisIIWindowUITests
+        - name: ArtemisIIWindowTests
+          selectedTests:
+            - ArtworkIsolationTests/testArtworkRequestHandlerRunsOffTheMainThread()
+            - ArtworkIsolationTests/testRemoteCommandHandlerRunsOffTheMainThread()
     archive:
       config: Release
