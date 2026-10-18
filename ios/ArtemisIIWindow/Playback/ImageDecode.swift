@@ -1,4 +1,6 @@
+import Foundation
 import ImageIO
+import UIKit
 
 /// ImageIO thumbnail decode. Safe to call off the main thread.
 /// The image is owned by the caller until the main actor turns it into a `UIImage`.

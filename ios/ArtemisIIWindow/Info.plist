@@ -33,10 +33,6 @@
   <array>
     <string>audio</string>
   </array>
-  <key>UIDeviceFamily</key>
-  <array>
-    <integer>1</integer>
-  </array>
   <key>UILaunchScreen</key>
   <dict>
     <key>UIColorName</key>
