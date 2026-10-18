@@ -34,7 +34,7 @@ enum LayoutChoice {
 
     static func isLandscapePhone(width: Double, height: Double, compactHeight: Bool) -> Bool {
         guard height > 0 else { return false }
-        if width > 0, height > 0 {
+        if width > 0 {
             if isOpenFold(width: width, height: height, regularWidth: true) { return false }
             if isOpenFold(width: width, height: height, regularWidth: false) { return false }
             if width <= height { return false }

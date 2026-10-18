@@ -1038,6 +1038,8 @@ final class PlaybackModel: NSObject, ObservableObject {
         read: RemoteRead = .unused,
         action: @escaping @MainActor (PlaybackModel, Double) -> Void
     ) {
+        // The addTarget handler must stay @Sendable. The unit test covers
+        // deliver, not this closure.
         let token = command.addTarget { @Sendable [weak self] event in
             let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
             let positionTime = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime
