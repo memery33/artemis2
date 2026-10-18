@@ -935,6 +935,14 @@ function goToMilestone(row) {
   closeMoments();
 }
 
+function capMomentsPanel() {
+  if (!momentsPanel || momentsPanel.hidden) return;
+  // Read the top at the 240px cap, then keep the bottom 8px inside the viewport.
+  momentsPanel.style.setProperty("--moments-top", "0px");
+  const top = momentsPanel.getBoundingClientRect().top;
+  momentsPanel.style.setProperty("--moments-top", `${Math.max(0, top)}px`);
+}
+
 function closeMoments() {
   if (!momentsPanel || !momentsBtn) return;
   momentsPanel.hidden = true;
@@ -1597,6 +1605,7 @@ async function boot() {
     momentsBtn.setAttribute("aria-expanded", open ? "true" : "false");
     if (!open) return;
     fillMoments();
+    capMomentsPanel();
     const first = momentsPanel.querySelector("button");
     if (first) first.focus();
   });
@@ -1639,6 +1648,7 @@ async function boot() {
     syncClockLane();
     syncCreditBand();
     syncSubsBand();
+    capMomentsPanel();
   });
   if (window.ResizeObserver) new ResizeObserver(syncCreditBand).observe(credit);
   if (window.ResizeObserver) new ResizeObserver(syncSubsBand).observe(subs);

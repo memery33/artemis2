@@ -1528,7 +1528,7 @@ console.log(JSON.stringify({
 
 
 def test_moments_panel_stays_on_screen():
-    """The open Moments list stays inside a narrow viewport and off the credit."""
+    """The open Moments list stays inside the viewport and off the credit."""
     import threading
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -1540,7 +1540,7 @@ def test_moments_panel_stays_on_screen():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     port = server.server_address[1]
-    sizes = [(280, 800), (320, 800), (390, 844)]
+    sizes = [(280, 800), (320, 800), (390, 844), (844, 390)]
     measure = r"""
 () => {
   const panel = document.getElementById('moments-panel');
@@ -1564,6 +1564,8 @@ def test_moments_panel_stays_on_screen():
     label: panel.getAttribute('aria-label'),
     focused: document.activeElement && document.activeElement.parentElement
       ? document.activeElement.parentElement.id : '',
+    afterButton: panel.previousElementSibling && panel.previousElementSibling.id,
+    scrolls: panel.scrollHeight > panel.clientHeight + 1,
     panel: panelBox,
     credit: creditBox,
     overlap: overlap(panelBox, creditBox),
@@ -1622,6 +1624,8 @@ def test_moments_panel_stays_on_screen():
                 assert row["role"] == "region"
                 assert row["label"] == "Moments"
                 assert row["focused"] == "moments-panel", (width, height, row["focused"])
+                assert row["afterButton"] == "moments", (width, height, row["afterButton"])
+                assert row["scrolls"] is True, (width, height, panel)
                 assert panel["w"] > 0 and panel["h"] > 0, (width, height, panel)
                 assert panel["x"] >= -0.5, (width, height, panel)
                 assert panel["y"] >= -0.5, (width, height, panel)
