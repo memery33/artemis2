@@ -722,8 +722,14 @@ button.on, button[aria-pressed="true"] {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 240px;
+  /* Own line under the Moments button, which is its previous sibling. */
+  flex-basis: 100%;
+  align-self: stretch;
+  min-width: 0;
   overflow: auto;
+  /* 240px on a tall screen. On a short one, stop 8px above the viewport
+     and scroll the rows. --moments-top is the panel's top edge. */
+  max-height: min(240px, calc(100dvh - var(--moments-top, 0px) - max(8px, env(safe-area-inset-bottom))));
 }
 #moments-panel button {
   text-align: left;
