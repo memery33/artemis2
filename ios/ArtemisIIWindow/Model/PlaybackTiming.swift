@@ -119,12 +119,22 @@ enum PlaybackTiming {
             return .rearmGap(delay: secondsUntilArm)
         }
         // An arm that has already come due must come down too, or the next file never loads.
+        // A render of 0 is the silent wait, not elapsed time, so that resume position is
+        // mission time clamped to the file. A positive sample still wins.
         let armIsDue = secondsUntilArm.map { $0 <= 0 } ?? false
+        let sample: TimeInterval?
+        if live > 0 {
+            sample = liveRenderSeconds
+        } else if armIsDue {
+            sample = nil
+        } else {
+            sample = liveRenderSeconds
+        }
         return .resumeFile(
             position: recoveryOffset(
                 missionSeconds: missionSeconds,
                 fileDuration: fileDuration,
-                liveRenderSeconds: liveRenderSeconds
+                liveRenderSeconds: sample
             ),
             clearHoldUntil: live > 0 || armIsDue
         )

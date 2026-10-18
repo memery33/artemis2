@@ -200,6 +200,7 @@ final class PlaybackTimingTests: XCTestCase {
     }
 
     func testExpiredArmClearsHoldUntil() {
+        // A render of 0 is not elapsed time. Mission time, clamped to the file, is.
         let due = PlaybackTiming.recoveryPlan(
             liveRenderSeconds: 0,
             secondsUntilArm: 0,
@@ -207,6 +208,7 @@ final class PlaybackTimingTests: XCTestCase {
             fileDuration: 100
         )
         XCTAssertEqual(due, .resumeFile(position: 10, clearHoldUntil: true))
+        // Two seconds past the arm. The position is that elapsed mission time, not 0.
         let past = PlaybackTiming.recoveryPlan(
             liveRenderSeconds: nil,
             secondsUntilArm: -2,
