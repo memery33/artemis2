@@ -226,6 +226,8 @@ struct AboutView: View {
                     }
                     Text("This app is not affiliated with or endorsed by NASA.")
                         .font(.body)
+                    Text("Now Playing lists “NASA/Artemis II Crew” as the artist. That is the credit for the crew recording, not a sign that NASA publishes this app.")
+                        .font(.footnote)
                     if let pointing = model.timeline?.pointing {
                         Text(pointing.note)
                             .font(.footnote)

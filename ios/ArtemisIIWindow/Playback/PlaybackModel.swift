@@ -8,12 +8,15 @@ enum MissionRange: Equatable {
     case cab
 }
 
-/// Tokens owned for the life of the player. Deinit is not main-actor isolated,
-/// so remote-command targets and the engine observer live here.
-private final class PlaybackLifetime: @unchecked Sendable {
+/// Tokens owned for the life of the player. Main-actor isolated, so it is Sendable
+/// and the model's nonisolated deinit can hand it back to the main actor to tear down.
+@MainActor
+private final class PlaybackLifetime {
     var engineObserver: NSObjectProtocol?
     var displayLink: CADisplayLink?
     var commands: [(MPRemoteCommand, Any)] = []
+
+    nonisolated init() {}
 
     func tearDown() {
         if let engineObserver {
@@ -94,7 +97,16 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     deinit {
-        lifetime.tearDown()
+        let lifetime = self.lifetime
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                lifetime.tearDown()
+            }
+        } else {
+            Task { @MainActor in
+                lifetime.tearDown()
+            }
+        }
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -1121,8 +1133,9 @@ enum MediaStore {
         return FileManager.default.fileExists(atPath: root.path) ? root : nil
     }
 
+    /// Only paths inside DemoData. `..` and absolute components are refused.
     static func url(for relative: String) -> URL? {
-        guard let root = demoRoot() else { return nil }
+        guard DemoPath.isContained(relative), let root = demoRoot() else { return nil }
         let url = root.appendingPathComponent(relative)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
