@@ -167,6 +167,13 @@ console.log(JSON.stringify({
     assert row["delta"] <= 0.04
 
 
+def test_on_glass_credit_names_the_affiliation():
+    text = (ROOT / "demo" / "app.js").read_text()
+    assert text.count("not affiliated with NASA") == 2
+    assert "Independent viewer, not a NASA product" not in text
+    assert 'credit.textContent = ""' not in text
+
+
 def test_phone_gate_swipe_and_small_image_plan():
     script = r"""
 const logic = require("./demo/logic.js");
@@ -200,6 +207,7 @@ const rows = {
   deskPrefetch: logic.prefetchBeforeTap(false),
   cellPrefetch: logic.prefetchBeforeTap(true),
   foldFull: logic.wantsSmallImage(true, false, "4g", true),
+  fold3x: logic.wantsSmallImage(true, false, "4g", true),
   foldSave: logic.wantsSmallImage(true, true, "4g", true),
   foldSlow: logic.wantsSmallImage(false, false, "3g", true),
   modeFold: logic.screenMode(890, 626, true),
@@ -245,6 +253,7 @@ console.log(JSON.stringify(rows));
     assert row["deskPrefetch"] == {"opener": True, "otherWindow": True, "audio": True}
     assert row["cellPrefetch"] == {"opener": True, "otherWindow": False, "audio": False}
     assert row["foldFull"] is False
+    assert row["fold3x"] is False
     assert row["foldSave"] is True
     assert row["foldSlow"] is True
     assert row["modeFold"] == "fold"

@@ -185,6 +185,9 @@ button, input[type="range"] { touch-action: manipulation; }
   border-radius: clamp(12px, 1.8vw, 30px);
   overflow: hidden;
   background: #000;
+  /* Same clearance the cabin card uses above the dock. The credit lives in
+     that band. The subtitle sits above the band. */
+  --dock-clear: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.65),
     inset 0 18px 28px rgba(0, 0, 0, 0.28);
@@ -233,7 +236,9 @@ button, input[type="range"] { touch-action: manipulation; }
   position: absolute;
   z-index: 3;
   left: max(16px, 2vw);
-  bottom: max(16px, 3vh);
+  /* Above the credit band on a centered window. 32vh clears it at 1440×900
+     and at 890×626. Phone and fold rules below place the card elsewhere. */
+  bottom: max(16px, 3vh, 32vh);
   width: min(210px, 22vw);
   margin: 0;
   padding: 8px 8px 10px;
@@ -266,8 +271,8 @@ button, input[type="range"] { touch-action: manipulation; }
 #subs {
   position: absolute;
   left: 50%;
-  bottom: 7%;
-  z-index: 2;
+  bottom: calc(var(--dock-clear) + 4.8em);
+  z-index: 3;
   width: max-content;
   max-width: 62%;
   transform: translateX(-50%);
@@ -335,7 +340,12 @@ button, input[type="range"] { touch-action: manipulation; }
   text-shadow: 0 1px 6px #000;
 }
 
-#credit { bottom: max(10px, env(safe-area-inset-bottom)); text-align: left; }
+#credit {
+  bottom: var(--dock-clear);
+  z-index: 4;
+  line-height: 1.35;
+  text-align: left;
+}
 
 #taken {
   position: absolute;
@@ -638,7 +648,7 @@ button.on, button[aria-pressed="true"] {
     bottom: calc(max(8px, env(safe-area-inset-bottom)) + 60px);
   }
   #stage.compact #subs {
-    bottom: 10%;
+    bottom: calc(var(--dock-clear) + 4.8em);
     max-width: 78%;
   }
   /* The portrait map fills the lower left. The credit sits in the lower right, above the dock. */
@@ -703,7 +713,7 @@ button.on, button[aria-pressed="true"] {
     max-width: calc(100% - 210px - env(safe-area-inset-left) - env(safe-area-inset-right));
   }
   #stage.compact #subs {
-    bottom: 12%;
+    bottom: calc(var(--dock-clear) + 4.8em);
     max-width: 68%;
   }
   /* The landscape map is the upper left. The credit sits lower right, above the dock. */
