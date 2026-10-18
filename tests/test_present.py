@@ -496,13 +496,27 @@ def test_desktop_card_clears_the_credit_and_subtitle():
                         return {x: r.x, y: r.y, w: r.width, h: r.height};
                       };
                       const say = document.querySelector('#subs .say');
+                      const win = document.getElementById('window');
+                      const range = document.createRange();
+                      let lines = 0;
+                      const walker = document.createTreeWalker(subs, NodeFilter.SHOW_TEXT);
+                      let node;
+                      while ((node = walker.nextNode())) {
+                        if (!node.textContent.trim()) continue;
+                        range.selectNodeContents(node);
+                        for (const rect of range.getClientRects()) {
+                          if (rect.width > 0 && rect.height > 0) lines += 1;
+                        }
+                      }
                       return {
                         glance: box(glance),
                         credit: box(credit),
                         subs: box(subs),
+                        window: box(win),
                         text: credit.textContent,
                         say: say ? say.textContent : '',
                         font: say ? parseFloat(getComputedStyle(say).fontSize) : 0,
+                        lines,
                         shown: !glance.hidden && glance.getBoundingClientRect().height > 0,
                         measured: getComputedStyle(document.getElementById('stage')).getPropertyValue('--credit-measured').trim(),
                       };
@@ -522,6 +536,15 @@ def test_desktop_card_clears_the_credit_and_subtitle():
                     height,
                     wrapped,
                 )
+                if (width, height) in {(360, 740), (320, 700)}:
+                    sub = wrapped["subs"]
+                    win = wrapped["window"]
+                    assert sub["w"] >= 160, (width, height, wrapped)
+                    assert wrapped["lines"] <= 3, (width, height, wrapped)
+                    assert sub["x"] >= win["x"] - 0.5, (width, height, wrapped)
+                    assert sub["y"] >= win["y"] - 0.5, (width, height, wrapped)
+                    assert sub["x"] + sub["w"] <= win["x"] + win["w"] + 0.5, (width, height, wrapped)
+                    assert sub["y"] + sub["h"] <= win["y"] + win["h"] + 0.5, (width, height, wrapped)
             browser.close()
     finally:
         server.shutdown()
