@@ -145,7 +145,8 @@ struct LandscapeLayout: View {
                 WindowPane(glassChrome: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 DockBar(placement: .rail)
-                    .frame(width: rail, maxHeight: .infinity)
+                    .frame(width: rail)
+                    .frame(maxHeight: .infinity)
             }
             .padding(.leading, 8)
             .padding(.trailing, 4)
