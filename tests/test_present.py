@@ -550,6 +550,116 @@ def test_desktop_card_clears_the_credit_and_subtitle():
         server.shutdown()
 
 
+def _inside(inner, outer, slop=0.5):
+    return (
+        inner["x"] >= outer["x"] - slop
+        and inner["y"] >= outer["y"] - slop
+        and inner["x"] + inner["w"] <= outer["x"] + outer["w"] + slop
+        and inner["y"] + inner["h"] <= outer["y"] + outer["h"] + slop
+    )
+
+
+def test_fine_pointer_subtitle_clears_the_card_across_widths():
+    """Every fine-pointer width keeps the subtitle, card, and credit apart.
+
+    The sweep is the structural check: two heights, and widths from 280 to
+    1440 in 20px steps, plus the sizes just past the old 600px cutoff.
+    """
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    from playwright.sync_api import sync_playwright
+
+    handler = partial(SimpleHTTPRequestHandler, directory=str(ROOT / "demo"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    widths = list(range(280, 1441, 20))
+    for extra in (601, 649):
+        if extra not in widths:
+            widths.append(extra)
+    widths.sort()
+    heights = (800, 480)
+    measure = r"""
+() => {
+  const box = (el) => {
+    const r = el.getBoundingClientRect();
+    return {x: r.x, y: r.y, w: r.width, h: r.height};
+  };
+  const subs = document.getElementById('subs');
+  const glance = document.getElementById('glance');
+  const range = document.createRange();
+  let lines = 0;
+  const walker = document.createTreeWalker(subs, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      if (rect.width > 0 && rect.height > 0) lines += 1;
+    }
+  }
+  const say = document.querySelector('#subs .say');
+  return {
+    glance: box(glance),
+    credit: box(document.getElementById('credit')),
+    subs: box(subs),
+    window: box(document.getElementById('window')),
+    lines,
+    font: say ? parseFloat(getComputedStyle(say).fontSize) : 0,
+    shown: !glance.hidden && glance.getBoundingClientRect().height > 0,
+    mode: document.getElementById('stage').className,
+  };
+}
+"""
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome", headless=True)
+            context = browser.new_context(
+                viewport={"width": 1024, "height": 800},
+                has_touch=False,
+                reduced_motion="reduce",
+            )
+            page = context.new_page()
+            page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
+            page.evaluate("() => sessionStorage.setItem('artemis2.hint','1')")
+            page.click("#enter")
+            page.evaluate(
+                """() => {
+                  const scrub = document.getElementById('scrub');
+                  const start = Date.parse('2026-04-06T19:33:00Z');
+                  const end = Date.parse('2026-04-06T19:48:30Z');
+                  scrub.value = String(Math.round((8000 / (end - start)) * 1000));
+                  scrub.dispatchEvent(new Event('input', { bubbles: true }));
+                }"""
+            )
+            page.wait_for_function("() => !document.getElementById('glance').hidden")
+            if page.locator("#play").inner_text().strip() == "Pause":
+                page.click("#play")
+            for height in heights:
+                for width in widths:
+                    page.set_viewport_size({"width": width, "height": height})
+                    page.evaluate(
+                        "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+                    )
+                    row = page.evaluate(measure)
+                    where = (width, height, row.get("mode"), row)
+                    assert row["shown"], where
+                    assert _overlap_area(row["glance"], row["credit"]) == 0, where
+                    assert _overlap_area(row["glance"], row["subs"]) == 0, where
+                    assert _overlap_area(row["subs"], row["credit"]) == 0, where
+                    assert row["subs"]["w"] >= 160, where
+                    assert row["lines"] <= 3, where
+                    assert row["font"] >= 14, where
+                    assert _inside(row["subs"], row["window"]), where
+            context.close()
+            browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_narrow_webp_variants_are_downscales_of_the_shipped_frames():
     images = ROOT / "demo" / "data" / "images"
     sources = sorted(path for path in images.glob("*.webp") if not path.name.endswith(".720.webp"))

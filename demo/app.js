@@ -985,18 +985,112 @@ function openingSegment() {
 let creditMeasured = "";
 let creditBandText = "";
 let subsMeasured = "";
+let subsMode = "";
+let besideRoom = -1;
+let besideTooTight = false;
 function syncCreditBand() {
   const next = `${credit.getBoundingClientRect().height.toFixed(2)}px`;
   if (next === creditMeasured) return;
   creditMeasured = next;
   stage.style.setProperty("--credit-measured", next);
+  fitSubsInWindow();
 }
 
-function syncSubsBand() {
+function subtitleLineCount(root) {
+  const range = document.createRange();
+  let lines = 0;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    range.selectNodeContents(node);
+    for (const rect of range.getClientRects()) {
+      if (rect.width > 0 && rect.height > 0) lines += 1;
+    }
+  }
+  return lines;
+}
+
+// Width of the centered subtitle: the longer of the speaker and the quote,
+// capped by the 62% rule. Independent of the beside/stack placement.
+function centeredSubsWidth(glassWidth) {
+  if (!subs.firstChild) return 0;
+  const probe = subs.cloneNode(true);
+  probe.style.cssText = "position:fixed;left:0;top:0;visibility:hidden;width:max-content;max-width:none;transform:none;";
+  probe.querySelectorAll(".who, .say").forEach((el) => {
+    el.style.whiteSpace = "nowrap";
+  });
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return Math.min(width, glassWidth * 0.62);
+}
+
+function rememberSubsHeight() {
   const next = `${subs.getBoundingClientRect().height.toFixed(2)}px`;
   if (next === subsMeasured) return;
   subsMeasured = next;
   stage.style.setProperty("--subs-measured", next);
+}
+
+// Fine pointer only. The subtitle stays centered until its box would meet
+// the card. Then it runs from the card's right edge to the window edge, or,
+// when that column is under 160px or wraps past three lines, the card stacks
+// above it. Nothing here runs from the animation frame.
+function placeSubs() {
+  const glass = document.getElementById("glass").getBoundingClientRect();
+  const card = glance.getBoundingClientRect();
+  const edge = Math.max(16, window.innerWidth * 0.02);
+  const gap = 16;
+  let mode = "";
+  if (!stage.classList.contains("touch") && !glance.hidden && card.width > 0 && glass.width > 0) {
+    const room = glass.right - edge - (card.right + gap);
+    if (Math.abs(room - besideRoom) > 1) {
+      besideRoom = room;
+      besideTooTight = false;
+    }
+    const box = centeredSubsWidth(glass.width);
+    const centeredLeft = glass.left + (glass.width - box) / 2;
+    const hitsCard = box > 0 && centeredLeft < card.right + gap && centeredLeft + box > card.left;
+    if (hitsCard) mode = room < 160 || besideTooTight ? "stack" : "beside";
+    stage.style.setProperty("--subs-left", `${Math.max(0, card.right + gap - glass.left).toFixed(2)}px`);
+  } else {
+    besideTooTight = false;
+    besideRoom = -1;
+  }
+  if (mode !== subsMode) {
+    subsMode = mode;
+    stage.classList.toggle("subs-beside", mode === "beside");
+    stage.classList.toggle("subs-stack", mode === "stack");
+    if (mode === "beside" && (subs.getBoundingClientRect().width < 160 || subtitleLineCount(subs) > 3)) {
+      besideTooTight = true;
+      subsMode = "stack";
+      stage.classList.remove("subs-beside");
+      stage.classList.add("subs-stack");
+    }
+  }
+  rememberSubsHeight();
+  fitSubsInWindow();
+}
+
+// Pull the line down only as far as it still clears the credit, and only
+// when the measured box would leave the window.
+function fitSubsInWindow() {
+  if (stage.classList.contains("touch") || !subs.firstChild) {
+    stage.style.setProperty("--subs-fit", "0px");
+    return;
+  }
+  stage.style.setProperty("--subs-fit", "0px");
+  const win = windowEl.getBoundingClientRect();
+  const sub = subs.getBoundingClientRect();
+  const short = Math.max(0, win.top - sub.top, sub.bottom - win.bottom);
+  const fit = Math.min(12, short > 0.25 ? short + 0.5 : 0);
+  stage.style.setProperty("--subs-fit", `${fit.toFixed(2)}px`);
+}
+
+function syncSubsBand() {
+  rememberSubsHeight();
+  placeSubs();
 }
 
 function layoutChrome() {
