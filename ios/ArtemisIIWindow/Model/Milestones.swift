@@ -17,6 +17,43 @@ struct Milestone: Equatable, Identifiable, Sendable {
     let jumpDate: Date?
 }
 
+enum MilestoneSource {
+    /// Readable names for the timeline fields a moment was taken from.
+    static func display(_ source: String) -> String {
+        source.split(separator: ",").map { label(String($0).trimmingCharacters(in: .whitespaces)) }.joined(separator: ", ")
+    }
+
+    private static func label(_ field: String) -> String {
+        switch field {
+        case "window.start": return "Flyby start"
+        case "window.end": return "Flyby end"
+        case "window.label": return "Window name"
+        case "cab_run.start": return "Cab run start"
+        case "cab_run.end": return "Cab run end"
+        case "cab_run.label": return "Cab run name"
+        case "segments.start": return "Audio start"
+        case "segments.end": return "Audio end"
+        case "segments.nasa_id": return "NASA ID"
+        case "segments.track": return "Audio track"
+        case "segments.target_id": return "Target"
+        case "lines.utc": return "Transcript time"
+        case "lines.speaker": return "Speaker"
+        case "lines.text": return "Words"
+        case "lines.track": return "Audio track"
+        case "lines.nasa_id": return "NASA ID"
+        case "targets.name": return "Target name"
+        case "frames.utc": return "Photo time"
+        case "frames.nasa_id": return "NASA ID"
+        case "frames.look": return "Look"
+        case "frames.camera_label": return "Camera"
+        case "frames.target_id": return "Target"
+        case "frames.instrument": return "Instrument"
+        default:
+            return field.replacingOccurrences(of: ".", with: " ")
+        }
+    }
+}
+
 struct PlaybackCue: Equatable, Sendable {
     var range: MissionRange
     var trackID: String

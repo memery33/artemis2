@@ -60,6 +60,9 @@ struct WindowPane: View {
                         size: geo.size
                     )
                     .opacity(1 - mix)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                    .accessibilityAddTraits(.isImage)
                 }
                 if mix > 0, let frame = pair.next, let image = model.photo(frame, maxPixel: pixels) {
                     placed(
@@ -68,6 +71,9 @@ struct WindowPane: View {
                         size: geo.size
                     )
                     .opacity(mix)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                    .accessibilityAddTraits(.isImage)
                 }
                 if pair.current == nil && mix == 0 {
                     Text(emptyCopy(pair))
@@ -86,6 +92,9 @@ struct WindowPane: View {
                             .padding(16)
                             .frame(maxWidth: .infinity)
                             .background(Color.black.opacity(0.82))
+                            .accessibilityLabel(
+                                FrameSelection.outsideSpanNotice(frame: frame, now: model.utc, includeAge: false)
+                            )
                         Spacer(minLength: 0)
                     }
                     .allowsHitTesting(false)
@@ -236,10 +245,15 @@ struct FrameCaption: View {
                         .font(.headline)
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(
+                            FrameSelection.outsideSpanNotice(frame: frame, now: model.utc, includeAge: false)
+                        )
                 } else if side == .cab {
-                    Text(cabNote(frame))
+                    let note = cabNote(frame)
+                    Text(note.visible)
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.7))
+                        .accessibilityLabel(note.spoken)
                 }
             }
         }
@@ -253,13 +267,14 @@ struct FrameCaption: View {
         return fade.dominantIsNext ? next : current
     }
 
-    private func cabNote(_ frame: Frame) -> String {
-        var parts = ["Taken \(Stamp.clock(frame.utc)) UTC · \(frame.nasaID)."]
-        parts.append(FrameSelection.appearance(frame))
+    private func cabNote(_ frame: Frame) -> (visible: String, spoken: String) {
+        var spoken = ["Taken \(Stamp.clock(frame.utc)) UTC · \(frame.nasaID)."]
+        spoken.append(FrameSelection.appearance(frame))
+        var visible = spoken
         if let age = FrameSelection.clockOffset(now: model.utc, taken: frame.date) {
-            parts.append(age)
+            visible.append(age)
         }
-        return parts.joined(separator: " ")
+        return (visible.joined(separator: " "), spoken.joined(separator: " "))
     }
 }
 
@@ -507,14 +522,6 @@ struct TargetMap: View {
 private func framePrefetchToken(_ pair: FramePair, pixels: CGFloat, small: Bool, epoch: Int) -> String {
     let bucket = MediaStore.pixelBucket(pixels)
     return "\(epoch)|\(small)|\(pair.current?.file ?? "")|\(pair.next?.file ?? "")@\(bucket)"
-}
-
-enum Stamp {
-    static func clock(_ utc: String) -> String {
-        guard let separator = utc.firstIndex(of: "T") else { return utc }
-        let time = utc[utc.index(after: separator)...]
-        return String(time.prefix(8))
-    }
 }
 
 extension PlaybackModel {

@@ -1433,6 +1433,52 @@ console.log(JSON.stringify({
     assert row["silent"][0]["end"] == "2026-04-06T19:33:01.758Z"
 
 
+def test_cab_cam_prefers_the_nearest_frame_inside_the_span():
+    script = r"""
+const { visibleCabPair, clockOffset } = require("./demo/logic.js");
+const doc = require("./demo/data/timeline.json");
+const start = Date.parse(doc.window.start);
+const end = Date.parse(doc.window.end);
+const at = (iso) => visibleCabPair(doc.frames, Date.parse(iso), start, end, 0);
+const clock = at("2026-04-06T19:34:05Z");
+const early = at("2026-04-06T19:33:10Z");
+const tie = at("2026-04-06T19:38:44Z");
+const afterTie = at("2026-04-06T19:38:45Z");
+const empty = visibleCabPair(
+  doc.frames,
+  Date.parse("2026-04-06T19:33:10Z"),
+  Date.parse("2026-04-06T19:33:00Z"),
+  Date.parse("2026-04-06T19:33:30Z"),
+  0,
+);
+console.log(JSON.stringify({
+  clock: clock.current && clock.current.nasa_id,
+  clockUtc: clock.current && clock.current.utc,
+  clockOutside: clock.outside,
+  age: clockOffset(Date.parse("2026-04-06T19:34:05Z"), Date.parse(clock.current.utc)),
+  early: early.current && early.current.nasa_id,
+  tie: tie.current && tie.current.nasa_id,
+  afterTie: afterTie.current && afterTie.current.nasa_id,
+  empty: empty.current && empty.current.nasa_id,
+  emptyOutside: empty.outside,
+  emptyNext: empty.next,
+  emptyAge: clockOffset(Date.parse("2026-04-06T19:33:10Z"), Date.parse(empty.current.utc)),
+}));
+"""
+    row = _node(script)
+    assert row["clock"] == "art002e041322"
+    assert row["clockUtc"] == "2026-04-06T19:34:44.000Z"
+    assert row["clockOutside"] is False
+    assert row["age"] == "Photo taken 39 s after this clock."
+    assert row["early"] == "art002e041322"
+    assert row["tie"] == "art002e041322"
+    assert row["afterTie"] == "art002e041323"
+    assert row["empty"] == "art002e041321"
+    assert row["emptyOutside"] is True
+    assert row["emptyNext"] is None
+    assert "before this clock" in row["emptyAge"]
+
+
 def test_dark_cab_frame_is_mostly_dark_with_a_middle_patch():
     from PIL import Image
 

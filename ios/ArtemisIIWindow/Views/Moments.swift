@@ -4,6 +4,9 @@ struct MissionScrubber: View {
     @EnvironmentObject private var model: PlaybackModel
     @State private var dragging = false
     @State private var dragFraction = 0.0
+    /// A slider set can arrive before `onEditingChanged`. It is not a scrub until then.
+    @State private var armed = false
+    @State private var cachedMarks = SpanCoverage(audio: [], silent: [], photos: [])
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -14,21 +17,26 @@ struct MissionScrubber: View {
                 value: Binding(
                     get: { dragging ? dragFraction : fraction },
                     set: { newValue in
-                        if !dragging {
-                            dragging = true
-                            model.beginScrub()
-                        }
                         dragFraction = newValue
-                        model.scrub(toFraction: newValue)
+                        if dragging {
+                            model.scrub(toFraction: newValue)
+                        } else {
+                            armed = true
+                        }
                     }
                 ),
                 in: 0...1,
                 onEditingChanged: { editing in
                     if editing {
-                        dragFraction = fraction
-                        model.beginScrub()
+                        if !armed {
+                            dragFraction = fraction
+                        }
+                        armed = false
                         dragging = true
+                        model.beginScrub()
+                        model.scrub(toFraction: dragFraction)
                     } else {
+                        armed = false
                         dragging = false
                         model.endScrub()
                     }
@@ -38,10 +46,27 @@ struct MissionScrubber: View {
             .accessibilityLabel("Mission clock")
             .accessibilityValue(ClockMath.utcText(model.utc))
             .accessibilityIdentifier("mission-scrubber")
+            .accessibilityAdjustableAction { direction in
+                armed = false
+                let nudge: ClockNudge?
+                switch direction {
+                case .increment:
+                    nudge = .forward
+                case .decrement:
+                    nudge = .back
+                @unknown default:
+                    nudge = nil
+                }
+                guard let nudge, !nudge.scrubs else { return }
+                model.skip(by: nudge.seconds)
+            }
             Text("Bar: audio. Ticks: photos. Empty: silence.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        .onChange(of: coverageKey, initial: true) { _, _ in
+            cachedMarks = loadedCoverage()
         }
     }
 
@@ -54,7 +79,7 @@ struct MissionScrubber: View {
 
     private var coverage: some View {
         GeometryReader { geo in
-            let marks = coverageMarks
+            let marks = cachedMarks
             let width = geo.size.width
             ZStack(alignment: .leading) {
                 Capsule()
@@ -75,7 +100,12 @@ struct MissionScrubber: View {
         }
     }
 
-    private var coverageMarks: SpanCoverage {
+    private var coverageKey: String {
+        let version = model.timeline.map { String($0.version) } ?? "none"
+        return "\(version)|\(model.range)|\(model.trackID)|\(model.window)"
+    }
+
+    private func loadedCoverage() -> SpanCoverage {
         guard let timeline = model.timeline else {
             return SpanCoverage(audio: [], silent: [], photos: [])
         }
@@ -132,7 +162,7 @@ struct MomentsSheet: View {
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(milestone.source)
+                        Text(MilestoneSource.display(milestone.source))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         if let jump = milestone.jumpUTC {

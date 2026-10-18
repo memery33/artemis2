@@ -214,6 +214,23 @@ function cabinAt(t) {
 
 function pair(t) {
   const list = frames();
+  if (windowView === "3") {
+    const span = activeSpan();
+    const picked = ArtemisLogic.visibleCabPair(
+      list,
+      t,
+      span ? tOf(span.start) : null,
+      span ? tOf(span.end) : null,
+      offsetS * 1000,
+    );
+    return {
+      cur: picked.current,
+      next: picked.next,
+      index: picked.index,
+      list,
+      outside: picked.outside,
+    };
+  }
   let index = 0;
   for (; index < list.length; index += 1) {
     if (tOf(list[index].utc) + offsetS * 1000 > t) break;
@@ -239,13 +256,18 @@ function visiblePair(t) {
   return view;
 }
 
-function takenText(frame) {
+function takenText(frame, outside) {
   if (!frame || windowView !== "3") return "";
   const when = `${frame.utc.slice(11, 19)} UTC`;
+  const age = ArtemisLogic.clockOffset(utcMs, tOf(frame.utc));
+  if (outside) {
+    const parts = ["Outside this span.", `Taken ${when} UTC · ${frame.nasa_id}.`];
+    if (age) parts.push(age);
+    return parts.join(" ");
+  }
   const parts = [`Taken ${when} · ${frame.nasa_id}.`];
   const look = ArtemisLogic.appearance(frame);
   if (look) parts.push(look);
-  const age = ArtemisLogic.clockOffset(utcMs, tOf(frame.utc));
   if (age) parts.push(age);
   return parts.join(" ");
 }
@@ -536,7 +558,7 @@ function paint() {
   }
 
   const spanDoc = activeSpan();
-  const takenLine = takenText(shownFrame(view));
+  const takenLine = takenText(shownFrame(view), view.outside);
   if (takenLine !== shownTaken) {
     shownTaken = takenLine;
     taken.textContent = takenLine;
@@ -1408,9 +1430,10 @@ function paintRail() {
     showFile(img, frame.file, `${frame.credit}. ${label}.`);
     const when = frame.utc.slice(11, 19);
     const gap = ArtemisLogic.clockGap(utcMs, tOf(frame.utc));
+    const where = otherView.outside ? "Outside this span. " : "";
     cap.textContent = gap
-      ? `${label}. Taken ${when} UTC, ${gap}.`
-      : `${label}. Taken ${when} UTC.`;
+      ? `${label}. ${where}Taken ${when} UTC, ${gap}.`
+      : `${label}. ${where}Taken ${when} UTC.`;
   } else {
     if (img.getAttribute("src")) img.removeAttribute("src");
     img.alt = "";

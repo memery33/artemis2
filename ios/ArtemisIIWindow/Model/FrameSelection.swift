@@ -85,9 +85,14 @@ enum FrameSelection {
         }
     }
 
-    static func outsideSpanNotice(frame: Frame, now: Date) -> String {
+    /// Photo accessibility name. The live before/after age stays in the visible caption.
+    static func photoAccessLabel(_ frame: Frame) -> String {
+        "\(frame.credit). \(frame.nasaID). Taken \(Stamp.clock(frame.utc)) UTC."
+    }
+
+    static func outsideSpanNotice(frame: Frame, now: Date, includeAge: Bool = true) -> String {
         var parts = ["Outside this span.", "Taken \(Stamp.clock(frame.utc)) UTC · \(frame.nasaID)."]
-        if let age = clockOffset(now: now, taken: frame.date) {
+        if includeAge, let age = clockOffset(now: now, taken: frame.date) {
             parts.append(age)
         }
         return parts.joined(separator: " ")

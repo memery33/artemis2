@@ -183,6 +183,45 @@ final class MilestonesTests: XCTestCase {
         XCTAssertTrue(FrameSelection.appearance(surface).contains("Shown as photographed"))
     }
 
+    func testMomentsUseFriendlySourceLabels() throws {
+        let rows = MilestoneList.derive(timeline)
+        let audio = try XCTUnwrap(rows.first { $0.id == "audio:art002a000021" })
+        XCTAssertEqual(
+            MilestoneSource.display(audio.source),
+            "Audio start, NASA ID, Audio track, Target"
+        )
+        for row in rows {
+            let friendly = MilestoneSource.display(row.source)
+            XCTAssertFalse(friendly.isEmpty)
+            XCTAssertFalse(friendly.contains("."))
+            XCTAssertFalse(friendly.contains("segments.start"))
+            XCTAssertFalse(friendly.contains("frames.utc"))
+        }
+    }
+
+    func testVoiceOverAdjustSkipsWithoutScrubbing() {
+        XCTAssertEqual(ClockNudge.forward.seconds, PlaybackModel.skipInterval)
+        XCTAssertEqual(ClockNudge.back.seconds, -PlaybackModel.skipInterval)
+        XCTAssertEqual(ClockNudge.forward.seconds, 15)
+        XCTAssertFalse(ClockNudge.forward.scrubs)
+        XCTAssertFalse(ClockNudge.back.scrubs)
+    }
+
+    func testPhotoAccessLabelOmitsTheLiveGap() throws {
+        let frame = try XCTUnwrap(timeline.frames.first { $0.nasaID == "art002e041322" })
+        let spoken = FrameSelection.photoAccessLabel(frame)
+        XCTAssertTrue(spoken.contains("art002e041322"))
+        XCTAssertTrue(spoken.contains("19:34:44"))
+        XCTAssertFalse(spoken.contains("before this clock"))
+        XCTAssertFalse(spoken.contains("after this clock"))
+        let now = try ISO8601.parse("2026-04-06T19:34:05Z")
+        let visible = FrameSelection.outsideSpanNotice(frame: frame, now: now)
+        let quiet = FrameSelection.outsideSpanNotice(frame: frame, now: now, includeAge: false)
+        XCTAssertTrue(visible.contains("after this clock"))
+        XCTAssertFalse(quiet.contains("after this clock"))
+        XCTAssertTrue(quiet.hasPrefix("Outside this span."))
+    }
+
     private func assertIntervals(_ rows: [SpanCoverage.Interval], _ expected: [(String, String)]) throws {
         XCTAssertEqual(rows.count, expected.count)
         for (row, pair) in zip(rows, expected) {

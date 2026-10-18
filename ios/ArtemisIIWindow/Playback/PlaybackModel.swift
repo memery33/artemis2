@@ -3,11 +3,6 @@ import Combine
 import MediaPlayer
 import UIKit
 
-enum MissionRange: Equatable, Sendable {
-    case flyby
-    case cab
-}
-
 /// Tokens owned for the life of the player. Main-actor isolated, so it is Sendable
 /// and the model's nonisolated deinit can hand it back to the main actor to tear down.
 @MainActor

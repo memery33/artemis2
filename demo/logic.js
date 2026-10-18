@@ -330,6 +330,52 @@
     return `Photo taken ${gap}.`;
   }
 
+  // Window 3 holds the closest Cab Cam capture inside the span. An equal
+  // distance keeps the frame already taken. Capture times are not moved.
+  function visibleCabPair(frames, timeMs, spanStartMs, spanEndMs, offsetMs) {
+    const shift = offsetMs || 0;
+    const rows = (frames || [])
+      .filter((frame) => frame && frame.instrument === "cab2" && frame.nasa_id !== CABIN_ID && frame.view !== "cabin")
+      .map((frame) => ({ frame, at: Date.parse(frame.utc) + shift }))
+      .filter((row) => Number.isFinite(row.at))
+      .sort((a, b) => a.at - b.at);
+    const spanOK = Number.isFinite(spanStartMs) && Number.isFinite(spanEndMs) && spanEndMs >= spanStartMs;
+    const pack = (current, next, outside) => ({
+      current: current ? current.frame : null,
+      next: next ? next.frame : null,
+      index: current ? Math.max(0, rows.findIndex((row) => row.frame === current.frame)) : 0,
+      outside: !!outside,
+    });
+    if (spanOK) {
+      const inside = rows.filter((row) => row.at >= spanStartMs && row.at <= spanEndMs);
+      if (inside.length) {
+        const chosen = inside.reduce((best, row) => {
+          const left = Math.abs(best.at - timeMs);
+          const right = Math.abs(row.at - timeMs);
+          if (right !== left) return right < left ? row : best;
+          const bestTaken = best.at <= timeMs;
+          const rowTaken = row.at <= timeMs;
+          if (bestTaken !== rowTaken) return rowTaken ? row : best;
+          return row.at < best.at ? row : best;
+        });
+        const next = rows.find((row) => row.at > chosen.at && row.at >= spanStartMs && row.at <= spanEndMs) || null;
+        return pack(chosen, next, false);
+      }
+    }
+    let index = 0;
+    for (; index < rows.length; index += 1) {
+      if (rows[index].at > timeMs) break;
+    }
+    const current = index > 0 ? rows[index - 1] : null;
+    let next = index < rows.length ? rows[index] : null;
+    let outside = false;
+    if (spanOK && current && (current.at < spanStartMs || current.at > spanEndMs)) {
+      outside = true;
+      next = null;
+    }
+    return pack(current, next, outside);
+  }
+
   function containsWord(text, word) {
     const haystack = String(text || "").toLowerCase();
     const needle = String(word || "").toLowerCase();
@@ -574,6 +620,7 @@
     appearance: appearance,
     clockOffset: clockOffset,
     clockGap: clockGap,
+    visibleCabPair: visibleCabPair,
     milestones: milestones,
     coverage: coverage,
   };

@@ -210,7 +210,7 @@ struct DockBar: View {
     }
 
     private var momentsButton: some View {
-        dockButton("Moments", label: "Milestones") { moments = true }
+        dockButton("Moments", label: "Moments") { moments = true }
             .accessibilityIdentifier("moments-button")
     }
 
