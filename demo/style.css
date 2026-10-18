@@ -727,8 +727,20 @@ button.on, button[aria-pressed="true"] {
 }
 #moments-panel button {
   text-align: left;
-  white-space: normal;
+  white-space: pre-line;
   line-height: 1.35;
+}
+/* A narrow controls column lets the list run past the viewport. Pin it. */
+@media (max-width: 480px) {
+  #moments-panel:not([hidden]) {
+    position: fixed;
+    z-index: 8;
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    max-width: none;
+    max-height: min(240px, calc(100dvh - 16px));
+  }
 }
 .offset {
   display: flex;

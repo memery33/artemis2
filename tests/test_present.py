@@ -1507,3 +1507,128 @@ def test_dark_cab_frame_is_mostly_dark_with_a_middle_patch():
     assert fraction < 0.05
     assert 0.4 < (sx / bright) / width < 0.7
     assert 0.4 < (sy / bright) / height < 0.7
+
+
+def test_milestone_source_labels_are_readable():
+    script = r"""
+const { sourceLabel, milestones } = require("./demo/logic.js");
+const doc = require("./demo/data/timeline.json");
+const audio = milestones(doc).find((row) => row.id === "audio:art002a000021");
+console.log(JSON.stringify({
+  raw: audio.source,
+  label: sourceLabel(audio.source),
+  dotted: milestones(doc).some((row) => sourceLabel(row.source).includes(".")),
+}));
+"""
+    row = _node(script)
+    assert row["raw"].startswith("segments.start")
+    assert row["label"] == "Audio start, NASA ID, Audio track, Target"
+    assert "segments.start" not in row["label"]
+    assert row["dotted"] is False
+
+
+def test_moments_panel_stays_on_screen():
+    """The open Moments list stays inside a narrow viewport and off the credit."""
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    from playwright.sync_api import sync_playwright
+
+    handler = partial(SimpleHTTPRequestHandler, directory=str(ROOT / "demo"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    sizes = [(280, 800), (320, 800), (390, 844)]
+    measure = r"""
+() => {
+  const panel = document.getElementById('moments-panel');
+  const credit = document.getElementById('credit');
+  const box = (el) => {
+    const r = el.getBoundingClientRect();
+    return {x: r.x, y: r.y, w: r.width, h: r.height};
+  };
+  const panelBox = box(panel);
+  const creditBox = box(credit);
+  const overlap = (a, b) => {
+    const width = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const height = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    return width > 0 && height > 0 ? width * height : 0;
+  };
+  return {
+    hidden: panel.hidden,
+    expanded: document.getElementById('moments').getAttribute('aria-expanded'),
+    controls: document.getElementById('moments').getAttribute('aria-controls'),
+    role: panel.getAttribute('role'),
+    label: panel.getAttribute('aria-label'),
+    focused: document.activeElement && document.activeElement.parentElement
+      ? document.activeElement.parentElement.id : '',
+    panel: panelBox,
+    credit: creditBox,
+    overlap: overlap(panelBox, creditBox),
+    width: window.innerWidth,
+    height: window.innerHeight,
+  };
+}
+"""
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome", headless=True)
+            for width, height in sizes:
+                context = browser.new_context(
+                    viewport={"width": width, "height": height},
+                    has_touch=False,
+                    reduced_motion="reduce",
+                )
+                page = context.new_page()
+                page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
+                page.click("#enter")
+                page.mouse.move(width / 2, height / 2)
+                page.wait_for_selector("#hud.show")
+                page.click("#moments")
+                page.wait_for_function("() => !document.getElementById('moments-panel').hidden")
+                row = page.evaluate(measure)
+                if (width, height) == (320, 800):
+                    page.keyboard.press("Escape")
+                    closed = page.evaluate(
+                        """() => ({
+                          hidden: document.getElementById('moments-panel').hidden,
+                          expanded: document.getElementById('moments').getAttribute('aria-expanded'),
+                          focused: document.activeElement.id,
+                        })"""
+                    )
+                    assert closed["hidden"] is True
+                    assert closed["expanded"] == "false"
+                    assert closed["focused"] == "moments"
+                    page.click("#moments")
+                    page.wait_for_function("() => !document.getElementById('moments-panel').hidden")
+                    page.locator("#moments-panel button").first.click()
+                    after = page.evaluate(
+                        """() => ({
+                          hidden: document.getElementById('moments-panel').hidden,
+                          expanded: document.getElementById('moments').getAttribute('aria-expanded'),
+                          focused: document.activeElement.id,
+                        })"""
+                    )
+                    assert after["hidden"] is True, after
+                    assert after["expanded"] == "false", after
+                    assert after["focused"] == "moments", after
+                context.close()
+                panel = row["panel"]
+                assert row["hidden"] is False, (width, height)
+                assert row["expanded"] == "true", (width, height)
+                assert row["controls"] == "moments-panel"
+                assert row["role"] == "region"
+                assert row["label"] == "Moments"
+                assert row["focused"] == "moments-panel", (width, height, row["focused"])
+                assert panel["w"] > 0 and panel["h"] > 0, (width, height, panel)
+                assert panel["x"] >= -0.5, (width, height, panel)
+                assert panel["y"] >= -0.5, (width, height, panel)
+                assert panel["x"] + panel["w"] <= row["width"] + 0.5, (width, height, panel, row["width"])
+                assert panel["y"] + panel["h"] <= row["height"] + 0.5, (width, height, panel, row["height"])
+                if (width, height) == (390, 844):
+                    assert row["overlap"] == 0, (width, height, row)
+            browser.close()
+    finally:
+        server.shutdown()
