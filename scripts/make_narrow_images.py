@@ -35,6 +35,21 @@ def _dims(path: Path) -> tuple[int, int]:
     return int(width), int(height)
 
 
+# Cap whichever side is longer. -2 keeps the other side even. Never upscale.
+SCALE = "scale='if(gt(iw,ih),min(720,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))':flags=lanczos"
+
+
+def _capped(width: int, height: int, variant_w: int, variant_h: int) -> bool:
+    long_edge = max(width, height)
+    if max(variant_w, variant_h) != min(720, long_edge):
+        return False
+    if variant_w > width or variant_h > height:
+        return False
+    if variant_w < 2 or variant_h < 2:
+        return False
+    return abs((variant_w / variant_h) - (width / height)) < 0.02
+
+
 def make_narrow(directory: Path = IMAGES) -> int:
     written = 0
     for source in sorted(directory.glob("*.webp")):
@@ -44,8 +59,12 @@ def make_narrow(directory: Path = IMAGES) -> int:
         if max(width, height) <= 720:
             continue
         dest = source.with_name(f"{source.stem}.720.webp")
-        if dest.is_file() and dest.stat().st_mtime >= source.stat().st_mtime:
-            continue
+        if dest.is_file():
+            try:
+                if _capped(width, height, *_dims(dest)):
+                    continue
+            except (subprocess.CalledProcessError, ValueError):
+                pass
         subprocess.check_call(
             [
                 "ffmpeg",
@@ -55,7 +74,7 @@ def make_narrow(directory: Path = IMAGES) -> int:
                 "-i",
                 str(source),
                 "-vf",
-                "scale='min(720,iw)':-2:flags=lanczos",
+                SCALE,
                 "-c:v",
                 "libwebp",
                 "-quality",

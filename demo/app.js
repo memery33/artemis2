@@ -40,13 +40,15 @@ audio.setAttribute("playsinline", "");
 audio.setAttribute("webkit-playsinline", "");
 document.body.appendChild(audio);
 
+const coarseQuery = window.matchMedia("(pointer: coarse)");
 const touchDevice = ArtemisLogic.isTouchDevice(
-  window.matchMedia("(pointer: coarse)").matches,
-  navigator.maxTouchPoints,
+  coarseQuery.matches,
+  window.matchMedia("(hover: none)").matches,
+  window.matchMedia("(pointer: fine)").matches,
 );
 const narrowQuery = window.matchMedia("(max-width: 932px)");
 const compactQuery = window.matchMedia("(max-width: 932px), (max-height: 500px)");
-const foldQuery = window.matchMedia("(min-aspect-ratio: 6/5) and (max-aspect-ratio: 8/5) and (min-height: 520px) and (max-width: 1200px)");
+const foldQuery = window.matchMedia("(min-aspect-ratio: 6/5) and (max-aspect-ratio: 8/5) and (min-height: 520px) and (max-width: 1200px) and (pointer: coarse)");
 const net = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
 const cellular = ArtemisLogic.wantsSmallImage(false, !!(net && net.saveData), net && net.effectiveType);
 if (cellular) audio.preload = "none";
@@ -62,7 +64,7 @@ const DATA = new URL("data/", document.baseURI);
 function useSmallImages() {
   const link = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   return ArtemisLogic.wantsSmallImage(
-    narrowQuery.matches,
+    coarseQuery.matches && narrowQuery.matches,
     !!(link && link.saveData),
     link && link.effectiveType,
     foldQuery.matches,
@@ -351,11 +353,40 @@ async function ensureAudio() {
     } catch (_err) {
       // A src swap after the tap can lose the iOS gesture. Keep the file
       // URL that play() already unlocked, instead of staying on the blob.
+      // Putting the position and rate back waits until the new file has a duration.
       const direct = media(seg.file);
       if (audio.dataset.direct === "1" && audio.src !== direct) {
+        const held = audio.currentTime;
+        const speed = audio.playbackRate;
         audio.src = direct;
         audio.dataset.file = seg.file;
-        try { await audio.play(); } catch (_err2) { /* a real phone has to confirm this */ }
+        try {
+          await new Promise((resolve, reject) => {
+            const ready = () => {
+              cleanup();
+              resolve();
+            };
+            const fail = () => {
+              cleanup();
+              reject(new Error("audio"));
+            };
+            const cleanup = () => {
+              audio.removeEventListener("loadedmetadata", ready);
+              audio.removeEventListener("error", fail);
+            };
+            if (audio.readyState >= 1 && audio.currentSrc === direct) {
+              resolve();
+              return;
+            }
+            audio.addEventListener("loadedmetadata", ready);
+            audio.addEventListener("error", fail);
+          });
+          if (gen === loadGen) {
+            if (Number.isFinite(held)) audio.currentTime = held;
+            if (Number.isFinite(speed) && speed > 0) audio.playbackRate = speed;
+            await audio.play();
+          }
+        } catch (_err2) { /* a real phone has to confirm this */ }
       }
     }
   }
@@ -527,10 +558,13 @@ function paint() {
 function drawMap(current) {
   const ctx = map.getContext("2d");
   const compactMap = stage.classList.contains("compact");
-  const cssW = map.clientWidth || (compactMap ? 156 : 360);
+  const cssW = map.clientWidth || (compactMap ? 186 : 360);
   const dpr = compactMap ? 1 : Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.max(compactMap ? 120 : 160, Math.round(cssW * dpr));
-  const h = Math.max(106, Math.round(w * 2 / 3));
+  const cssH = map.clientHeight || (compactMap ? 176 : 0);
+  const h = compactMap
+    ? Math.max(106, Math.round(cssH * dpr))
+    : Math.max(106, Math.round(w * 2 / 3));
   if (map.width !== w || map.height !== h) {
     map.width = w;
     map.height = h;
@@ -935,7 +969,7 @@ function openingSegment() {
 
 function layoutChrome() {
   const fold = foldQuery.matches;
-  const compact = !fold && compactQuery.matches;
+  const compact = coarseQuery.matches && !fold && compactQuery.matches;
   stage.classList.toggle("fold", fold);
   stage.classList.toggle("compact", compact);
   const home = document.querySelector("#hud .bottom");
@@ -1169,6 +1203,7 @@ async function boot() {
   if (narrowQuery.addEventListener) narrowQuery.addEventListener("change", relayout);
   if (compactQuery.addEventListener) compactQuery.addEventListener("change", relayout);
   if (foldQuery.addEventListener) foldQuery.addEventListener("change", relayout);
+  if (coarseQuery.addEventListener) coarseQuery.addEventListener("change", relayout);
   window.addEventListener("mousemove", () => {
     if (touchDevice) return;
     poke();

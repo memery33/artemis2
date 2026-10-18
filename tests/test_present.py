@@ -173,9 +173,12 @@ const logic = require("./demo/logic.js");
 const rows = {
   gateDesktop: logic.gateLabel(false),
   gateTouch: logic.gateLabel(true),
-  touchCoarse: logic.isTouchDevice(true, 0),
-  touchPoints: logic.isTouchDevice(false, 5),
-  mouse: logic.isTouchDevice(false, 0),
+  touchCoarse: logic.isTouchDevice(true, false, false),
+  touchHover: logic.isTouchDevice(false, true, false),
+  touchPoints: logic.isTouchDevice(false, 5, false),
+  finePointer: logic.isTouchDevice(false, false, true),
+  fineWins: logic.isTouchDevice(true, true, true),
+  mouse: logic.isTouchDevice(false, false, false),
   swipeLeft: logic.swipeWindow(-80, 10, 48),
   swipeRight: logic.swipeWindow(80, 4, 48),
   swipeShort: logic.swipeWindow(47, 0, 48),
@@ -199,7 +202,12 @@ const rows = {
   foldFull: logic.wantsSmallImage(true, false, "4g", true),
   foldSave: logic.wantsSmallImage(true, true, "4g", true),
   foldSlow: logic.wantsSmallImage(false, false, "3g", true),
-  modeFold: logic.screenMode(890, 626),
+  modeFold: logic.screenMode(890, 626, true),
+  modeFoldShape: logic.screenMode(890, 626),
+  modeFoldFine: logic.screenMode(890, 626, false),
+  modeDeskShape: logic.screenMode(1024, 768),
+  modeDeskFine: logic.screenMode(1024, 768, false),
+  modeDeskCoarse: logic.screenMode(1024, 768, true),
   modeClosed: logic.screenMode(466, 678),
   modePhone: logic.screenMode(390, 844),
   modeSide: logic.screenMode(844, 390),
@@ -211,7 +219,10 @@ console.log(JSON.stringify(rows));
     assert row["gateDesktop"] == "Click or press any key to look out the window"
     assert row["gateTouch"] == "Tap to begin"
     assert row["touchCoarse"] is True
-    assert row["touchPoints"] is True
+    assert row["touchHover"] is True
+    assert row["touchPoints"] is False
+    assert row["finePointer"] is False
+    assert row["fineWins"] is False
     assert row["mouse"] is False
     assert row["swipeLeft"] == "3"
     assert row["swipeRight"] == "2"
@@ -237,10 +248,50 @@ console.log(JSON.stringify(rows));
     assert row["foldSave"] is True
     assert row["foldSlow"] is True
     assert row["modeFold"] == "fold"
+    assert row["modeFoldShape"] == "desktop"
+    assert row["modeFoldFine"] == "desktop"
+    assert row["modeDeskShape"] == "desktop"
+    assert row["modeDeskFine"] == "desktop"
+    assert row["modeDeskCoarse"] == "fold"
     assert row["modeClosed"] == "phone"
     assert row["modePhone"] == "phone"
     assert row["modeSide"] == "phone"
     assert row["modeDesk"] == "desktop"
+
+
+def test_fine_pointer_keeps_the_desktop_layout_and_mouse():
+    """A 1024×768 window is the fold shape. Fold still needs a coarse pointer.
+    Touch points do not count when the primary pointer is fine."""
+    script = r"""
+const logic = require("./demo/logic.js");
+console.log(JSON.stringify({
+  desk1024: logic.screenMode(1024, 768, false),
+  desk1024bare: logic.screenMode(1024, 768),
+  fold1024: logic.screenMode(1024, 768, true),
+  foldOpen: logic.screenMode(890, 626, true),
+  foldFine: logic.screenMode(890, 626, false),
+  shortFine: logic.screenMode(844, 390, false),
+  wideFine: logic.screenMode(800, 600, false),
+  coarse: logic.isTouchDevice(true, false, false),
+  hoverNone: logic.isTouchDevice(false, true, false),
+  touchPoints: logic.isTouchDevice(false, 5),
+  fineWithPoints: logic.isTouchDevice(false, false, true),
+  fineAndCoarse: logic.isTouchDevice(true, true, true),
+}));
+"""
+    row = _node(script)
+    assert row["desk1024"] == "desktop"
+    assert row["desk1024bare"] == "desktop"
+    assert row["fold1024"] == "fold"
+    assert row["foldOpen"] == "fold"
+    assert row["foldFine"] == "desktop"
+    assert row["shortFine"] == "phone"
+    assert row["wideFine"] == "desktop"
+    assert row["coarse"] is True
+    assert row["hoverNone"] is True
+    assert row["touchPoints"] is False
+    assert row["fineWithPoints"] is False
+    assert row["fineAndCoarse"] is False
 
 
 def test_transcript_slice_uses_only_real_lines():
@@ -279,14 +330,14 @@ const targets = [
   ["Vavilov Crater", 221.23, -0.87],
 ];
 const measure = (name, px) => name.length * px * 0.56;
-const sizes = [[180, 130, 12], [240, 160, 13]];
+const sizes = [[186, 176, 12], [240, 160, 13]];
 const report = sizes.map(([width, height, base]) => {
   const font = chooseFont(targets.map((row) => row[0]), width, base, measure, 0.96);
   const anchors = targets.map((row) => {
     const [x, y] = project(row[1], row[2], width, height);
     return { name: row[0], x, y, w: measure(row[0], font), h: font + 2 };
   });
-  const placed = placeLabels(anchors, { x: 2, y: 2, x2: width - 2, y2: height - 2 });
+  const placed = placeLabels(anchors, { x: 4, y: 4, x2: width - 4, y2: height - 4 });
   let hits = 0;
   for (let i = 0; i < placed.length; i += 1) {
     for (let j = i + 1; j < placed.length; j += 1) {

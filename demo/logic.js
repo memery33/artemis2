@@ -195,12 +195,12 @@
     const fy = Number.isFinite(floatY) ? floatY : 0;
     const lx = Number.isFinite(lookX) ? lookX : 0;
     const ly = Number.isFinite(lookY) ? lookY : 0;
-  return {
-    scale: 1.025 + p * 0.035,
-    x: sign * p * 0.65 + fx * 0.45 - lx * 0.45,
-    y: p * 0.3 + fy * 0.45 - ly * 0.3,
-  };
-}
+    return {
+      scale: 1.025 + p * 0.035,
+      x: sign * p * 0.65 + fx * 0.45 - lx * 0.45,
+      y: p * 0.3 + fy * 0.45 - ly * 0.3,
+    };
+  }
 
   const GATE_DESKTOP = "Click or press any key to look out the window";
   const GATE_TOUCH = "Tap to begin";
@@ -209,9 +209,12 @@
     return touch ? GATE_TOUCH : GATE_DESKTOP;
   }
 
-  // A phone can report a fine pointer in automation and still have a touch screen.
-  function isTouchDevice(coarse, maxTouchPoints) {
-    return coarse === true || (Number(maxTouchPoints) || 0) > 0;
+  // Dock and the tap gate follow the primary pointer. A fine pointer keeps
+  // mousemove reveal even when the screen also reports touch points, which
+  // is a touchscreen laptop. Touch points are not an argument.
+  function isTouchDevice(coarse, hoverNone, fine) {
+    if (fine === true) return false;
+    return coarse === true || hoverNone === true;
   }
 
   // Horizontal swipe between the two windows. A short drag, a vertical drag,
@@ -241,12 +244,15 @@
     return false;
   }
 
-  // Shape only. An open fold is wider than tall, tall enough not to be a
-  // phone on its side, and narrower than a desktop. 6/5 is 1.2, 8/5 is 1.6.
-  function screenMode(width, height) {
+  // An open fold is wider than tall, tall enough not to be a phone on its
+  // side, and narrower than a desktop. 6/5 is 1.2, 8/5 is 1.6. That shape
+  // is also a 1024×768 desktop window, so the fold layout requires a coarse
+  // pointer. Phone and desktop here describe the shape; the page applies
+  // the phone rules only under (pointer: coarse) as well.
+  function screenMode(width, height, coarse) {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return "desktop";
     const aspect = width / height;
-    if (aspect >= 1.2 && aspect <= 1.6 && height >= 520 && width <= 1200) return "fold";
+    if (coarse === true && aspect >= 1.2 && aspect <= 1.6 && height >= 520 && width <= 1200) return "fold";
     if (aspect < 1 || height <= 500) return "phone";
     return "desktop";
   }

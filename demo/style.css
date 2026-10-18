@@ -32,7 +32,12 @@ button, input { font: inherit; color: inherit; }
 
 button, input[type="range"] { touch-action: manipulation; }
 
-#stage { position: relative; height: 100%; height: 100dvh; }
+#stage {
+  position: relative;
+  height: 100%;
+  height: 100dvh;
+  touch-action: pan-y pinch-zoom;
+}
 
 /* The viewport is the inner face of a cone panel, not a page with a
    picture frame on it. Aluminum pressure-vessel cone: NASA crew-module
@@ -251,6 +256,11 @@ button, input[type="range"] { touch-action: manipulation; }
   font-size: 11px;
   line-height: 1.35;
   color: rgba(244, 241, 234, 0.78);
+}
+
+/* Dock is a 44px row inset 8px, so the credit sits above it. */
+#stage.touch #glance {
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
 }
 
 #subs {
@@ -609,8 +619,8 @@ button.on, button[aria-pressed="true"] {
 #stage.compact #map {
   position: absolute;
   z-index: 5;
-  width: 180px;
-  height: 130px;
+  width: 186px;
+  height: 176px;
   top: max(10px, env(safe-area-inset-top));
   left: max(10px, env(safe-area-inset-left));
   border-radius: 10px;
@@ -631,24 +641,12 @@ button.on, button[aria-pressed="true"] {
     bottom: 10%;
     max-width: 78%;
   }
-}
-
-@media (max-height: 500px) {
-  #window {
-    top: calc(50% - 6px);
-    width: min(78vw, calc((100vh - 108px) * 1.58));
-    width: min(78vw, calc((100dvh - 108px) * 1.58));
-  }
-  #stage.cab #window {
-    width: min(72vw, calc((100vh - 108px) * 4 / 3));
-    width: min(72vw, calc((100dvh - 108px) * 4 / 3));
-  }
-  #stage.compact #clocks {
-    max-width: calc(100% - 204px - env(safe-area-inset-left) - env(safe-area-inset-right));
-  }
-  #stage.compact #subs {
-    bottom: 12%;
-    max-width: 68%;
+  /* The portrait map fills the lower left. The credit sits in the lower right, above the dock. */
+  #stage.touch.compact #glance {
+    left: auto;
+    right: max(10px, env(safe-area-inset-right));
+    width: min(120px, calc(100vw - 268px));
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
   }
 }
 
@@ -665,7 +663,7 @@ button.on, button[aria-pressed="true"] {
   min-width: 44px;
 }
 
-@media (max-width: 800px) {
+@media (max-width: 800px) and (pointer: coarse) {
   #window { width: min(118vw, calc(96vh * 1.58)); width: min(118vw, calc(96dvh * 1.58)); top: 50%; }
   #near { padding: 16px; border-radius: 28px; filter: blur(1.6px); }
   .thermal { padding: 10px; border-radius: 24px; }
@@ -677,8 +675,9 @@ button.on, button[aria-pressed="true"] {
   #glance { width: min(160px, 42vw); }
 }
 
-/* After the 800px block so a phone keeps the glass on screen. */
-@media (orientation: portrait) and (max-width: 932px) {
+/* After the 800px block so a phone keeps the glass on screen.
+   A fine pointer at this size keeps the desktop window. */
+@media (orientation: portrait) and (max-width: 932px) and (pointer: coarse) {
   #window {
     top: 42%;
     width: min(94vw, calc(70vh * 1.58));
@@ -690,7 +689,7 @@ button.on, button[aria-pressed="true"] {
   }
 }
 
-@media (max-height: 500px) {
+@media (max-height: 500px) and (pointer: coarse) {
   #window {
     top: calc(50% - 6px);
     width: min(78vw, calc((100vh - 108px) * 1.58));
@@ -700,13 +699,26 @@ button.on, button[aria-pressed="true"] {
     width: min(72vw, calc((100vh - 108px) * 4 / 3));
     width: min(72vw, calc((100dvh - 108px) * 4 / 3));
   }
+  #stage.compact #clocks {
+    max-width: calc(100% - 210px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  }
+  #stage.compact #subs {
+    bottom: 12%;
+    max-width: 68%;
+  }
+  /* The landscape map is the upper left. The credit sits lower right, above the dock. */
+  #stage.touch.compact #glance {
+    left: auto;
+    right: max(16px, 2vw);
+    width: min(168px, 22vw);
+  }
 }
 
 #rail { display: none; }
 
-/* Open fold: wider than tall, taller than a phone on its side, narrower than a desktop.
-   890×626 CSS px matches. 844×390 and 1280×720 do not. */
-@media (min-aspect-ratio: 6/5) and (max-aspect-ratio: 8/5) and (min-height: 520px) and (max-width: 1200px) {
+/* Open fold: wider than tall, taller than a phone on its side, narrower than a desktop,
+   and a coarse pointer. 890×626 CSS px on a phone matches. A 1024×768 desktop window does not. */
+@media (min-aspect-ratio: 6/5) and (max-aspect-ratio: 8/5) and (min-height: 520px) and (max-width: 1200px) and (pointer: coarse) {
   #window {
     left: 33%;
     top: 46%;
