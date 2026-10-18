@@ -281,8 +281,10 @@ button, input[type="range"] { touch-action: manipulation; }
 }
 
 /* The card stops at the credit band's top: leftover viewport under the
-   window, the three bezel steps, --dock-clear, and the credit's measured
-   box (one line until that box exists). 16px covers the window's drift.
+   window, then the three bezel steps. Those clamps are the padding on
+   .thermal, .pressure, and .acrylic, which is how far the glass sits
+   inside the window. Then --dock-clear and the credit's measured box
+   (one line until that box exists). 16px covers the window's drift.
    Compact phones and the open fold keep the positions above and below. */
 #stage:not(.compact):not(.fold) #glance {
   bottom: max(
@@ -312,16 +314,18 @@ button, input[type="range"] { touch-action: manipulation; }
   pointer-events: none;
 }
 
-/* A phone-width desktop window wraps the credit. 3.4em clears two lines.
-   A third line is taller than that, so the measured box wins and the
-   subtitle stays 16px above it. The affiliation line is not clipped. */
-@media (max-width: 560px) {
+/* A narrow desktop window wraps the credit, and the centered subtitle
+   runs into the card. 3.4em clears two credit lines; a taller measured
+   box wins. The width leaves the card's column (left inset, width, 8px)
+   and the same column on the right. Wrapping stays at 14px. */
+@media (max-width: 600px) {
   #stage:not(.touch) #subs {
     bottom: max(
       7%,
       calc(var(--dock-clear) + 3.4em),
       calc(var(--dock-clear) + var(--credit-measured) + 16px)
     );
+    max-width: calc(100% - 2 * (min(210px, 22vw) + max(16px, 2vw) + 8px));
   }
 }
 
