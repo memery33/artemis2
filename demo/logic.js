@@ -289,6 +289,305 @@
     }));
   }
 
+  const CABIN_ID = "art002e016183";
+
+  function appearance(frame) {
+    if (!frame) return "";
+    const note = String(frame.exposure_note || "");
+    if (frame.look === "dark" && /bright patch/i.test(note)) {
+      return "Mostly dark short exposure, with a small bright patch near the middle. Not brightened.";
+    }
+    if (frame.look === "surface") {
+      return "Shown as photographed. No window frame is drawn over this picture.";
+    }
+    return "Shown as photographed.";
+  }
+
+  function spanPhrase(seconds) {
+    const whole = Math.round(Math.abs(seconds));
+    const minutes = Math.floor(whole / 60);
+    const secs = whole % 60;
+    if (minutes > 0 && secs > 0) return `${minutes} min ${secs} s`;
+    if (minutes > 0) return `${minutes} min`;
+    return `${secs} s`;
+  }
+
+  function clockGap(nowMs, takenMs) {
+    if (!Number.isFinite(nowMs) || !Number.isFinite(takenMs)) return "";
+    const delta = (nowMs - takenMs) / 1000;
+    if (Math.abs(delta) < 2) return "";
+    const phrase = spanPhrase(delta);
+    if (delta > 0) return `${phrase} before this clock`;
+    return `${phrase} after this clock`;
+  }
+
+  // How far the photograph's own timestamp sits from the Orion clock.
+  function clockOffset(nowMs, takenMs) {
+    const gap = clockGap(nowMs, takenMs);
+    if (!gap) return "";
+    const delta = (nowMs - takenMs) / 1000;
+    if (delta >= 45) return `Photo taken ${gap}. Not moved to match it.`;
+    return `Photo taken ${gap}.`;
+  }
+
+  // Window 3 holds the closest Cab Cam capture inside the span. An equal
+  // distance keeps the frame already taken. Capture times are not moved.
+  function visibleCabPair(frames, timeMs, spanStartMs, spanEndMs, offsetMs) {
+    const shift = offsetMs || 0;
+    const rows = (frames || [])
+      .filter((frame) => frame && frame.instrument === "cab2" && frame.nasa_id !== CABIN_ID && frame.view !== "cabin")
+      .map((frame) => ({ frame, at: Date.parse(frame.utc) + shift }))
+      .filter((row) => Number.isFinite(row.at))
+      .sort((a, b) => a.at - b.at);
+    const spanOK = Number.isFinite(spanStartMs) && Number.isFinite(spanEndMs) && spanEndMs >= spanStartMs;
+    const pack = (current, next, outside) => ({
+      current: current ? current.frame : null,
+      next: next ? next.frame : null,
+      index: current ? Math.max(0, rows.findIndex((row) => row.frame === current.frame)) : 0,
+      outside: !!outside,
+    });
+    if (spanOK) {
+      const inside = rows.filter((row) => row.at >= spanStartMs && row.at <= spanEndMs);
+      if (inside.length) {
+        const chosen = inside.reduce((best, row) => {
+          const left = Math.abs(best.at - timeMs);
+          const right = Math.abs(row.at - timeMs);
+          if (right !== left) return right < left ? row : best;
+          const bestTaken = best.at <= timeMs;
+          const rowTaken = row.at <= timeMs;
+          if (bestTaken !== rowTaken) return rowTaken ? row : best;
+          return row.at < best.at ? row : best;
+        });
+        const next = rows.find((row) => row.at > chosen.at && row.at >= spanStartMs && row.at <= spanEndMs) || null;
+        return pack(chosen, next, false);
+      }
+    }
+    let index = 0;
+    for (; index < rows.length; index += 1) {
+      if (rows[index].at > timeMs) break;
+    }
+    const current = index > 0 ? rows[index - 1] : null;
+    let next = index < rows.length ? rows[index] : null;
+    let outside = false;
+    if (spanOK && current && (current.at < spanStartMs || current.at > spanEndMs)) {
+      outside = true;
+      next = null;
+    }
+    return pack(current, next, outside);
+  }
+
+  function containsWord(text, word) {
+    const haystack = String(text || "").toLowerCase();
+    const needle = String(word || "").toLowerCase();
+    if (!needle) return false;
+    let from = 0;
+    while (from <= haystack.length - needle.length) {
+      const at = haystack.indexOf(needle, from);
+      if (at < 0) return false;
+      const before = at === 0 ? "" : haystack[at - 1];
+      const after = haystack[at + needle.length] || "";
+      const letter = (ch) => ch && /[a-z]/i.test(ch);
+      if (!letter(before) && !letter(after)) return true;
+      from = at + needle.length;
+    }
+    return false;
+  }
+
+  function properNoun(name) {
+    const first = String(name || "").split(/\s+/)[0];
+    return first || name;
+  }
+
+  function inSpan(ms, span) {
+    if (!span) return false;
+    return ms >= Date.parse(span.start) && ms <= Date.parse(span.end);
+  }
+
+  function rangeFor(ms, doc) {
+    if (inSpan(ms, doc.cab_run)) return "cab";
+    if (inSpan(ms, doc.window)) return "flyby";
+    return null;
+  }
+
+  // Every row is a timestamp already stored on the timeline. Nothing is added.
+  // Closest approach is omitted when no source field names it.
+  function milestones(doc) {
+    const rows = [];
+    const push = (row) => rows.push(row);
+    if (doc.window) {
+      push({
+        id: "span:window.start",
+        utc: doc.window.start,
+        label: doc.window.label,
+        source: "window.start, window.label",
+        track: null,
+        window: null,
+        range: "flyby",
+        jumpUtc: null,
+      });
+      push({
+        id: "span:window.end",
+        utc: doc.window.end,
+        label: doc.window.label,
+        source: "window.end, window.label",
+        track: null,
+        window: null,
+        range: "flyby",
+        jumpUtc: null,
+      });
+    }
+    if (doc.cab_run) {
+      push({
+        id: "span:cab_run.start",
+        utc: doc.cab_run.start,
+        label: doc.cab_run.label,
+        source: "cab_run.start, cab_run.label",
+        track: null,
+        window: "3",
+        range: "cab",
+        jumpUtc: null,
+      });
+      push({
+        id: "span:cab_run.end",
+        utc: doc.cab_run.end,
+        label: doc.cab_run.label,
+        source: "cab_run.end, cab_run.label",
+        track: null,
+        window: "3",
+        range: "cab",
+        jumpUtc: null,
+      });
+    }
+    const segments = [...(doc.segments || [])].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+    for (const seg of segments) {
+      const target = seg.target_id || "";
+      const where = rangeFor(Date.parse(seg.start), doc) || "flyby";
+      push({
+        id: `audio:${seg.nasa_id}`,
+        utc: seg.start,
+        label: target ? `${target} · ${seg.nasa_id}` : seg.nasa_id,
+        source: "segments.start, segments.nasa_id, segments.track, segments.target_id",
+        track: seg.track,
+        window: where === "cab" ? "3" : null,
+        range: where,
+        jumpUtc: null,
+      });
+    }
+    const names = [];
+    for (const target of doc.targets || []) {
+      if (target.geographic && !names.includes(target.name)) names.push(target.name);
+    }
+    const lines = [...(doc.lines || [])].sort((a, b) => Date.parse(a.utc) - Date.parse(b.utc));
+    for (const name of names) {
+      const token = properNoun(name);
+      const line = lines.find((row) => containsWord(row.text, token));
+      if (!line) continue;
+      const speaker = line.speaker ? `${line.speaker}: ` : "";
+      push({
+        id: `quote:${name}`,
+        utc: line.utc,
+        label: `${speaker}${line.text}`,
+        source: "lines.utc, lines.speaker, lines.text, lines.track, lines.nasa_id, targets.name",
+        track: line.track,
+        window: null,
+        range: rangeFor(Date.parse(line.utc), doc) || "flyby",
+        jumpUtc: null,
+      });
+    }
+    const frames = [...(doc.frames || [])].sort((a, b) => Date.parse(a.utc) - Date.parse(b.utc));
+    const seen = new Set();
+    const addPhoto = (frame, source, jumpUtc) => {
+      if (!frame || seen.has(frame.nasa_id)) return;
+      seen.add(frame.nasa_id);
+      const target = frame.target_id || "";
+      const geographic = names.includes(target);
+      const label = geographic ? `${target} · ${frame.nasa_id}` : `${frame.camera_label} · ${frame.nasa_id}`;
+      const ms = Date.parse(frame.utc);
+      const where = rangeFor(ms, doc);
+      const cab = frame.instrument === "cab2";
+      push({
+        id: `photo:${frame.nasa_id}`,
+        utc: frame.utc,
+        label,
+        source,
+        track: null,
+        window: frame.nasa_id === CABIN_ID ? null : (cab ? "3" : "2"),
+        range: where || "flyby",
+        jumpUtc: jumpUtc || null,
+      });
+    };
+    for (const name of names) {
+      addPhoto(
+        frames.find((frame) => frame.target_id === name),
+        "frames.utc, frames.nasa_id, frames.target_id, frames.instrument",
+        null
+      );
+    }
+    addPhoto(
+      frames.find((frame) => frame.nasa_id === CABIN_ID),
+      "frames.utc, frames.nasa_id, frames.camera_label",
+      null
+    );
+    const windowStart = doc.window ? Date.parse(doc.window.start) : NaN;
+    const held = [...frames].reverse().find((frame) => frame.instrument === "cab2" && Date.parse(frame.utc) < windowStart);
+    addPhoto(
+      held,
+      "frames.utc, frames.nasa_id, frames.look, frames.camera_label, window.start",
+      doc.window ? doc.window.start : null
+    );
+    const looks = [];
+    for (const frame of frames) {
+      if (frame.instrument !== "cab2" || !frame.look || looks.includes(frame.look)) continue;
+      looks.push(frame.look);
+      addPhoto(frame, "frames.utc, frames.nasa_id, frames.look, frames.camera_label", null);
+    }
+    rows.sort((a, b) => Date.parse(a.utc) - Date.parse(b.utc) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return rows;
+  }
+
+  function coverage(doc, rangeKey, track, windowView) {
+    const span = rangeKey === "cab" && doc.cab_run ? doc.cab_run : doc.window;
+    const spanStart = Date.parse(span.start);
+    const spanEnd = Date.parse(span.end);
+    const clips = (doc.segments || [])
+      .filter((seg) => seg.track === track)
+      .map((seg) => {
+        const start = Math.max(Date.parse(seg.start), spanStart);
+        const end = Math.min(Date.parse(seg.end), spanEnd);
+        return end > start ? { start, end } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.start - b.start);
+    const audio = [];
+    for (const clip of clips) {
+      const last = audio[audio.length - 1];
+      if (last && clip.start <= last.end) last.end = Math.max(last.end, clip.end);
+      else audio.push({ start: clip.start, end: clip.end });
+    }
+    const silent = [];
+    let cursor = spanStart;
+    for (const row of audio) {
+      if (row.start > cursor) silent.push({ start: cursor, end: row.start });
+      cursor = Math.max(cursor, row.end);
+    }
+    if (cursor < spanEnd) silent.push({ start: cursor, end: spanEnd });
+    const photos = [];
+    for (const frame of doc.frames || []) {
+      const t = Date.parse(frame.utc);
+      if (t < spanStart || t > spanEnd) continue;
+      const cabin = frame.nasa_id === CABIN_ID;
+      const cab = frame.instrument === "cab2";
+      if (cabin || (windowView === "3" ? cab : !cab)) photos.push(frame.utc);
+    }
+    photos.sort();
+    const iso = (ms) => new Date(ms).toISOString();
+    return {
+      audio: audio.map((row) => ({ start: iso(row.start), end: iso(row.end) })),
+      silent: silent.map((row) => ({ start: iso(row.start), end: iso(row.end) })),
+      photos,
+    };
+  }
+
   // Cellular waits for the tap before the other window and the first recording.
   function prefetchBeforeTap(cellular) {
     return {
@@ -318,5 +617,11 @@
     prefetchBeforeTap: prefetchBeforeTap,
     screenMode: screenMode,
     transcriptSlice: transcriptSlice,
+    appearance: appearance,
+    clockOffset: clockOffset,
+    clockGap: clockGap,
+    visibleCabPair: visibleCabPair,
+    milestones: milestones,
+    coverage: coverage,
   };
 });

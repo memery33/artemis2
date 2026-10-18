@@ -32,6 +32,9 @@ const playBtn = document.getElementById("play");
 const taken = document.getElementById("taken");
 const clockNote = document.getElementById("clocknote");
 const backFly = document.getElementById("backfly");
+const coverageBar = document.getElementById("coverage");
+const momentsBtn = document.getElementById("moments");
+const momentsPanel = document.getElementById("moments-panel");
 
 const audio = new Audio();
 audio.id = "voice";
@@ -134,6 +137,7 @@ let shownNote = "";
 let shownClock = "";
 let shownPlate = "";
 let shownTaken = "";
+let shownCoverage = "";
 let shownRange = "";
 let shownRail = "";
 let lastFold = null;
@@ -210,6 +214,23 @@ function cabinAt(t) {
 
 function pair(t) {
   const list = frames();
+  if (windowView === "3") {
+    const span = activeSpan();
+    const picked = ArtemisLogic.visibleCabPair(
+      list,
+      t,
+      span ? tOf(span.start) : null,
+      span ? tOf(span.end) : null,
+      offsetS * 1000,
+    );
+    return {
+      cur: picked.current,
+      next: picked.next,
+      index: picked.index,
+      list,
+      outside: picked.outside,
+    };
+  }
   let index = 0;
   for (; index < list.length; index += 1) {
     if (tOf(list[index].utc) + offsetS * 1000 > t) break;
@@ -235,19 +256,19 @@ function visiblePair(t) {
   return view;
 }
 
-function takenText(frame) {
+function takenText(frame, outside) {
   if (!frame || windowView !== "3") return "";
   const when = `${frame.utc.slice(11, 19)} UTC`;
-  const age = utcMs - tOf(frame.utc);
+  const age = ArtemisLogic.clockOffset(utcMs, tOf(frame.utc));
+  if (outside) {
+    const parts = ["Outside this span.", `Taken ${when} UTC · ${frame.nasa_id}.`];
+    if (age) parts.push(age);
+    return parts.join(" ");
+  }
   const parts = [`Taken ${when} · ${frame.nasa_id}.`];
-  if (frame.look === "dark") {
-    parts.push("Real GoPro exposure, nearly black. Not a mask, and not brightened.");
-  } else {
-    parts.push("Shown as photographed. No window frame is drawn over this picture.");
-  }
-  if (age > 45000) {
-    parts.push(`Orion clock is ${fmt(utcMs)} UTC. This frame was not moved to match it.`);
-  }
+  const look = ArtemisLogic.appearance(frame);
+  if (look) parts.push(look);
+  if (age) parts.push(age);
   return parts.join(" ");
 }
 
@@ -537,7 +558,7 @@ function paint() {
   }
 
   const spanDoc = activeSpan();
-  const takenLine = takenText(shownFrame(view));
+  const takenLine = takenText(shownFrame(view), view.outside);
   if (takenLine !== shownTaken) {
     shownTaken = takenLine;
     taken.textContent = takenLine;
@@ -557,6 +578,7 @@ function paint() {
       scrub.value = next;
     }
   }
+  paintCoverage();
   const gap = !segmentAt(utcMs);
   const who = highlight || "the crew";
   const noteText = [
@@ -850,6 +872,65 @@ function seekTo(ms) {
   const span = activeSpan();
   utcMs = Math.min(tOf(span.end), Math.max(tOf(span.start), ms));
   ensureAudio();
+}
+
+function paintCoverage() {
+  if (!coverageBar || !doc) return;
+  const key = `${rangeKey}|${track}|${windowView}`;
+  if (key === shownCoverage) return;
+  shownCoverage = key;
+  const cov = ArtemisLogic.coverage(doc, rangeKey, track, windowView);
+  const spanDoc = activeSpan();
+  const span = Math.max(1, tOf(spanDoc.end) - tOf(spanDoc.start));
+  const origin = tOf(spanDoc.start);
+  coverageBar.replaceChildren();
+  for (const row of cov.audio) {
+    const mark = document.createElement("span");
+    mark.className = "audio";
+    mark.style.left = `${((tOf(row.start) - origin) / span) * 100}%`;
+    mark.style.width = `${((tOf(row.end) - tOf(row.start)) / span) * 100}%`;
+    coverageBar.appendChild(mark);
+  }
+  for (const utc of cov.photos) {
+    const mark = document.createElement("span");
+    mark.className = "photo";
+    mark.style.left = `${((tOf(utc) - origin) / span) * 100}%`;
+    coverageBar.appendChild(mark);
+  }
+}
+
+function fillMoments() {
+  if (!momentsPanel || !doc) return;
+  momentsPanel.replaceChildren();
+  const epoch = doc.mission_start ? tOf(doc.mission_start.utc) : null;
+  for (const row of ArtemisLogic.milestones(doc)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    const clocks = ArtemisLogic.formatClocks(tOf(row.utc), epoch);
+    const lines = [`${clocks.utc} · ${clocks.eastern} · ${clocks.met}`, row.label, row.source];
+    if (row.jumpUtc) {
+      lines.push(`Opens at ${row.jumpUtc.slice(11, 19)} UTC. This capture is outside the playable span.`);
+    }
+    button.textContent = lines.join("\n");
+    button.addEventListener("click", () => goToMilestone(row));
+    momentsPanel.appendChild(button);
+  }
+}
+
+function goToMilestone(row) {
+  if (row.range === "cab" && rangeKey !== "cab") {
+    savedFlybyMs = utcMs;
+    savedTrack = track;
+    rangeKey = "cab";
+    backFly.hidden = false;
+  } else if (row.range === "flyby" && rangeKey !== "flyby") {
+    rangeKey = "flyby";
+    backFly.hidden = true;
+  }
+  if (row.track) setTrack(row.track);
+  if (row.window && row.window !== windowView) presentWindow(row.window);
+  shownCoverage = "";
+  seekTo(tOf(row.jumpUtc || row.utc));
 }
 
 function setTrack(next) {
@@ -1347,11 +1428,12 @@ function paintRail() {
   document.getElementById("companion").setAttribute("aria-label", `Show ${label}`);
   if (frame) {
     showFile(img, frame.file, `${frame.credit}. ${label}.`);
-    const taken = `${label}. Taken ${frame.utc.slice(11, 19)} UTC.`;
-    const age = utcMs - tOf(frame.utc);
-    cap.textContent = otherWin === "3" && age > 45000
-      ? `${taken} Not moved to match the clock.`
-      : taken;
+    const when = frame.utc.slice(11, 19);
+    const gap = ArtemisLogic.clockGap(utcMs, tOf(frame.utc));
+    const where = otherView.outside ? "Outside this span. " : "";
+    cap.textContent = gap
+      ? `${label}. ${where}Taken ${when} UTC, ${gap}.`
+      : `${label}. ${where}Taken ${when} UTC.`;
   } else {
     if (img.getAttribute("src")) img.removeAttribute("src");
     img.alt = "";
@@ -1499,6 +1581,12 @@ async function boot() {
   window.addEventListener("pointercancel", () => {
     pointers = Math.max(0, pointers - 1);
     swipe = null;
+  });
+  momentsBtn.addEventListener("click", () => {
+    const open = momentsPanel.hidden;
+    momentsPanel.hidden = !open;
+    momentsBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) fillMoments();
   });
   scrub.addEventListener("pointerdown", () => { seeking = true; });
   scrub.addEventListener("input", () => {

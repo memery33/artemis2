@@ -1392,3 +1392,118 @@ def test_narrow_webp_variants_are_downscales_of_the_shipped_frames():
         assert max(vw, vh) <= 720
         assert vw <= sw and vh <= sh
         assert max(vw, vh) == min(720, max(sw, sh))
+
+
+def test_milestones_quote_real_timeline_fields():
+    script = r"""
+const { milestones, coverage, clockOffset, appearance } = require("./demo/logic.js");
+const doc = require("./demo/data/timeline.json");
+const rows = milestones(doc);
+const frame = doc.frames.find((item) => item.nasa_id === "art002e041321");
+const now = Date.parse("2026-04-06T19:34:05Z");
+const flyby = coverage(doc, "flyby", "pcd3", "3");
+console.log(JSON.stringify({
+  ids: rows.map((row) => row.id),
+  closest: rows.some((row) => /closest/i.test(row.label + row.source)),
+  aristarchus: rows.find((row) => row.id === "quote:Aristarchus Plateau"),
+  held: rows.find((row) => row.id === "photo:art002e041321"),
+  offset: clockOffset(now, Date.parse(frame.utc)),
+  appearance: appearance(frame),
+  photos: flyby.photos,
+  silent: coverage(doc, "flyby", "pcd3", "2").silent,
+}));
+"""
+    row = _node(script)
+    assert row["closest"] is False
+    assert row["ids"][0] == "photo:art002e041321"
+    assert "quote:Aristarchus Plateau" in row["ids"]
+    assert "quote:Reiner Gamma" in row["ids"]
+    assert "quote:Orientale Basin" in row["ids"]
+    assert "audio:art002a000021" in row["ids"]
+    assert row["aristarchus"]["label"] == "Wiseman: Alright team, we're diving back into Aristarchus."
+    assert row["aristarchus"]["utc"] == "2026-04-06T19:33:02.700Z"
+    assert row["aristarchus"]["source"].startswith("lines.utc")
+    assert row["held"]["utc"] == "2026-04-06T19:26:43.000Z"
+    assert row["held"]["jumpUtc"] == "2026-04-06T19:33:00.000Z"
+    assert "bright patch" in row["appearance"]
+    assert "nearly black" not in row["appearance"].lower()
+    assert row["offset"] == "Photo taken 7 min 22 s before this clock. Not moved to match it."
+    assert "2026-04-06T19:34:44.000Z" in row["photos"]
+    assert "2026-04-06T19:26:43.000Z" not in row["photos"]
+    assert row["silent"][0]["end"] == "2026-04-06T19:33:01.758Z"
+
+
+def test_cab_cam_prefers_the_nearest_frame_inside_the_span():
+    script = r"""
+const { visibleCabPair, clockOffset } = require("./demo/logic.js");
+const doc = require("./demo/data/timeline.json");
+const start = Date.parse(doc.window.start);
+const end = Date.parse(doc.window.end);
+const at = (iso) => visibleCabPair(doc.frames, Date.parse(iso), start, end, 0);
+const clock = at("2026-04-06T19:34:05Z");
+const early = at("2026-04-06T19:33:10Z");
+const tie = at("2026-04-06T19:38:44Z");
+const afterTie = at("2026-04-06T19:38:45Z");
+const empty = visibleCabPair(
+  doc.frames,
+  Date.parse("2026-04-06T19:33:10Z"),
+  Date.parse("2026-04-06T19:33:00Z"),
+  Date.parse("2026-04-06T19:33:30Z"),
+  0,
+);
+console.log(JSON.stringify({
+  clock: clock.current && clock.current.nasa_id,
+  clockUtc: clock.current && clock.current.utc,
+  clockOutside: clock.outside,
+  age: clockOffset(Date.parse("2026-04-06T19:34:05Z"), Date.parse(clock.current.utc)),
+  early: early.current && early.current.nasa_id,
+  tie: tie.current && tie.current.nasa_id,
+  afterTie: afterTie.current && afterTie.current.nasa_id,
+  empty: empty.current && empty.current.nasa_id,
+  emptyOutside: empty.outside,
+  emptyNext: empty.next,
+  emptyAge: clockOffset(Date.parse("2026-04-06T19:33:10Z"), Date.parse(empty.current.utc)),
+}));
+"""
+    row = _node(script)
+    assert row["clock"] == "art002e041322"
+    assert row["clockUtc"] == "2026-04-06T19:34:44.000Z"
+    assert row["clockOutside"] is False
+    assert row["age"] == "Photo taken 39 s after this clock."
+    assert row["early"] == "art002e041322"
+    assert row["tie"] == "art002e041322"
+    assert row["afterTie"] == "art002e041323"
+    assert row["empty"] == "art002e041321"
+    assert row["emptyOutside"] is True
+    assert row["emptyNext"] is None
+    assert "before this clock" in row["emptyAge"]
+
+
+def test_dark_cab_frame_is_mostly_dark_with_a_middle_patch():
+    from PIL import Image
+
+    image = Image.open(ROOT / "demo/data/images/art002e041321.webp").convert("RGB")
+    small = image.resize((80, 60))
+    pixels = list(small.getdata())
+    luminance = [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in pixels]
+    mean = sum(luminance) / len(luminance)
+    assert mean < 15
+
+    width, height = image.size
+    step = 3
+    bright = 0
+    counted = 0
+    sx = sy = 0
+    source = image.convert("L").load()
+    for y in range(0, height, step):
+        for x in range(0, width, step):
+            counted += 1
+            if source[x, y] > 40:
+                bright += 1
+                sx += x
+                sy += y
+    assert bright > 0
+    fraction = bright / counted
+    assert fraction < 0.05
+    assert 0.4 < (sx / bright) / width < 0.7
+    assert 0.4 < (sy / bright) / height < 0.7
