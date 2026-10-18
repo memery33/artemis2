@@ -68,6 +68,7 @@ function useSmallImages() {
     !!(link && link.saveData),
     link && link.effectiveType,
     foldQuery.matches,
+    window.devicePixelRatio || 1,
   );
 }
 function media(file) {
