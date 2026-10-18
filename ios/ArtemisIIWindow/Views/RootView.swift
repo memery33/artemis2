@@ -121,14 +121,12 @@ struct StageView: View {
 
 struct PhoneLayout: View {
     var body: some View {
-        ViewThatFits(in: .vertical) {
+        ScrollView {
             PhoneColumn()
-            ScrollView {
-                PhoneColumn()
-            }
-            .scrollBounceBehavior(.basedOnSize)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .scrollBounceBehavior(.basedOnSize)
+        .accessibilityIdentifier("phone-column")
+        .safeAreaInset(edge: .bottom, spacing: 8) {
             DockBar()
         }
     }
@@ -141,16 +139,20 @@ struct LandscapeLayout: View {
     var body: some View {
         GeometryReader { geo in
             let rail = min(156, max(128, geo.size.width * 0.18))
+            let inset: CGFloat = 6
+            // The rail already scrolls. A fixed height is what makes that
+            // scroll view clip, on a 375pt phone as well as a 402pt one.
+            let railHeight = max(44, geo.size.height - inset * 2)
             HStack(alignment: .top, spacing: 8) {
                 WindowPane(glassChrome: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 DockBar(placement: .rail)
-                    .frame(width: rail)
-                    .frame(maxHeight: .infinity)
+                    .frame(width: rail, height: railHeight)
             }
             .padding(.leading, 8)
             .padding(.trailing, 4)
-            .padding(.vertical, 6)
+            .padding(.vertical, inset)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
     }
 }

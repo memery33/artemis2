@@ -38,12 +38,14 @@ struct DockBar: View {
                     Text("Moves the real recording toward this window. Nothing is added.")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.7))
+                        .accessibilityIdentifier("spatial-note")
                 }
             }
             .toggleStyle(.switch)
             .tint(.white)
             .font(.subheadline)
             .foregroundStyle(.white)
+            .accessibilityIdentifier("spatial-toggle")
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
@@ -87,6 +89,7 @@ struct DockBar: View {
                     Text("Spatial")
                 }
                 .accessibilityHint("Moves the real recording toward this window. Nothing is added.")
+                .accessibilityIdentifier("spatial-toggle")
                 .toggleStyle(.switch)
                 .tint(.white)
                 .font(.subheadline)
@@ -109,6 +112,7 @@ struct DockBar: View {
             .padding(.vertical, 4)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .accessibilityIdentifier("landscape-rail")
     }
 
     private var playButton: some View {

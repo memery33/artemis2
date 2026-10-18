@@ -416,36 +416,71 @@ struct TargetMap: View {
         let targets = MapProjection.geographicTargets(model.timeline?.targets ?? [])
         VStack(alignment: .leading, spacing: 4) {
             Canvas { context, size in
-                var placed: [CGPoint] = []
+                let plateWidth = Double(size.width)
+                let plateHeight = max(1, Double(size.height) - 8)
+                let inset = 3.0
+                let bounds = MapProjection.LabelBounds(
+                    x: inset,
+                    y: inset,
+                    width: max(0, plateWidth - inset * 2),
+                    height: max(0, Double(size.height) - inset * 2)
+                )
+                var anchors: [MapProjection.LabelAnchor] = []
+                var lines: [String: GraphicsContext.ResolvedText] = [:]
+                var measured: [String: CGSize] = [:]
                 for target in targets {
                     guard let raw = MapProjection.point(
                         lon: target.lon,
                         lat: target.lat,
-                        width: Double(size.width),
-                        height: Double(size.height - 8)
+                        width: plateWidth,
+                        height: plateHeight
                     ) else { continue }
-                    let x = CGFloat(raw.x)
-                    var y = CGFloat(raw.y)
-                    for prior in placed where abs(prior.x - x) < 90 && abs(prior.y - y) < 13 {
-                        y = prior.y + 13
-                    }
-                    let dot = CGPoint(x: x, y: y)
-                    placed.append(dot)
+                    let text = Text(target.name).font(.system(size: 9)).foregroundStyle(.white)
+                    let line = context.resolve(text)
+                    let textSize = line.measure(in: CGSize(width: 480, height: 40))
+                    anchors.append(
+                        MapProjection.LabelAnchor(
+                            name: target.name,
+                            x: raw.x,
+                            y: raw.y,
+                            width: Double(textSize.width),
+                            height: Double(textSize.height)
+                        )
+                    )
+                    lines[target.name] = line
+                    measured[target.name] = textSize
+                }
+                let boxes = MapProjection.fitLabels(anchors, in: bounds)
+                for box in boxes {
+                    let dot = CGPoint(
+                        x: min(max(4.0, box.dotX), plateWidth - 4),
+                        y: min(max(4.0, box.dotY), Double(size.height) - 4)
+                    )
                     let mark = CGRect(x: dot.x - 2.5, y: dot.y - 2.5, width: 5, height: 5)
                     context.fill(Path(ellipseIn: mark), with: .color(.white))
-                    context.draw(
-                        Text(target.name).font(.system(size: 9)).foregroundStyle(.white),
-                        at: CGPoint(x: dot.x + 7, y: dot.y),
-                        anchor: .leading
-                    )
+                    guard let line = lines[box.name] else { continue }
+                    let rect = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
+                    if let natural = measured[box.name],
+                       abs(natural.width - rect.width) < 0.75,
+                       abs(natural.height - rect.height) < 0.75 {
+                        context.draw(line, at: CGPoint(x: rect.midX, y: rect.midY), anchor: .center)
+                    } else {
+                        context.draw(line, in: rect)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.white.opacity(0.04))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text("Named targets. Not a window boresight. Hertzsprung is not plotted.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("geographic-targets")
         .accessibilityLabel("Geographic targets from the flyby. Hertzsprung is not plotted.")
     }
 }
