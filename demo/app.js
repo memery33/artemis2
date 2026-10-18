@@ -1087,18 +1087,53 @@ function publishQuote(say, full) {
   subs.setAttribute("aria-label", spoken);
 }
 
-function prefixQuote(full, count) {
-  if (count >= full.length) return full;
-  const raw = full.slice(0, Math.max(1, count));
-  const word = raw.replace(/\s+\S*$/, "").trimEnd();
-  const slice = word || raw.trimEnd();
-  return `${slice}…`;
+function overlapArea(a, b) {
+  const x = Math.max(a.left, b.left);
+  const y = Math.max(a.top, b.top);
+  const right = Math.min(a.right, b.right);
+  const bottom = Math.min(a.bottom, b.bottom);
+  if (right <= x || bottom <= y) return 0;
+  return (right - x) * (bottom - y);
 }
 
-// Long quotes on a narrow glass wrap past three lines and leave the pane.
-// Full width is applied first. 0.9em is the readable step down. Whatever
-// still does not fit is cut, with an ellipsis, until the text is inside.
-// Under 320px the quote moves onto the bezel instead, and the words stay whole.
+function textClipped(el) {
+  if (!el) return false;
+  return el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1;
+}
+
+// The clock chip is the top chrome. A bezel line has to sit under it, inside
+// the viewport, and still above the glass.
+function bezelSitsClean() {
+  const sub = subs.getBoundingClientRect();
+  const glass = document.getElementById("glass").getBoundingClientRect();
+  const clocks = document.getElementById("clocks").getBoundingClientRect();
+  const creditBox = credit.getBoundingClientRect();
+  if (sub.width <= 0 || sub.height <= 0) return false;
+  if (sub.top < clocks.bottom - 0.5 || overlapArea(sub, clocks) > 0) return false;
+  if (sub.left < -0.5 || sub.right > window.innerWidth + 0.5) return false;
+  if (sub.bottom > window.innerHeight + 0.5) return false;
+  if (sub.bottom > glass.top + 0.5) return false;
+  if (overlapArea(sub, creditBox) > 0) return false;
+  if (!glance.hidden) {
+    const card = glance.getBoundingClientRect();
+    if (card.width > 0 && overlapArea(sub, card) > 0) return false;
+  }
+  return !textClipped(subs.querySelector(".say")) && !textClipped(subs.querySelector(".who"));
+}
+
+function enableBezel() {
+  stage.classList.remove("subs-beside", "subs-stack", "subs-wide");
+  stage.classList.add("subs-bezel");
+  const glass = document.getElementById("glass").getBoundingClientRect();
+  const card = glance.getBoundingClientRect();
+  stage.style.setProperty("--subs-bezel-left", `${bezelLeft(glass, card).toFixed(2)}px`);
+  stage.style.setProperty("--subs-fit", "0px");
+}
+
+// The glass holds a quote only when the whole line, speaker included, is
+// inside it in three lines or fewer. 0.9em is the first step down. If that
+// still does not fit, the quote moves onto the bezel at full text. Smaller
+// steps are only so that bezel stays under the clock. Crew words are never cut.
 function settleQuote() {
   const say = subs.querySelector(".say");
   if (!say || stage.classList.contains("touch")) {
@@ -1108,53 +1143,48 @@ function settleQuote() {
   }
   const full = say.dataset.full || say.textContent;
   say.dataset.full = full;
-  if (stage.classList.contains("subs-bezel")) {
-    say.textContent = full;
-    stage.style.setProperty("--subs-scale", "1");
-    stage.style.setProperty("--subs-fit", "0px");
-    publishQuote(say, full);
-    return;
-  }
-  const narrowFree = window.innerWidth < 600 && !stage.classList.contains("subs-beside");
-  if (!narrowFree) {
-    say.textContent = full;
-    stage.style.setProperty("--subs-scale", "1");
-    fitSubsInWindow();
-    publishQuote(say, full);
-    return;
-  }
-  const tryFull = (scale) => {
+  say.textContent = full;
+  const tryGlass = (scale) => {
+    stage.classList.remove("subs-bezel");
     stage.style.setProperty("--subs-scale", scale);
-    say.textContent = full;
     fitSubsInWindow();
     return quoteFits();
   };
-  if (tryFull("1") || tryFull("0.9")) {
+  const tryGlassScales = (scales) => {
+    for (const scale of scales) {
+      if (tryGlass(scale)) return true;
+    }
+    return false;
+  };
+  if (tryGlassScales(["1", "0.9"])) {
     publishQuote(say, full);
     return;
   }
-  const clampAt = (scale) => {
-    stage.style.setProperty("--subs-scale", scale);
-    let best = "";
-    let lo = 1;
-    let hi = full.length;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      say.textContent = prefixQuote(full, mid);
-      fitSubsInWindow();
-      if (quoteFits()) {
-        best = say.textContent;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
+  const beside = stage.classList.contains("subs-beside");
+  const stacked = stage.classList.contains("subs-stack");
+  if (!beside && !stacked && !stage.classList.contains("subs-wide") && glance.hidden) {
+    stage.classList.add("subs-wide");
+    if (tryGlassScales(["1", "0.9"])) {
+      publishQuote(say, full);
+      return;
     }
-    if (!best) return false;
-    say.textContent = best;
-    fitSubsInWindow();
-    return true;
+  }
+  const tryBezel = (scales) => {
+    enableBezel();
+    for (const scale of scales) {
+      stage.style.setProperty("--subs-scale", scale);
+      if (bezelSitsClean()) return scale;
+    }
+    return "";
   };
-  if (!clampAt("1")) clampAt("0.9");
+  let used = tryBezel(["1", "0.9"]);
+  if (!used && tryGlassScales(["0.8", "0.72", "0.64"])) {
+    publishQuote(say, full);
+    return;
+  }
+  if (!used) used = tryBezel(["0.8", "0.72", "0.64"]);
+  stage.style.setProperty("--subs-scale", used || "0.64");
+  if (!stage.classList.contains("subs-bezel")) enableBezel();
   publishQuote(say, full);
 }
 
@@ -1162,7 +1192,7 @@ function settleQuote() {
 // the card. Then it runs from the card's right edge to the window edge, or,
 // when that column is under 160px or wraps past three lines, the card stacks
 // above it. Under 600px with no card beside the line, the quote uses the
-// glass. Under 320px the quote leaves the glass and sits on the bezel.
+// glass. settleQuote moves a line the glass cannot hold onto the bezel.
 // Nothing here runs from the animation frame.
 function bezelLeft(glass, card) {
   const win = document.getElementById("window").getBoundingClientRect();
@@ -1191,14 +1221,8 @@ function placeSubs() {
     const edge = Math.max(16, window.innerWidth * 0.02);
     const gap = 16;
     const narrow = window.innerWidth < 600;
-    const bezel = window.innerWidth < 320;
     let mode = "";
-    if (!stage.classList.contains("touch") && bezel) {
-      mode = "bezel";
-      besideTooTight = false;
-      besideRoom = -1;
-      stage.style.setProperty("--subs-bezel-left", `${bezelLeft(glass, card).toFixed(2)}px`);
-    } else if (!stage.classList.contains("touch") && !glance.hidden && card.width > 0 && glass.width > 0) {
+    if (!stage.classList.contains("touch") && !glance.hidden && card.width > 0 && glass.width > 0) {
       const room = glass.right - edge - (card.right + gap);
       if (Math.abs(room - besideRoom) > 1) {
         besideRoom = room;
