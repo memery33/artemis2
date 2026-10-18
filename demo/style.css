@@ -37,6 +37,18 @@ button, input[type="range"] { touch-action: manipulation; }
   height: 100%;
   height: 100dvh;
   touch-action: pan-y pinch-zoom;
+  /* Credit inset from the bottom of the glass. The dock is not on the glass
+     unless a touch layout's window actually reaches it. */
+  --dock-clear: max(10px, env(safe-area-inset-bottom));
+}
+
+#stage.touch {
+  --dock-clear: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
+}
+
+#stage.compact,
+#stage.fold {
+  --dock-clear: max(10px, env(safe-area-inset-bottom));
 }
 
 /* The viewport is the inner face of a cone panel, not a page with a
@@ -185,9 +197,6 @@ button, input[type="range"] { touch-action: manipulation; }
   border-radius: clamp(12px, 1.8vw, 30px);
   overflow: hidden;
   background: #000;
-  /* Same clearance the cabin card uses above the dock. The credit lives in
-     that band. The subtitle sits above the band. */
-  --dock-clear: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.65),
     inset 0 18px 28px rgba(0, 0, 0, 0.28);
@@ -236,10 +245,7 @@ button, input[type="range"] { touch-action: manipulation; }
   position: absolute;
   z-index: 3;
   left: max(16px, 2vw);
-  /* Clears the credit band at 1440×900 and at 890×626. A narrow portrait
-     window is too short for this lift; the rule below parks the card
-     under the glass instead. */
-  bottom: 32vh;
+  bottom: max(16px, 3vh);
   width: min(210px, 22vw);
   margin: 0;
   padding: 8px 8px 10px;
@@ -269,32 +275,32 @@ button, input[type="range"] { touch-action: manipulation; }
   bottom: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
 }
 
-/* A fine pointer at a phone width keeps the desktop window, centered, so
-   32vh drops the cabin card through the credit. Sit the card in the cabin
-   below that window. The same spot stays clear when the controls are open. */
-@media (orientation: portrait) and (max-width: 560px) {
+/* A wide window reaches the lower left, so 3vh runs through the credit.
+   124px clears it at 1440×900 and at 890×626. A narrow window does not. */
+@media (min-width: 800px) {
   #stage:not(.touch) #glance {
-    top: auto;
-    left: auto;
-    right: max(16px, env(safe-area-inset-right));
-    bottom: max(16px, env(safe-area-inset-bottom));
-    width: min(168px, 44vw);
-    max-height: calc(50vh - 48vw / 1.58 - 28px);
-    max-height: calc(50dvh - 48vw / 1.58 - 28px);
-    overflow: hidden;
+    bottom: max(16px, 3vh, 124px);
   }
 }
 
 #subs {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--dock-clear) + 4.8em);
+  bottom: max(7%, calc(var(--dock-clear) + 2em));
   z-index: 3;
   width: max-content;
   max-width: 62%;
   transform: translateX(-50%);
   text-align: center;
   pointer-events: none;
+}
+
+/* A phone-width desktop window wraps the credit to two lines. 7% sits on
+   that second line. Keep the subtitle just above it. */
+@media (max-width: 560px) {
+  #stage:not(.touch) #subs {
+    bottom: max(7%, calc(var(--dock-clear) + 3.4em));
+  }
 }
 
 /* A dim that hugs the words. The wide plate across the Moon is gone.
@@ -362,6 +368,15 @@ button, input[type="range"] { touch-action: manipulation; }
   z-index: 4;
   line-height: 1.35;
   text-align: left;
+}
+
+/* Same faint chip as the clock, only as wide as the line. Not a band. */
+#stage:not(.touch) #credit {
+  right: auto;
+  max-width: calc(100% - 32px);
+  padding: 3px 8px 4px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.58);
 }
 
 #taken {
@@ -665,7 +680,7 @@ button.on, button[aria-pressed="true"] {
     bottom: calc(max(8px, env(safe-area-inset-bottom)) + 60px);
   }
   #stage.compact #subs {
-    bottom: calc(var(--dock-clear) + 4.8em);
+    bottom: max(10%, calc(var(--dock-clear) + 2.4em));
     max-width: 78%;
   }
   /* The portrait map fills the lower left. The credit sits in the lower right, above the dock. */
@@ -730,7 +745,7 @@ button.on, button[aria-pressed="true"] {
     max-width: calc(100% - 210px - env(safe-area-inset-left) - env(safe-area-inset-right));
   }
   #stage.compact #subs {
-    bottom: calc(var(--dock-clear) + 4.8em);
+    bottom: max(12%, calc(var(--dock-clear) + 2.4em));
     max-width: 68%;
   }
   /* The landscape map is the upper left. The credit sits lower right, above the dock. */
