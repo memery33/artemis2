@@ -208,6 +208,24 @@ final class MilestonesTests: XCTestCase {
         XCTAssertFalse(ClockNudge.back.scrubs)
     }
 
+    @MainActor
+    func testAccessibilityAdjustSkipsAboutFifteenSecondsWithoutScrubbing() {
+        let model = PlaybackModel()
+        XCTAssertNil(model.loadError)
+        XCTAssertNotNil(model.activeSpan)
+        XCTAssertFalse(model.scrubbing)
+        let start = model.utc
+
+        model.accessibilityAdjust(.increment)
+        XCTAssertEqual(model.utc.timeIntervalSince(start), ClockNudge.interval, accuracy: 0.5)
+        XCTAssertFalse(model.scrubbing)
+
+        let forwarded = model.utc
+        model.accessibilityAdjust(.decrement)
+        XCTAssertEqual(model.utc.timeIntervalSince(forwarded), -ClockNudge.interval, accuracy: 0.5)
+        XCTAssertFalse(model.scrubbing)
+    }
+
     func testPhotoAccessLabelOmitsTheLiveGap() throws {
         let frame = try XCTUnwrap(timeline.frames.first { $0.nasaID == "art002e041322" })
         let spoken = FrameSelection.photoAccessLabel(frame)

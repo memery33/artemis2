@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import MediaPlayer
+import SwiftUI
 import UIKit
 
 /// Tokens owned for the life of the player. Main-actor isolated, so it is Sendable
@@ -73,7 +74,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var pan: Float = 0
     private var rebuilding = false
     /// The mission scrubber owns the clock until the finger lifts.
-    private var scrubbing = false
+    private(set) var scrubbing = false
     private var resumeAfterInterrupt = false
     private var commandsInstalled = false
     private var lastWall: CFTimeInterval?
@@ -397,6 +398,21 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     func skip(by seconds: TimeInterval) {
         seek(to: utc.addingTimeInterval(seconds))
+    }
+
+    /// VoiceOver adjustable action on the mission scrubber. A skip, not a scrub.
+    func accessibilityAdjust(_ direction: AccessibilityAdjustmentDirection) {
+        let nudge: ClockNudge?
+        switch direction {
+        case .increment:
+            nudge = .forward
+        case .decrement:
+            nudge = .back
+        @unknown default:
+            nudge = nil
+        }
+        guard let nudge, !nudge.scrubs else { return }
+        skip(by: nudge.seconds)
     }
 
     /// Lock-screen scrubber. `seconds` is elapsed time inside the active span.

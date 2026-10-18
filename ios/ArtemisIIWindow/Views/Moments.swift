@@ -48,17 +48,7 @@ struct MissionScrubber: View {
             .accessibilityIdentifier("mission-scrubber")
             .accessibilityAdjustableAction { direction in
                 armed = false
-                let nudge: ClockNudge?
-                switch direction {
-                case .increment:
-                    nudge = .forward
-                case .decrement:
-                    nudge = .back
-                @unknown default:
-                    nudge = nil
-                }
-                guard let nudge, !nudge.scrubs else { return }
-                model.skip(by: nudge.seconds)
+                model.accessibilityAdjust(direction)
             }
             Text("Bar: audio. Ticks: photos. Empty: silence.")
                 .font(.caption2)
