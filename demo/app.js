@@ -495,6 +495,11 @@ function paint() {
     easePlate(visible.complete && visible.naturalWidth ? visible : null);
   }
 
+  if (credit.textContent !== creditBandText) {
+    creditBandText = credit.textContent;
+    syncCreditBand();
+  }
+
   const cabin = cabinAt(utcMs);
   if (!cabin) {
     glance.hidden = true;
@@ -976,6 +981,15 @@ function openingSegment() {
   return doc.segments.find((seg) => seg.track === track && tOf(seg.end) > utcMs) || null;
 }
 
+let creditMeasured = "";
+let creditBandText = "";
+function syncCreditBand() {
+  const next = `${credit.getBoundingClientRect().height.toFixed(2)}px`;
+  if (next === creditMeasured) return;
+  creditMeasured = next;
+  stage.style.setProperty("--credit-measured", next);
+}
+
 function layoutChrome() {
   const fold = foldQuery.matches;
   const compact = coarseQuery.matches && !fold && compactQuery.matches;
@@ -993,6 +1007,7 @@ function layoutChrome() {
     shownId = null;
     shownRail = "";
   }
+  syncCreditBand();
 }
 
 function paintRail() {
@@ -1203,7 +1218,9 @@ async function boot() {
   window.addEventListener("resize", () => {
     layoutChrome();
     syncClockLane();
+    syncCreditBand();
   });
+  if (window.ResizeObserver) new ResizeObserver(syncCreditBand).observe(credit);
   if (window.ResizeObserver) new ResizeObserver(syncClockLane).observe(document.getElementById("clocks"));
   const relayout = () => {
     shownId = null;
