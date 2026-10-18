@@ -209,7 +209,7 @@ struct LicenseNote: Decodable, Equatable, Identifiable {
 
 enum ISO8601 {
     static func parse(_ string: String) throws -> Date {
-        if let date = fractional.date(from: string) ?? plain.date(from: string) {
+        if let date = date(from: string, fractional: true) ?? date(from: string, fractional: false) {
             return date
         }
         throw DecodingError.dataCorrupted(
@@ -217,15 +217,12 @@ enum ISO8601 {
         )
     }
 
-    private static let fractional: ISO8601DateFormatter = {
+    /// A fresh formatter per call. ISO8601DateFormatter is not Sendable, so it is not stored statically.
+    private static func date(from string: String, fractional: Bool) -> Date? {
         let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let plain: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
+        formatter.formatOptions = fractional
+            ? [.withInternetDateTime, .withFractionalSeconds]
+            : [.withInternetDateTime]
+        return formatter.date(from: string)
+    }
 }

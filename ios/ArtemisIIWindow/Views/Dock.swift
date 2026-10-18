@@ -216,6 +216,8 @@ struct AboutView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    Text("Orion Window: Artemis II Flyby")
+                        .font(.title3.weight(.semibold))
                     if let attribution = model.timeline?.attribution {
                         Text(attribution.credit)
                             .font(.headline)
@@ -261,7 +263,7 @@ struct AboutView: View {
                 .padding(20)
             }
             .background(Color.black)
-            .navigationTitle("About")
+            .navigationTitle("Orion Window")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

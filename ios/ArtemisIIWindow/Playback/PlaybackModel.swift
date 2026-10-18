@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import ImageIO
 import MediaPlayer
 import UIKit
 
@@ -8,9 +9,31 @@ enum MissionRange: Equatable {
     case cab
 }
 
+/// Tokens owned for the life of the player. Deinit is not main-actor isolated,
+/// so remote-command targets and the engine observer live here.
+private final class PlaybackLifetime: @unchecked Sendable {
+    var engineObserver: NSObjectProtocol?
+    var displayLink: CADisplayLink?
+    var commands: [(MPRemoteCommand, Any)] = []
+
+    func tearDown() {
+        if let engineObserver {
+            NotificationCenter.default.removeObserver(engineObserver)
+            self.engineObserver = nil
+        }
+        displayLink?.invalidate()
+        displayLink = nil
+        for (command, token) in commands {
+            command.removeTarget(token)
+        }
+        commands.removeAll()
+    }
+}
+
 /// One master clock. The crew recording is the time source while a real file
 /// is playing. Gaps, including the opening seconds before the first file,
 /// advance on the wall clock and stay silent. Nothing is synthesized.
+@MainActor
 final class PlaybackModel: NSObject, ObservableObject {
     static let spatialDefaultsKey = "artemis.spatial"
 
@@ -36,6 +59,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var currentFile: String?
     private var scheduledStart: TimeInterval = 0
     private var holdSeconds: TimeInterval = 0
+    /// Mission time when a file scheduled in the future should become audible.
+    private var holdUntil: Date?
     private var scheduleGeneration = 0
     private var usingEnvironment = false
     private var graphReady = false
@@ -43,13 +68,13 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var rebuilding = false
     private var resumeAfterInterrupt = false
     private var commandsInstalled = false
-    private var displayLink: CADisplayLink?
     private var lastWall: CFTimeInterval?
     private var lastInfoSecond = Int.min
     private var lastInfoPlaying = false
     private var lastArtID = ""
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private var unavailableFiles = Set<String>()
+    nonisolated private let lifetime = PlaybackLifetime()
 
     override init() {
         super.init()
@@ -59,10 +84,11 @@ final class PlaybackModel: NSObject, ObservableObject {
         configureEnvironment()
         engine.connect(player, to: engine.mainMixerNode, format: nil)
         observeNotifications()
+        observeEngineConfiguration()
     }
 
     deinit {
-        displayLink?.invalidate()
+        lifetime.tearDown()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -83,10 +109,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// so other audio is left alone until the viewer starts.
     func begin() {
         guard !arrived, timeline != nil else { return }
-        let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
+            try activateSpokenSession()
         } catch {
             engineFailed = true
         }
@@ -98,11 +122,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         play()
     }
 
-    func play() {
+    /// `fromHold` reschedules the real file at the offset saved across an interruption.
+    func play(fromHold: Bool = false) {
         guard timeline != nil else { return }
         if let end = activeSpan?.end, utc >= end, let start = activeSpan?.start {
             utc = start
             currentFile = nil
+            holdUntil = nil
+            holdSeconds = 0
         }
         playing = true
         resumeAfterInterrupt = false
@@ -110,8 +137,16 @@ final class PlaybackModel: NSObject, ObservableObject {
             refreshNowPlaying(force: true)
             return
         }
+        if let armed = holdUntil, armed > utc, let segment = segmentForCurrentFile() {
+            scheduleAtRealStart(segment, delay: armed.timeIntervalSince(utc))
+            refreshNowPlaying(force: true)
+            return
+        }
+        if fromHold, let file = audioFile, currentFile != nil {
+            reschedule(file: file, at: max(0, holdSeconds))
+        }
         do {
-            try AVAudioSession.sharedInstance().setActive(true)
+            try activateSpokenSession()
             if !engine.isRunning {
                 try engine.start()
             }
@@ -171,6 +206,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         range = .cab
         utc = timeline?.cabRun?.start ?? utc
+        holdUntil = nil
         setWindow(.cab)
         reloadAtCurrentTime()
     }
@@ -178,6 +214,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     func showFlyby() {
         range = .flyby
         utc = timeline?.window.start ?? utc
+        holdUntil = nil
         setWindow(.nikon)
         reloadAtCurrentTime()
     }
@@ -188,6 +225,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if target < span.start { target = span.start }
         if target > span.end { target = span.end }
         utc = target
+        holdUntil = nil
         rebuilding = true
         defer { rebuilding = false }
         if let segment = segment(at: utc) {
@@ -237,14 +275,19 @@ final class PlaybackModel: NSObject, ObservableObject {
             audioFile = nil
         }
         playing = true
+        holdUntil = nil
         seek(to: line.date)
-        if playing, !engineFailed {
+        guard playing, !engineFailed else { return }
+        do {
             if !engine.isRunning {
-                try? engine.start()
+                try AVAudioSession.sharedInstance().setActive(true)
+                try engine.start()
             }
             if let segment = segment(at: utc), currentFile == segment.file, audioFile != nil, !player.isPlaying {
                 player.play()
             }
+        } catch {
+            failEngine()
         }
     }
 
@@ -286,13 +329,16 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     func setSceneActive(_ active: Bool) {
         if active {
-            displayLink?.isPaused = false
-            if player.isPlaying, let segment = segmentForCurrentFile() {
+            lifetime.displayLink?.isPaused = false
+            if holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
                 utc = segment.start.addingTimeInterval(renderedSeconds())
                 lastWall = nil
             }
         } else {
-            displayLink?.isPaused = true
+            lifetime.displayLink?.isPaused = true
+            if playing {
+                chainForward(from: utc)
+            }
         }
     }
 
@@ -367,6 +413,7 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     private func failEngine() {
         playing = false
+        holdUntil = nil
         engineFailed = true
         player.stop()
         refreshNowPlaying(force: true)
@@ -375,6 +422,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     private func reloadAtCurrentTime() {
         currentFile = nil
         audioFile = nil
+        holdUntil = nil
         scheduleGeneration += 1
         player.stop()
         if playing { followSegment() }
@@ -382,7 +430,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func followSegment() {
-        guard playing, !engineFailed else { return }
+        guard playing, !engineFailed, holdUntil == nil else { return }
         guard let segment = segment(at: utc) else {
             if player.isPlaying {
                 holdSeconds = renderedSeconds()
@@ -449,7 +497,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
     }
 
-    private func reschedule(file: AVAudioFile, at seconds: TimeInterval) {
+    private func reschedule(file: AVAudioFile, at seconds: TimeInterval, when: AVAudioTime? = nil) {
         scheduleGeneration += 1
         let generation = scheduleGeneration
         player.stop()
@@ -472,14 +520,128 @@ final class PlaybackModel: NSObject, ObservableObject {
             file,
             startingFrame: start,
             frameCount: count,
-            at: nil,
+            at: when,
             completionHandler: { [weak self] in
-                DispatchQueue.main.async {
+                let endSeconds = actual + Double(count) / rate
+                Task { @MainActor in
                     guard let model = self, model.scheduleGeneration == generation else { return }
-                    model.holdSeconds = actual + Double(count) / rate
+                    model.holdSeconds = endSeconds
+                    model.segmentDidFinish()
                 }
             }
         )
+    }
+
+    /// The scheduled file reached its end. The display link is paused in the
+    /// background, so the next real file has to be armed here.
+    private func segmentDidFinish() {
+        guard playing, !rebuilding, !engineFailed else { return }
+        // The armed file has ended. Clear the pre-roll mark so the next file can chain
+        // even though the display link never ran to clear it.
+        holdUntil = nil
+        guard let segment = segmentForCurrentFile() else { return }
+        var nextUTC = segment.start.addingTimeInterval(holdSeconds)
+        if let spanEnd = activeSpan?.end {
+            nextUTC = min(nextUTC, spanEnd)
+        }
+        utc = nextUTC
+        if let spanEnd = activeSpan?.end, utc >= spanEnd {
+            pause(user: true)
+            return
+        }
+        chainForward(from: utc)
+    }
+
+    /// Plays the next real segment, or arms it at its own start time.
+    /// A span with nothing left to play pauses and sets the Now Playing rate to 0.
+    private func chainForward(from time: Date) {
+        guard playing, !engineFailed, !rebuilding, holdUntil == nil else { return }
+        if player.isPlaying, segment(at: time) != nil {
+            return
+        }
+        guard let next = upcomingSegment(after: time) else {
+            if lifetime.displayLink?.isPaused == true {
+                pause(user: false)
+            }
+            return
+        }
+        let delay = next.start.timeIntervalSince(time)
+        if delay <= 0.05 {
+            utc = max(time, next.start)
+            loadSegment(next)
+        } else if lifetime.displayLink?.isPaused == true {
+            scheduleAtRealStart(next, delay: delay)
+        }
+    }
+
+    /// The next real file on this track that starts at or after `time`, inside the span.
+    /// A file already playing is not selected again.
+    private func upcomingSegment(after time: Date) -> Segment? {
+        guard let timeline, let span = activeSpan else { return nil }
+        return timeline.segments
+            .filter { segment in
+                segment.track == trackID
+                    && segment.start >= span.start
+                    && segment.start < span.end
+                    && segment.start >= time - 0.05
+            }
+            .min { $0.start < $1.start }
+    }
+
+    /// Schedules the real file to begin after `delay` seconds of silence.
+    /// The silence is the gap in the archive, not a generated bed.
+    private func scheduleAtRealStart(_ segment: Segment, delay: TimeInterval) {
+        guard delay > 0.05 else {
+            loadSegment(segment)
+            return
+        }
+        guard !unavailableFiles.contains(segment.file) else { return }
+        guard let url = MediaStore.url(for: segment.file) else {
+            unavailableFiles.insert(segment.file)
+            return
+        }
+        let file: AVAudioFile
+        do {
+            file = try AVAudioFile(forReading: url)
+        } catch {
+            unavailableFiles.insert(segment.file)
+            return
+        }
+        audioFile = file
+        currentFile = segment.file
+        if !graphReady || usingEnvironment != spatial {
+            let restart = engine.isRunning
+            if restart {
+                engine.stop()
+            }
+            connectGraph(format: file.processingFormat)
+            if restart {
+                do {
+                    try engine.start()
+                } catch {
+                    failEngine()
+                    return
+                }
+            }
+        }
+        reschedule(file: file, at: 0, when: hostTime(after: delay))
+        holdUntil = segment.start
+        do {
+            if !engine.isRunning {
+                try engine.start()
+            }
+            if playing {
+                player.play()
+            }
+        } catch {
+            failEngine()
+        }
+    }
+
+    private func hostTime(after delay: TimeInterval) -> AVAudioTime {
+        let now = mach_absolute_time()
+        let seconds = AVAudioTime.seconds(forHostTime: now) + delay
+        return AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: seconds))
     }
 
     /// Sample time is relative to the scheduled segment, which itself starts
@@ -504,21 +666,32 @@ final class PlaybackModel: NSObject, ObservableObject {
     // MARK: - Clock
 
     private func startDisplayLink() {
-        guard displayLink == nil else { return }
+        guard lifetime.displayLink == nil else { return }
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
         link.add(to: .main, forMode: .common)
-        displayLink = link
+        lifetime.displayLink = link
     }
 
-    @objc private func tick(_ link: CADisplayLink) {
+    @objc nonisolated private func tick(_ link: CADisplayLink) {
+        MainActor.assumeIsolated {
+            self.tickOnMain(link)
+        }
+    }
+
+    private func tickOnMain(_ link: CADisplayLink) {
         guard !rebuilding else { return }
         let now = link.timestamp
         let rawDelta = lastWall.map { max(0, now - $0) } ?? 0
         lastWall = now
 
         if playing {
-            if player.isPlaying, let segment = segmentForCurrentFile() {
+            if let armed = holdUntil, utc < armed {
+                utc = utc.addingTimeInterval(rawDelta)
+                if utc >= armed {
+                    holdUntil = nil
+                }
+            } else if player.isPlaying, let segment = segmentForCurrentFile() {
                 utc = segment.start.addingTimeInterval(renderedSeconds())
                 if utc >= segment.end {
                     utc = segment.end
@@ -545,6 +718,12 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     // MARK: - Session
 
+    private func activateSpokenSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .spokenAudio, policy: .longFormAudio, options: [])
+        try session.setActive(true)
+    }
+
     private func observeNotifications() {
         let center = NotificationCenter.default
         center.addObserver(
@@ -567,39 +746,86 @@ final class PlaybackModel: NSObject, ObservableObject {
         )
     }
 
-    @objc private func handleRouteChange(_ note: Notification) {
-        let reason: AVAudioSession.RouteChangeReason? = Self.rawValue(note, key: AVAudioSessionRouteChangeReasonKey)
-        guard let reason = reason, reason == .oldDeviceUnavailable else { return }
-        DispatchQueue.main.async { [weak self] in
-            self?.pause(user: true)
+    private func observeEngineConfiguration() {
+        if let existing = lifetime.engineObserver {
+            NotificationCenter.default.removeObserver(existing)
+        }
+        lifetime.engineObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.recoverEngineConfiguration()
+            }
         }
     }
 
-    @objc private func handleInterruption(_ note: Notification) {
-        let type: AVAudioSession.InterruptionType? = Self.rawValue(note, key: AVAudioSessionInterruptionTypeKey)
+    /// The engine dropped its connections. Put the same file back at the same sample.
+    private func recoverEngineConfiguration() {
+        guard !rebuilding else { return }
+        let seconds = renderedSeconds()
+        let wasPlaying = playing && (player.isPlaying || holdUntil != nil)
+        let armed = holdUntil
+        let armedSegment = segmentForCurrentFile()
+        rebuilding = true
+        defer { rebuilding = false }
+        scheduleGeneration += 1
+        player.stop()
+        graphReady = false
+        usingEnvironment = false
+        if let armed, armed > utc, let armedSegment {
+            scheduleAtRealStart(armedSegment, delay: max(0, armed.timeIntervalSince(utc)))
+            if !wasPlaying {
+                player.pause()
+            }
+            return
+        }
+        guard let file = audioFile else { return }
+        connectGraph(format: file.processingFormat)
+        reschedule(file: file, at: seconds)
+        do {
+            try engine.start()
+            if wasPlaying {
+                player.play()
+            }
+        } catch {
+            failEngine()
+        }
+    }
+
+    @objc nonisolated private func handleRouteChange(_ note: Notification) {
+        let reason: AVAudioSession.RouteChangeReason? = Self.reason(note, key: AVAudioSessionRouteChangeReasonKey)
+        guard let reason, reason == .oldDeviceUnavailable else { return }
+        Task { @MainActor in
+            self.pause(user: true)
+        }
+    }
+
+    @objc nonisolated private func handleInterruption(_ note: Notification) {
+        let type: AVAudioSession.InterruptionType? = Self.reason(note, key: AVAudioSessionInterruptionTypeKey)
         let optionsNumber = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber
         let options = AVAudioSession.InterruptionOptions(rawValue: optionsNumber?.uintValue ?? 0)
-        guard let type = type else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let model = self else { return }
+        guard let type else { return }
+        Task { @MainActor in
             switch type {
             case .began:
-                model.resumeAfterInterrupt = model.playing
-                model.pause(user: false)
+                self.resumeAfterInterrupt = self.playing
+                self.pause(user: false)
             case .ended:
-                if options.contains(.shouldResume), model.resumeAfterInterrupt {
-                    model.play()
+                if options.contains(.shouldResume), self.resumeAfterInterrupt {
+                    self.play(fromHold: true)
                 }
-                model.resumeAfterInterrupt = false
+                self.resumeAfterInterrupt = false
             @unknown default:
                 break
             }
         }
     }
 
-    @objc private func handleMediaReset(_ note: Notification) {
-        DispatchQueue.main.async { [weak self] in
-            self?.rebuildEngine()
+    @objc nonisolated private func handleMediaReset(_ note: Notification) {
+        Task { @MainActor in
+            self.rebuildEngine()
         }
     }
 
@@ -613,21 +839,26 @@ final class PlaybackModel: NSObject, ObservableObject {
         environment = AVAudioEnvironmentNode()
         audioFile = nil
         currentFile = nil
+        holdUntil = nil
         graphReady = false
         usingEnvironment = false
         attachGraph()
         configureEnvironment()
         engine.connect(player, to: engine.mainMixerNode, format: nil)
+        observeEngineConfiguration()
         if arrived {
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-            try? AVAudioSession.sharedInstance().setActive(true)
+            do {
+                try activateSpokenSession()
+            } catch {
+                failEngine()
+            }
         }
         if playing {
             followSegment()
         }
     }
 
-    private static func rawValue<T: RawRepresentable>(_ note: Notification, key: String) -> T? where T.RawValue == UInt {
+    nonisolated private static func reason<T: RawRepresentable>(_ note: Notification, key: String) -> T? where T.RawValue == UInt {
         guard let number = note.userInfo?[key] as? NSNumber else { return nil }
         return T(rawValue: number.uintValue)
     }
@@ -647,46 +878,48 @@ final class PlaybackModel: NSObject, ObservableObject {
         center.skipForwardCommand.preferredIntervals = [NSNumber(value: 15)]
         center.skipBackwardCommand.preferredIntervals = [NSNumber(value: 15)]
 
-        center.playCommand.addTarget { [weak self] _ in
-            self?.performOnMain { $0.play() }
-            return .success
+        add(center.playCommand) { model, _ in
+            model.play()
         }
-        center.pauseCommand.addTarget { [weak self] _ in
-            self?.performOnMain { $0.pause(user: true) }
-            return .success
+        add(center.pauseCommand) { model, _ in
+            model.pause(user: true)
         }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.performOnMain { $0.toggle() }
-            return .success
+        add(center.togglePlayPauseCommand) { model, _ in
+            model.toggle()
         }
-        center.skipForwardCommand.addTarget { [weak self] event in
+        add(center.skipForwardCommand) { model, event in
             let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
-            self?.performOnMain { $0.skip(by: interval) }
-            return .success
+            model.skip(by: interval)
         }
-        center.skipBackwardCommand.addTarget { [weak self] event in
+        add(center.skipBackwardCommand) { model, event in
             let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
-            self?.performOnMain { $0.skip(by: -interval) }
-            return .success
+            model.skip(by: -interval)
         }
-        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+        let positionCommand = center.changePlaybackPositionCommand
+        let positionToken = positionCommand.addTarget { event in
             guard let position = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime else {
                 return .commandFailed
             }
-            self?.performOnMain { $0.seekElapsed(position) }
+            Task { @MainActor [weak self] in
+                self?.seekElapsed(position)
+            }
             return .success
         }
+        lifetime.commands.append((positionCommand, positionToken))
     }
 
-    private func performOnMain(_ work: @escaping (PlaybackModel) -> Void) {
-        if Thread.isMainThread {
-            work(self)
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                guard let model = self else { return }
-                work(model)
+    private func add(
+        _ command: MPRemoteCommand,
+        action: @escaping @MainActor (PlaybackModel, MPRemoteCommandEvent) -> Void
+    ) {
+        let token = command.addTarget { event in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                action(self, event)
             }
+            return .success
         }
+        lifetime.commands.append((command, token))
     }
 
     private func refreshNowPlaying(force: Bool) {
@@ -722,15 +955,20 @@ final class PlaybackModel: NSObject, ObservableObject {
     private func artworkImage() -> UIImage? {
         if let frames = timeline?.frames,
            let frame = FrameSelection.visiblePair(at: utc, window: window, frames: frames).current,
-           let image = MediaStore.image(file: frame.file, small: false) {
+           let image = MediaStore.image(file: frame.file, small: true, maxPixel: 720) {
             return image
         }
-        return MediaStore.image(file: "images/art002e016184.webp", small: false)
+        return MediaStore.image(file: "images/art002e016184.webp", small: true, maxPixel: 720)
     }
 }
 
+@MainActor
 enum MediaStore {
-    static var images: [String: UIImage] = [:]
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 64 * 1024 * 1024
+        return cache
+    }()
 
     static func demoRoot() -> URL? {
         guard let root = Bundle.main.resourceURL?.appendingPathComponent("DemoData") else { return nil }
@@ -749,11 +987,40 @@ enum MediaStore {
         return url(for: sibling) != nil ? sibling : file
     }
 
-    static func image(file: String, small: Bool) -> UIImage? {
+    static func image(file: String, small: Bool, maxPixel: CGFloat) -> UIImage? {
         let name = variant(file, small: small)
-        if let cached = images[name] { return cached }
-        guard let url = url(for: name), let image = UIImage(contentsOfFile: url.path) else { return nil }
-        images[name] = image
+        let bucket = max(32, Int((max(maxPixel, 1) / 32).rounded(.up)) * 32)
+        let key = "\(name)@\(bucket)" as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        guard let url = url(for: name), let image = downsample(url: url, maxPixel: CGFloat(bucket)) else { return nil }
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        cache.setObject(image, forKey: key, cost: cost)
         return image
+    }
+
+    private static func downsample(url: URL, maxPixel: CGFloat) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        if let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) {
+            let options = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: max(1, maxPixel),
+            ] as CFDictionary
+            if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options) {
+                return UIImage(cgImage: cgImage)
+            }
+        }
+        guard let full = UIImage(contentsOfFile: url.path) else { return nil }
+        let longest = max(full.size.width, full.size.height) * full.scale
+        let ratio = min(1, maxPixel / max(longest, 1))
+        guard ratio < 0.99 else { return full }
+        let target = CGSize(width: full.size.width * ratio, height: full.size.height * ratio)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: target, format: format)
+        return renderer.image { _ in
+            full.draw(in: CGRect(origin: .zero, size: target))
+        }
     }
 }

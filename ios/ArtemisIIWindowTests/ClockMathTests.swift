@@ -14,7 +14,14 @@ final class ClockMathTests: XCTestCase {
 
         let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
         XCTAssertEqual(zone.secondsFromGMT(for: date), -4 * 3600)
-        XCTAssertEqual(zone.abbreviation(for: date), "EDT")
+        XCTAssertTrue(zone.isDaylightSavingTime(for: date))
+    }
+
+    func testEasternStandardTimeLabel() throws {
+        let date = try ISO8601.parse("2026-01-15T17:00:00Z")
+        let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        XCTAssertFalse(zone.isDaylightSavingTime(for: date))
+        XCTAssertEqual(ClockMath.easternText(date), "12:00:00 EST")
     }
 
     func testMissionEpochIsZeroMET() throws {

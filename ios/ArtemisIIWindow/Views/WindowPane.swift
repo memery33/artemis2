@@ -3,6 +3,7 @@ import SwiftUI
 struct WindowPane: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @State private var turn: Double = 0
 
     private var side: WindowSide { model.window }
@@ -47,9 +48,10 @@ struct WindowPane: View {
 
     private func glass(pair: FramePair, mix: Double, progress: Double) -> some View {
         GeometryReader { geo in
+            let pixels = max(geo.size.width, geo.size.height) * displayScale * 1.15
             ZStack {
                 Color.black
-                if let frame = pair.current, let image = model.photo(frame) {
+                if let frame = pair.current, let image = model.photo(frame, maxPixel: pixels) {
                     placed(
                         image,
                         motion: motion(progress: progress, index: pair.index),
@@ -57,7 +59,7 @@ struct WindowPane: View {
                     )
                     .opacity(1 - mix)
                 }
-                if mix > 0, let frame = pair.next, let image = model.photo(frame) {
+                if mix > 0, let frame = pair.next, let image = model.photo(frame, maxPixel: pixels) {
                     placed(
                         image,
                         motion: motion(progress: 0, index: pair.index + 1),
@@ -201,6 +203,7 @@ struct FrameCaption: View {
 
 struct CompanionPane: View {
     @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.displayScale) private var displayScale
 
     private var side: WindowSide { model.window == .nikon ? .cab : .nikon }
 
@@ -208,16 +211,22 @@ struct CompanionPane: View {
         let pair = model.pair(for: side)
         Button(action: { model.setWindow(side) }) {
             VStack(alignment: .leading, spacing: 6) {
-                ZStack {
-                    Color.black
-                    if let frame = pair.current, let image = model.photo(frame) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
+                Color.black
+                    .aspectRatio(side == .cab ? 4.0 / 3.0 : 1.5, contentMode: .fit)
+                    .overlay {
+                        GeometryReader { geo in
+                            let pixels = max(geo.size.width, geo.size.height) * displayScale
+                            if let frame = pair.current,
+                               let image = model.photo(frame, maxPixel: pixels) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: geo.size.width, height: geo.size.height)
+                                    .clipped()
+                            }
+                        }
                     }
-                }
-                .aspectRatio(side == .cab ? 4.0 / 3.0 : 1.5, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text(caption(pair))
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.8))
@@ -250,18 +259,27 @@ struct CompanionPane: View {
 
 struct CabinCard: View {
     @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.displayScale) private var displayScale
     let height: CGFloat
 
     var body: some View {
         if let frames = model.timeline?.frames,
-           let card = FrameSelection.cabinCard(at: model.utc, frames: frames),
-           let image = model.photo(card) {
+           let card = FrameSelection.cabinCard(at: model.utc, frames: frames) {
             VStack(alignment: .leading, spacing: 4) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+                Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(height: height)
+                    .overlay {
+                        GeometryReader { geo in
+                            let pixels = max(geo.size.width, geo.size.height) * displayScale
+                            if let image = model.photo(card, maxPixel: pixels) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: geo.size.width, height: geo.size.height)
+                            }
+                        }
+                    }
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text("Cabin · \(card.nasaID) · \(Stamp.clock(card.utc)) UTC")
@@ -383,8 +401,9 @@ extension PlaybackModel {
         FrameSelection.visiblePair(at: utc, window: side, frames: timeline?.frames ?? [])
     }
 
-    func photo(_ frame: Frame) -> UIImage? {
-        MediaStore.image(file: frame.file, small: phoneImages)
+    func photo(_ frame: Frame, maxPixel: CGFloat) -> UIImage? {
+        let cap = maxPixel > 1 ? maxPixel : 720
+        return MediaStore.image(file: frame.file, small: phoneImages, maxPixel: cap)
     }
 
     func subtitleLine() -> TranscriptLine? {

@@ -20,14 +20,17 @@ enum ClockMath {
     }
 
     static func utcText(_ date: Date) -> String {
-        let parts = gregorian(date, timeZone: TimeZone(secondsFromGMT: 0)!)
+        let zone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let parts = gregorian(date, timeZone: zone)
         return String(format: "%02d:%02d:%02d UTC", parts.hour, parts.minute, parts.second)
     }
 
     static func easternText(_ date: Date) -> String {
-        let zone = TimeZone(identifier: "America/New_York")!
+        guard let zone = TimeZone(identifier: "America/New_York") else {
+            return utcText(date)
+        }
         let parts = gregorian(date, timeZone: zone)
-        let name = zone.abbreviation(for: date) ?? "ET"
+        let name = zone.isDaylightSavingTime(for: date) ? "EDT" : "EST"
         return String(format: "%02d:%02d:%02d %@", parts.hour, parts.minute, parts.second, name)
     }
 

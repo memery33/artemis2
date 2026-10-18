@@ -1,6 +1,8 @@
-# Artemis II Window
+# Orion Window
 
-Native iPhone app for the Artemis II Orion flyby. SwiftUI, iOS 18 or later. The pictures and the crew recording are the files in `demo/data`. The build copies them into the app. They are not duplicated in git, and nothing in the app synthesizes a sound or a picture to fill a gap.
+Native iPhone app for the Artemis II Orion flyby. SwiftUI, iOS 18 or later. The home screen name is Orion Window (`CFBundleDisplayName`). The App Store name is Orion Window: Artemis II Flyby. The bundle id stays `com.memery33.artemis2window`. There is no NASA insignia.
+
+The pictures and the crew recording are the files in `demo/data`. The build copies them into the app. They are not duplicated in git, and nothing in the app synthesizes a sound or a picture to fill a gap. `footprints.geojson` is not copied. The minimap reads the timeline’s geographic targets and does not draw footprints.
 
 This is an independent project. It is not affiliated with or endorsed by NASA.
 
@@ -20,9 +22,13 @@ Signing is automatic for team `NHYXW2AY53`. If the simulator is not named “iPh
 
 One `AVAudioEngine` clock. While a real m4a is playing, mission time follows that file. Before the first file, between files, and from 22:36:03 to 22:39:11 on the cab run, the clock advances and the room stays quiet. A missing file stays quiet too.
 
-The session category is `.playback` with an empty options list, so the silent switch does not mute it and Bluetooth output is the system’s normal playback route. The session becomes active on Tap to begin, not at launch.
+The session category is `.playback`, mode `.spokenAudio`, policy `.longFormAudio`, with an empty options list, so the silent switch does not mute it and Bluetooth output is the system’s normal playback route. The session becomes active on Tap to begin, not at launch.
 
-Headphones unplugged (`AVAudioSession.routeChangeNotification` reason `oldDeviceUnavailable`) pauses. A newly connected device does not resume. An interruption pauses, and playback resumes only when the interruption ends with `.shouldResume` and the recording was playing. A pause from the headphones, or from the listener, clears that resume.
+While the app is in the background the display link pauses. When a file ends, the next real recording on that track is scheduled to start at its own timestamp. The wait is the gap in the archive. If nothing remains in the span, playback pauses and the Now Playing rate is 0. Lock-screen artwork is the 720-pixel sibling of the current frame.
+
+`PrivacyInfo.xcprivacy` declares UserDefaults access for the spatial switch (reason `CA92.1`). The app does not track and collects no data.
+
+Headphones unplugged (`AVAudioSession.routeChangeNotification` reason `oldDeviceUnavailable`) pauses. A newly connected device does not resume. An interruption pauses, and playback resumes from the saved sample only when the interruption ends with `.shouldResume` and the recording was playing. A pause from the headphones, or from the listener, clears that resume. An audio-engine configuration change reconnects the same file on the main thread and starts it again if it was playing.
 
 Now Playing uses the active span’s real label (“Aristarchus Plateau to Reiner Gamma”, or the cab run’s label), artist “NASA/Artemis II Crew”, and the current frame as artwork. Remote commands are play, pause, toggle, skip ±15 seconds, and the scrubber. Skip and scrub stay inside the flyby window or the cab run, whichever is on screen. `UIBackgroundModes` includes `audio`. Folding the phone does not rebuild the player.
 
