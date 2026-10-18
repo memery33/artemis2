@@ -1,0 +1,95 @@
+name: ArtemisIIWindow
+options:
+  bundleIdPrefix: com.memery33
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    DEVELOPMENT_TEAM: NHYXW2AY53
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+configs:
+  Debug: debug
+  Release: release
+targets:
+  ArtemisIIWindow:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: ArtemisIIWindow
+    settings:
+      base:
+        PRODUCT_NAME: ArtemisIIWindow
+        PRODUCT_MODULE_NAME: ArtemisIIWindow
+        PRODUCT_BUNDLE_IDENTIFIER: com.memery33.artemis2window
+        INFOPLIST_FILE: ArtemisIIWindow/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: NHYXW2AY53
+        TARGETED_DEVICE_FAMILY: "1"
+      configs:
+        Debug:
+          ENABLE_TESTABILITY: YES
+    preBuildScripts:
+      - name: Copy demo data into the app bundle
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          SRC="${SRCROOT}/../demo/data"
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/DemoData"
+          if [ ! -d "${SRC}" ]; then
+            echo "error: missing ${SRC}" >&2
+            exit 1
+          fi
+          mkdir -p "${DEST}"
+          rsync -a --delete --exclude '.DS_Store' "${SRC}/" "${DEST}/"
+    scheme:
+      testTargets:
+        - ArtemisIIWindowTests
+      gatherCoverageData: false
+  ArtemisIIWindowTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: ArtemisIIWindowTests
+    dependencies:
+      - target: ArtemisIIWindow
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.memery33.artemis2window.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ArtemisIIWindow.app/ArtemisIIWindow"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    preBuildScripts:
+      - name: Copy timeline into the test bundle
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "${DEST}"
+          cp "${SRCROOT}/../demo/data/timeline.json" "${DEST}/timeline.json"
+schemes:
+  ArtemisIIWindow:
+    build:
+      targets:
+        ArtemisIIWindow: all
+        ArtemisIIWindowTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ArtemisIIWindowTests
+    archive:
+      config: Release
