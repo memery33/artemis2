@@ -102,6 +102,7 @@ struct StageView: View {
             }
             .ignoresSafeArea()
         }
+        .modifier(ApproachChrome())
         .onPreferenceChange(ScreenSizeKey.self) { screen = $0 }
         .onAppear { applyFrameTier() }
         .onChange(of: mode) { _, _ in

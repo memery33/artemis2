@@ -80,6 +80,32 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertTrue(text.hasPrefix("2026-04-06T23:00:"))
     }
 
+    func testApproachIntensityRisesTowardTheMinimum() throws {
+        let approach = try XCTUnwrap(FlybyPath.closestApproach(samples, radiusKm: document.radiusKm))
+        let early = FlybyPath.approachIntensity(at: samples[0].date, samples: samples, approach: approach)
+        let later = FlybyPath.approachIntensity(at: samples[samples.count / 2].date, samples: samples, approach: approach)
+        let near = FlybyPath.approachIntensity(at: approach.date, samples: samples, approach: approach)
+        XCTAssertEqual(early, 0, accuracy: 0.02)
+        XCTAssertGreaterThan(later, early)
+        XCTAssertEqual(near, 1, accuracy: 0.05)
+        XCTAssertFalse(FlybyPath.fadesInterface(at: samples[0].date, approach: approach.date))
+        XCTAssertTrue(FlybyPath.fadesInterface(at: approach.date, approach: approach.date))
+    }
+
+    func testParallaxStaysInsideItsLimits() {
+        let still = ParallaxShift.shift(pitch: 0.4, roll: -0.4, enabled: false)
+        XCTAssertEqual(still, .zero)
+        let hard = ParallaxShift.shift(pitch: 4, roll: -4, enabled: true)
+        XCTAssertEqual(hard.photoX, -ParallaxShift.photoLimit)
+        XCTAssertEqual(hard.photoY, ParallaxShift.photoLimit)
+        XCTAssertEqual(hard.frameX, -ParallaxShift.frameLimit)
+        XCTAssertEqual(hard.frameY, ParallaxShift.frameLimit)
+        let gentle = ParallaxShift.shift(pitch: 0.1, roll: -0.1, enabled: true)
+        XCTAssertLessThan(abs(gentle.photoX), ParallaxShift.photoLimit)
+        XCTAssertLessThan(abs(gentle.frameY), ParallaxShift.frameLimit)
+        XCTAssertGreaterThan(abs(gentle.frameX), 0)
+    }
+
     func testGazetteerSitesSitOnTheUnitSphere() {
         XCTAssertEqual(LunarSites.marked.map(\.label), ["Aristarchus", "Reiner Gamma", "Orientale"])
         XCTAssertEqual(LunarSites.marked.map(\.feature), ["Aristarchus", "Reiner Gamma", "Mare Orientale"])

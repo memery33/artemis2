@@ -8,16 +8,9 @@ import UIKit
 struct MoonGlobeView: View {
     @EnvironmentObject private var model: PlaybackModel
 
-    private static let loaded: (document: FlybyDocument, samples: [PathSample])? = {
-        guard let document = FlybyEphemeris.load() else { return nil }
-        let samples = FlybyEphemeris.samples(in: document)
-        guard !samples.isEmpty else { return nil }
-        return (document, samples)
-    }()
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let loaded = Self.loaded {
+            if let loaded = FlybyEphemeris.bundled {
                 let document = loaded.document
                 let samples = loaded.samples
                 GlobeScene(

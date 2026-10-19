@@ -4,6 +4,7 @@ struct WindowPane: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
+    @StateObject private var cabinMotion = CabinMotion()
     @State private var turn: Double = 0
     /// Landscape draws the clocks, quote, and credit on the glass.
     var glassChrome: Bool = false
@@ -27,6 +28,11 @@ struct WindowPane: View {
             )
             .offset(x: reduceMotion ? 0 : turn * 28)
             .gesture(swipe)
+            .onAppear { cabinMotion.update(reduceMotion: reduceMotion) }
+            .onChange(of: reduceMotion) { _, reduced in
+                cabinMotion.update(reduceMotion: reduced)
+            }
+            .onDisappear { cabinMotion.stop() }
             .onChange(of: model.window) { _, newSide in
                 guard !reduceMotion else { return }
                 turn = newSide == .cab ? 1 : -1
@@ -106,6 +112,10 @@ struct WindowPane: View {
                 }
                 if side == .nikon {
                     bezel
+                        .offset(
+                            x: CGFloat(cabinMotion.shift.frameX),
+                            y: CGFloat(cabinMotion.shift.frameY)
+                        )
                 }
             }
             .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
@@ -210,7 +220,10 @@ struct WindowPane: View {
             .scaledToFill()
             .frame(width: size.width, height: size.height)
             .scaleEffect(motion.scale)
-            .offset(x: size.width * motion.x / 100, y: size.height * motion.y / 100)
+            .offset(
+                x: size.width * motion.x / 100 + CGFloat(cabinMotion.shift.photoX),
+                y: size.height * motion.y / 100 + CGFloat(cabinMotion.shift.photoY)
+            )
             .frame(width: size.width, height: size.height)
             .clipped()
     }

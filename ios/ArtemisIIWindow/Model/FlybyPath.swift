@@ -35,6 +35,13 @@ struct FlybyDocument: Decodable, Sendable {
 }
 
 enum FlybyEphemeris {
+    static let bundled: (document: FlybyDocument, samples: [PathSample])? = {
+        guard let document = load() else { return nil }
+        let rows = samples(in: document)
+        guard !rows.isEmpty else { return nil }
+        return (document, rows)
+    }()
+
     static func load(from bundle: Bundle = .main) -> FlybyDocument? {
         guard let url = bundle.url(forResource: "horizons_orion_moon", withExtension: "json"),
               let data = try? Data(contentsOf: url) else {
@@ -162,6 +169,23 @@ enum FlybyPath {
             altitudeKm: range - radiusKm,
             radiusKm: radiusKm
         )
+    }
+
+    /// 0 at the first sample, 1 at closest approach. Built from tabulated range.
+    static func approachIntensity(at date: Date, samples: [PathSample], approach: ClosestApproach) -> Double {
+        guard let first = samples.first,
+              let place = position(at: date, samples: samples) else {
+            return 0
+        }
+        let range = (place.x * place.x + place.y * place.y + place.z * place.z).squareRoot()
+        let span = first.rangeKm - approach.rangeKm
+        guard span > 1 else { return 0 }
+        return min(1, max(0, (first.rangeKm - range) / span))
+    }
+
+    /// True only in the second around the derived closest-approach time.
+    static func fadesInterface(at date: Date, approach: Date) -> Bool {
+        abs(date.timeIntervalSince(approach)) < 1
     }
 
     private static func segment(containing date: Date, samples: [PathSample]) -> (Int, Int) {
