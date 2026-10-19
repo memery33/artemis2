@@ -311,12 +311,17 @@ final class MilestonesTests: XCTestCase {
         let cabTime = cab.start.addingTimeInterval(45)
         model.scrubPath(to: cabTime)
         XCTAssertEqual(model.range, .cab)
-        XCTAssertEqual(model.utc.timeIntervalSince(cabTime), 0, accuracy: 0.5)
+        XCTAssertGreaterThan(model.utc, cab.start)
+        XCTAssertLessThan(model.utc, cab.end)
+        XCTAssertNotNil(model.segment(at: model.utc))
         XCTAssertTrue(model.playing)
         XCTAssertNotEqual(model.utc, span.end)
+        XCTAssertNotEqual(model.utc, cab.end)
 
+        let held = model.utc
         model.scrubPath(to: span.start.addingTimeInterval(-3600))
-        XCTAssertEqual(model.utc.timeIntervalSince(cabTime), 0, accuracy: 0.5)
+        XCTAssertEqual(model.utc, held)
+        XCTAssertNotEqual(held, cabTime)
 
         model.endPathScrub()
         XCTAssertFalse(model.scrubbing)
@@ -324,6 +329,26 @@ final class MilestonesTests: XCTestCase {
             XCTAssertTrue(model.playing)
         }
         XCTAssertFalse(model.ended)
+    }
+
+    @MainActor
+    func testDiveOpensAtTheSelectedMoment() throws {
+        let model = PlaybackModel()
+        let span = try XCTUnwrap(model.activeSpan)
+        let moment = span.start.addingTimeInterval(90)
+        model.seek(to: moment)
+        model.playing = true
+        model.dive()
+        XCTAssertTrue(model.immersed)
+        XCTAssertFalse(model.ended)
+        XCTAssertEqual(model.utc.timeIntervalSince(moment), 0, accuracy: 0.5)
+        XCTAssertLessThan(model.utc, span.end)
+
+        let pin = try XCTUnwrap(MilestoneList.derive(try XCTUnwrap(model.timeline)).first { $0.id == "span:window.start" })
+        model.dive(to: pin)
+        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 0, accuracy: 0.5)
+        XCTAssertFalse(model.ended)
+        XCTAssertNotEqual(model.utc, span.end)
     }
 
     func testPhotoAccessLabelOmitsTheLiveGap() throws {

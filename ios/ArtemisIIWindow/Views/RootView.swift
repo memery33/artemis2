@@ -112,12 +112,8 @@ struct EndCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("Credit: NASA/Artemis II Crew")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Text("This app is not affiliated with or endorsed by NASA.")
-                    .font(.body)
+                    .font(.caption)
                     .foregroundStyle(.white.opacity(0.8))
-                    .fixedSize(horizontal: false, vertical: true)
                 Button("Replay this span") {
                     if let span = model.activeSpan {
                         model.seek(to: span.start)
@@ -255,18 +251,12 @@ struct LandscapeLayout: View {
     }
 
     private func cabin(in size: CGSize) -> some View {
-        let rail = min(220, max(168, size.width * 0.28))
-        let inset: CGFloat = 6
-        let railHeight = max(44, size.height - inset * 2)
-        return HStack(alignment: .top, spacing: 8) {
+        VStack(spacing: 0) {
             WindowPane(glassChrome: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            DockBar(placement: .rail)
-                .frame(width: rail, height: railHeight)
+                .padding(.horizontal, 8)
+            DockBar()
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 4)
-        .padding(.vertical, inset)
         .frame(width: size.width, height: size.height, alignment: .top)
     }
 }

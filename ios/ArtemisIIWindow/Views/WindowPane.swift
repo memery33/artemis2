@@ -254,7 +254,7 @@ struct FrameCaption: View {
         let pair = model.pair(for: side)
         VStack(alignment: .leading, spacing: 4) {
             if let frame = dominant(pair) {
-                Text(frame.credit)
+                Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.85))
                 if side == .cab, pair.outsideSpan {

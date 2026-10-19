@@ -30,6 +30,7 @@ enum FlybyLiveActivity {
         speaker: String,
         clock: String
     ) {
+        guard !RuntimeHost.isUnitTestHost else { return }
         guard arrived else { return }
         let state = FlybyActivityAttributes.ContentState(
             progress: progress,

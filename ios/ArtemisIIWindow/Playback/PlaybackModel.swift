@@ -275,9 +275,19 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     /// Opens the cabin on the current clock, or on a milestone pin.
+    /// Entering the cabin does not jump to the span end or raise the end card.
     func dive(to milestone: Milestone? = nil) {
+        let selected = milestone?.jumpDate ?? milestone?.date ?? utc
         if let milestone {
-            jump(to: milestone)
+            jump(to: milestone, markEnd: false)
+        }
+        if let timeline, let span = spanContaining(selected, timeline: timeline),
+           selected >= span.start, selected < span.end, utc != selected {
+            // A pin cue can clamp onto the span end. The cabin opens on the moment that was chosen.
+            seek(to: selected, markEnd: false)
+        }
+        if let span = activeSpan, utc < span.end {
+            ended = false
         }
         immersed = true
     }
@@ -294,10 +304,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         reloadAtCurrentTime()
     }
 
-    func seek(to date: Date) {
+    func seek(to date: Date, markEnd: Bool = true) {
         guard let span = activeSpan else { return }
         utc = MissionClock.clamp(date, to: span)
-        let atEnd = utc >= span.end
+        let atEnd = markEnd && utc >= span.end
         ended = atEnd
         holdUntil = nil
         rebuilding = true
@@ -360,7 +370,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     /// Moves the clock, the crew track, the window, and the recording together.
-    func jump(to milestone: Milestone) {
+    func jump(to milestone: Milestone, markEnd: Bool = true) {
         guard let timeline else { return }
         let cue = MilestoneSeek.cue(
             for: milestone,
@@ -389,8 +399,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         playing = true
         holdUntil = nil
         scrubbing = false
-        seek(to: cue.date)
-        engagePlayback()
+        seek(to: cue.date, markEnd: markEnd)
+        if !ended {
+            engagePlayback()
+        }
     }
 
     func beginScrub() {
@@ -420,6 +432,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     func scrubPath(to date: Date) {
         guard let timeline else { return }
         guard let span = spanContaining(date, timeline: timeline) else { return }
+        guard let landed = recordedDate(near: date, in: span, timeline: timeline) else { return }
         if !scrubbing {
             beginScrub()
         }
@@ -428,7 +441,42 @@ final class PlaybackModel: NSObject, ObservableObject {
             currentFile = nil
             audioFile = nil
         }
-        utc = MissionClock.clamp(date, to: span)
+        if segment(at: landed) == nil,
+           let track = timeline.segments.first(where: { landed >= $0.start && landed < $0.end })?.track,
+           track != trackID {
+            trackID = track
+            if let member = timeline.crew.first(where: { $0.track == track }) {
+                crewID = member.id
+            }
+            currentFile = nil
+            audioFile = nil
+        }
+        utc = landed
+    }
+
+    /// A time inside a real recording in this span. Silent gaps are not a place to land.
+    private func recordedDate(near date: Date, in span: TimeSpan, timeline: Timeline) -> Date? {
+        let clips = timeline.segments.filter { segment in
+            segment.end > span.start && segment.start < span.end
+        }
+        guard !clips.isEmpty else { return nil }
+        let preferred = clips.filter { $0.track == trackID }
+        let pool = preferred.isEmpty ? clips : preferred
+        if let hit = pool.first(where: { date >= $0.start && date < $0.end }) {
+            return date
+        }
+        var best: (date: Date, distance: TimeInterval)?
+        for clip in pool {
+            let start = max(clip.start, span.start)
+            let end = min(clip.end, span.end)
+            guard end > start else { continue }
+            let landed = min(max(date, start), end.addingTimeInterval(-0.05))
+            let distance = abs(landed.timeIntervalSince(date))
+            if best == nil || distance < best!.distance {
+                best = (landed, distance)
+            }
+        }
+        return best?.date
     }
 
     func endPathScrub() {

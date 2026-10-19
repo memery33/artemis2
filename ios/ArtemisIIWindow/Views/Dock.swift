@@ -1,16 +1,10 @@
 import SwiftUI
 
-enum DockPlacement {
-    case bottom
-    case rail
-}
-
 struct DockBar: View {
     @EnvironmentObject private var model: PlaybackModel
     @State private var about = false
     @State private var transcript = false
     @State private var moments = false
-    var placement: DockPlacement = .bottom
 
     var body: some View {
         controls
@@ -21,19 +15,10 @@ struct DockBar: View {
 
     @ViewBuilder
     private var controls: some View {
-        switch placement {
-        case .bottom:
-            if model.immersed {
-                bottomControls
-            } else {
-                capsuleControls
-            }
-        case .rail:
-            railControls
-        }
+        capsuleControls
     }
 
-    /// Globe screen. Play, skip, Moments, and Info stay out. The rest is in the menu.
+    /// The same capsule on the Moon and in the cabin. Spatial, lines, and the spans are in the menu.
     private var capsuleControls: some View {
         HStack(spacing: 2) {
             capsuleSkip(
@@ -65,6 +50,7 @@ struct DockBar: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("transport-capsule")
     }
 
@@ -130,7 +116,11 @@ struct DockBar: View {
                 if model.range == .flyby { model.showCabRun() } else { model.showFlyby() }
             }
             Button("Crew, \(model.crewID)") { model.cycleCrew() }
-            Button("Dive into the window") { model.dive() }
+            if model.immersed {
+                Button("Back to the Moon") { model.surface() }
+            } else {
+                Button("Dive into the window") { model.dive() }
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.body.weight(.semibold))
@@ -141,248 +131,6 @@ struct DockBar: View {
         .accessibilityIdentifier("more-controls")
     }
 
-    private var bottomControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            timelineControls
-            Toggle(isOn: Binding(
-                get: { model.spatial },
-                set: { model.setSpatial($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Spatial")
-                    Text("Moves the real recording toward this window. Nothing is added.")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .accessibilityIdentifier("spatial-note")
-                }
-            }
-            .toggleStyle(.switch)
-            .tint(.white)
-            .font(.subheadline)
-            .foregroundStyle(.white)
-            .accessibilityIdentifier("spatial-toggle")
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    windowButton(.nikon, title: "2", label: "Window 2")
-                    windowButton(.cab, title: "3", label: "Window 3")
-                    crewButton
-                    linesButton
-                    momentsButton
-                    rangeButton
-                    aboutButton
-                }
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        windowButton(.nikon, title: "2", label: "Window 2")
-                        windowButton(.cab, title: "3", label: "Window 3")
-                        crewButton
-                    }
-                    HStack(spacing: 8) {
-                        linesButton
-                        momentsButton
-                        rangeButton
-                        aboutButton
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .environment(\.colorScheme, .dark)
-                .ignoresSafeArea(edges: .bottom)
-        }
-    }
-
-    private var railControls: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                timelineControls
-                Toggle(isOn: Binding(
-                    get: { model.spatial },
-                    set: { model.setSpatial($0) }
-                )) {
-                    Text("Spatial")
-                }
-                .accessibilityHint("Moves the real recording toward this window. Nothing is added.")
-                .accessibilityIdentifier("spatial-toggle")
-                .toggleStyle(.switch)
-                .tint(.white)
-                .font(.subheadline)
-                .foregroundStyle(.white)
-
-                HStack(spacing: 8) {
-                    windowButton(.nikon, title: "2", label: "Window 2")
-                    windowButton(.cab, title: "3", label: "Window 3")
-                }
-                CrewRow()
-                crewButton
-                if model.immersed {
-                    Button("Back to the Moon") { model.surface() }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("surface-button")
-                } else {
-                    Button("Dive into the window") { model.dive() }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("dive-button")
-                }
-                linesButton
-                momentsButton
-                rangeButton
-                aboutButton
-                CabinCard(height: 72)
-                ExhibitCards()
-                TargetMap()
-                    .frame(height: 120)
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .accessibilityIdentifier("landscape-rail")
-    }
-
-    /// Scrubber with the play control beside it. Skip uses the lock-screen interval.
-    private var timelineControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 10) {
-                    MissionScrubber()
-                    playPauseButton
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    MissionScrubber()
-                    playPauseButton
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            HStack(spacing: 8) {
-                skipButton(
-                    system: "gobackward.15",
-                    title: "Back",
-                    label: "Skip back 15 seconds",
-                    identifier: "skip-back"
-                ) {
-                    model.skip(by: -PlaybackModel.skipInterval)
-                }
-                skipButton(
-                    system: "goforward.15",
-                    title: "Forward",
-                    label: "Skip forward 15 seconds",
-                    identifier: "skip-forward"
-                ) {
-                    model.skip(by: PlaybackModel.skipInterval)
-                }
-            }
-        }
-    }
-
-    private var playPauseButton: some View {
-        let playing = model.playing
-        return Button(action: { model.toggle() }) {
-            Label(playing ? "Pause" : "Play", systemImage: playing ? "pause.fill" : "play.fill")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.black)
-                .lineLimit(1)
-                .frame(minWidth: 112, minHeight: 48)
-                .padding(.horizontal, 12)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("playback-toggle")
-        .accessibilityLabel(playing ? "Pause" : "Play")
-    }
-
-    private func skipButton(
-        system: String,
-        title: String,
-        label: String,
-        identifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: system)
-                    .font(.title2)
-                Text(title)
-                    .font(.caption2.weight(.semibold))
-            }
-            .foregroundStyle(.white)
-            .frame(minWidth: 64, minHeight: 44)
-            .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
-        .accessibilityLabel(label)
-    }
-
-    private var crewButton: some View {
-        dockButton(model.crewID, label: "Crew, \(model.crewID)") {
-            model.cycleCrew()
-        }
-    }
-
-    private var linesButton: some View {
-        dockButton("Lines", label: "Transcript") { transcript = true }
-    }
-
-    private var momentsButton: some View {
-        dockButton("Moments", label: "Moments") { moments = true }
-            .accessibilityIdentifier("moments-button")
-    }
-
-    private var rangeButton: some View {
-        dockButton(
-            model.range == .flyby ? "Cab run" : "Flyby",
-            label: model.range == .flyby ? "Cab Cam run" : "Flyby window"
-        ) {
-            if model.range == .flyby { model.showCabRun() } else { model.showFlyby() }
-        }
-    }
-
-    private var aboutButton: some View {
-        dockButton("About", label: "About") { about = true }
-    }
-
-    private func windowButton(_ side: WindowSide, title: String, label: String) -> some View {
-        dockButton(title, label: label, selected: model.window == side) {
-            model.setWindow(side)
-        }
-    }
-
-    private func dockButton(
-        _ title: String,
-        label: String,
-        selected: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(selected ? .semibold : .regular))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(minWidth: 44, minHeight: 44)
-                .frame(maxWidth: placement == .rail ? .infinity : nil)
-                .padding(.horizontal, 8)
-                .background(selected ? Color.white.opacity(0.2) : Color.white.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
 }
 
 struct LiveTranscript: View {

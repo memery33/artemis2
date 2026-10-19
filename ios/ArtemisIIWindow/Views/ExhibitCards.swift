@@ -47,7 +47,7 @@ struct ExhibitCards: View {
                     .foregroundStyle(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
                 if let frame {
-                    Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC · \(frame.credit)")
+                    Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.55))
                         .fixedSize(horizontal: false, vertical: true)
@@ -97,7 +97,7 @@ private struct ExhibitSheet: View {
                         .foregroundStyle(.white.opacity(0.7))
                         .fixedSize(horizontal: false, vertical: true)
                     if let frame {
-                        Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC · \(frame.credit)")
+                        Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
                             .font(.footnote)
                             .foregroundStyle(.white.opacity(0.7))
                             .fixedSize(horizontal: false, vertical: true)

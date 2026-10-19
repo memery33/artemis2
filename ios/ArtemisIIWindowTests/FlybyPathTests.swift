@@ -160,28 +160,45 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(pixels.height, 1024)
     }
 
-    func testPathDragStaysOnThePlayableSpans() throws {
-        let url = try XCTUnwrap(Bundle(for: FlybyPathTests.self).url(forResource: "timeline", withExtension: "json"))
-        let timeline = try Timeline(data: Data(contentsOf: url))
-        let cab = try XCTUnwrap(timeline.cabRun)
-        let spans = [
-            PathSpan(start: timeline.window.start, end: timeline.window.end),
-            PathSpan(start: cab.start, end: cab.end)
+    func testSlightDragStaysOnTheCurrentBrightSegment() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let end = start.addingTimeInterval(900)
+        let cabStart = start.addingTimeInterval(10_000)
+        let cabEnd = cabStart.addingTimeInterval(500)
+        let flyby = PathSpan(start: start, end: end)
+        let cab = PathSpan(start: cabStart, end: cabEnd)
+        let flybySamples = [
+            PathScreenSample(date: start, x: 0, y: 0),
+            PathScreenSample(date: end, x: 200, y: 0)
         ]
-        let outside = try XCTUnwrap(samples.first { $0.date < timeline.window.start })
-        let inside = try XCTUnwrap(samples.first { $0.date >= timeline.window.start && $0.date <= timeline.window.end })
-        let chosen = PathScrub.nearest(
-            hits: [
-                PathHit(date: outside.date, distance: 1),
-                PathHit(date: inside.date, distance: 80),
-                PathHit(date: timeline.window.end, distance: 400)
-            ],
-            spans: spans
+        let cabSamples = [
+            PathScreenSample(date: cabStart, x: 0, y: 400),
+            PathScreenSample(date: cabEnd, x: 20, y: 400)
+        ]
+        let slight = PathScrub.scrub(
+            x: 4,
+            y: 2,
+            current: (flyby, flybySamples),
+            others: [(cab, cabSamples)]
         )
-        XCTAssertEqual(chosen, inside.date)
-        XCTAssertNotEqual(chosen, timeline.window.end)
-        XCTAssertTrue(PathScrub.contains(inside.date, spans: spans))
-        XCTAssertFalse(PathScrub.contains(outside.date, spans: spans))
-        XCTAssertNil(PathScrub.nearest(hits: [PathHit(date: outside.date, distance: 0)], spans: spans))
+        XCTAssertEqual(slight?.span, flyby)
+        XCTAssertEqual(slight?.date.timeIntervalSince(start) ?? -1, 18, accuracy: 2)
+        XCTAssertNotEqual(slight?.date, cabEnd)
+
+        let reached = PathScrub.scrub(
+            x: 10,
+            y: 400,
+            current: (flyby, flybySamples),
+            others: [(cab, cabSamples)]
+        )
+        XCTAssertEqual(reached?.span, cab)
+        XCTAssertEqual(reached?.date.timeIntervalSince(cabStart) ?? -1, 250, accuracy: 2)
+        XCTAssertNotEqual(reached?.date, cabEnd)
+
+        let clip = PathSpan(start: start.addingTimeInterval(30), end: start.addingTimeInterval(400))
+        let snapped = PathScrub.snap(start, recordings: [clip], span: flyby)
+        XCTAssertEqual(snapped, clip.start)
+        XCTAssertNotEqual(snapped, end)
+        XCTAssertNil(PathScrub.snap(start, recordings: [], span: flyby))
     }
 }

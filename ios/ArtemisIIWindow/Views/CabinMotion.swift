@@ -5,9 +5,13 @@ import UIKit
 @MainActor
 final class CabinMotion: ObservableObject {
     @Published var shift = ParallaxShift.zero
-    private let manager = CMMotionManager()
+    private let manager: CMMotionManager? = RuntimeHost.isUnitTestHost ? nil : CMMotionManager()
 
     func update(reduceMotion: Bool) {
+        guard let manager else {
+            shift = .zero
+            return
+        }
         if reduceMotion || !manager.isDeviceMotionAvailable {
             manager.stopDeviceMotionUpdates()
             shift = .zero
@@ -29,7 +33,7 @@ final class CabinMotion: ObservableObject {
     }
 
     func stop() {
-        manager.stopDeviceMotionUpdates()
+        manager?.stopDeviceMotionUpdates()
     }
 }
 

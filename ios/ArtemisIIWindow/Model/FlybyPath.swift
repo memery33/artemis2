@@ -203,30 +203,111 @@ enum FlybyPath {
     }
 }
 
-/// Screen-space hit on the Orion path. Distance is in points, already measured by the view.
-struct PathHit: Equatable, Sendable {
+/// One projected sample of a bright path segment. Coordinates are screen points.
+struct PathScreenSample: Equatable, Sendable {
     var date: Date
-    var distance: Double
+    var x: Double
+    var y: Double
 }
 
 /// Playable clock spans. Dragging the path uses only these, never the dim context arc.
-struct PathSpan: Equatable, Sendable {
+struct PathSpan: Equatable, Hashable, Sendable {
     var start: Date
     var end: Date
 }
 
+struct PathScrubChoice: Equatable, Sendable {
+    var date: Date
+    var span: PathSpan
+}
+
 enum PathScrub {
+    /// The finger has to be this close, in points, to a different bright segment before the clock leaves the current span.
+    static let reach: Double = 24
+
     static func contains(_ date: Date, spans: [PathSpan]) -> Bool {
         spans.contains { date >= $0.start && date <= $0.end }
     }
 
-    /// Nearest sample that falls inside a playable span.
-    /// A closer sample on the context arc is ignored, so the clock is not clamped to a span end.
-    static func nearest(hits: [PathHit], spans: [PathSpan]) -> Date? {
-        hits
-            .filter { contains($0.date, spans: spans) }
-            .min { $0.distance < $1.distance }?
-            .date
+    /// Maps the finger along the current bright segment.
+    /// Another span is used only when the finger is actually on that segment and closer to it.
+    static func scrub(
+        x: Double,
+        y: Double,
+        current: (span: PathSpan, samples: [PathScreenSample]),
+        others: [(span: PathSpan, samples: [PathScreenSample])]
+    ) -> PathScrubChoice? {
+        guard let here = project(x: x, y: y, samples: current.samples) else { return nil }
+        let reached = others.compactMap { other -> (span: PathSpan, hit: Projection)? in
+            guard let hit = project(x: x, y: y, samples: other.samples) else { return nil }
+            guard hit.distance <= reach, hit.distance + 1 < here.distance else { return nil }
+            return (other.span, hit)
+        }.min { $0.hit.distance < $1.hit.distance }
+        if let reached {
+            return PathScrubChoice(date: reached.hit.date, span: reached.span)
+        }
+        return PathScrubChoice(date: here.date, span: current.span)
+    }
+
+    /// Closest point on the polyline. The date is interpolated along that segment, not snapped to a distant vertex.
+    static func project(x: Double, y: Double, samples: [PathScreenSample]) -> Projection? {
+        guard samples.count >= 2 else { return nil }
+        var best = Projection(date: samples[0].date, distance: .greatestFiniteMagnitude)
+        var found = false
+        for index in 1..<samples.count {
+            let start = samples[index - 1]
+            let end = samples[index]
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            let lengthSquared = dx * dx + dy * dy
+            let t: Double
+            if lengthSquared > 0 {
+                t = min(1, max(0, ((x - start.x) * dx + (y - start.y) * dy) / lengthSquared))
+            } else {
+                t = 0
+            }
+            let px = start.x + dx * t
+            let py = start.y + dy * t
+            let distance = ((px - x) * (px - x) + (py - y) * (py - y)).squareRoot()
+            if !found || distance < best.distance {
+                let interval = end.date.timeIntervalSince(start.date)
+                best = Projection(
+                    date: start.date.addingTimeInterval(interval * t),
+                    distance: distance
+                )
+                found = true
+            }
+        }
+        return found ? best : nil
+    }
+
+    struct Projection: Equatable, Sendable {
+        var date: Date
+        var distance: Double
+    }
+
+    /// Pulls a silent instant onto the nearest recording inside the same span.
+    /// Returns nil when the span has no recording to land on.
+    static func snap(_ date: Date, recordings: [PathSpan], span: PathSpan) -> Date? {
+        let clips = recordings.compactMap { clip -> PathSpan? in
+            let start = max(clip.start, span.start)
+            let end = min(clip.end, span.end)
+            guard end > start else { return nil }
+            return PathSpan(start: start, end: end)
+        }
+        guard !clips.isEmpty else { return nil }
+        if let hit = clips.first(where: { date >= $0.start && date < $0.end }) {
+            return date
+        }
+        var best: (date: Date, distance: TimeInterval)?
+        for clip in clips {
+            let landed = min(max(date, clip.start), clip.end.addingTimeInterval(-0.05))
+            let distance = abs(landed.timeIntervalSince(date))
+            if best == nil || distance < best!.distance {
+                best = (landed, distance)
+            }
+        }
+        return best?.date
     }
 }
 

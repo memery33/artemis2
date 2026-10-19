@@ -1,3 +1,4 @@
+import ImageIO
 import SceneKit
 import SwiftUI
 import UIKit
@@ -15,6 +16,31 @@ enum MoonMap {
         guard let url = resourceURL(in: bundle) else { return nil }
         return UIImage(contentsOfFile: url.path)
     }
+
+    /// Decodes off the main thread. The unit-test host never starts this work.
+    static func load(completion: @escaping @MainActor (UIImage?) -> Void) {
+        guard !RuntimeHost.isUnitTestHost else { return }
+        let url = resourceURL()
+        Task.detached(priority: .userInitiated) {
+            let owned = url.flatMap { decoded($0) }
+            await MainActor.run {
+                completion(owned.map { UIImage(cgImage: $0.image) })
+            }
+        }
+    }
+
+    private struct Decoded: @unchecked Sendable {
+        var image: CGImage
+    }
+
+    private static func decoded(_ url: URL) -> Decoded? {
+        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, options) else {
+            return nil
+        }
+        return Decoded(image: image)
+    }
 }
 
 /// Moon-centered Orion path. The bright arc is the playable spans; the dim arc is context.
@@ -23,6 +49,27 @@ struct MoonGlobeView: View {
     @StateObject private var labels = GlobeLabels()
 
     var body: some View {
+        if RuntimeHost.isUnitTestHost {
+            placeholder
+        } else {
+            globe
+        }
+    }
+
+    /// No SceneKit, texture decode, or motion while this process is hosting unit tests.
+    private var placeholder: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Color.black
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("orion-path")
+            Text("Orion’s path from JPL Horizons, Moon center, MEAN_ME. Drag the bright path to move the clock.")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.72))
+                .accessibilityIdentifier("globe-caption")
+        }
+    }
+
+    private var globe: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let loaded = FlybyEphemeris.bundled {
                 let document = loaded.document
@@ -34,6 +81,7 @@ struct MoonGlobeView: View {
                         utc: model.utc,
                         milestones: pins,
                         spans: playableSpans,
+                        currentSpan: currentSpan,
                         labels: labels,
                         onScrubBegan: { model.beginPathScrub() },
                         onScrub: { model.scrubPath(to: $0) },
@@ -71,6 +119,11 @@ struct MoonGlobeView: View {
             spans.append(PathSpan(start: cab.start, end: cab.end))
         }
         return spans
+    }
+
+    private var currentSpan: PathSpan? {
+        guard let span = model.activeSpan else { return nil }
+        return PathSpan(start: span.start, end: span.end)
     }
 
     private func caption(samples: [PathSample], radiusKm: Double) -> some View {
@@ -158,6 +211,7 @@ private struct GlobeScene: UIViewRepresentable {
     var utc: Date
     var milestones: [Milestone]
     var spans: [PathSpan]
+    var currentSpan: PathSpan?
     var labels: GlobeLabels
     var onScrubBegan: () -> Void
     var onScrub: (Date) -> Void
@@ -179,6 +233,14 @@ private struct GlobeScene: UIViewRepresentable {
         view.antialiasingMode = .multisampling2X
         view.clipsToBounds = true
         view.scene = makeScene()
+        let sceneView = view
+        MoonMap.load { image in
+            guard let image,
+                  let moon = sceneView.scene?.rootNode.childNode(withName: "moon", recursively: false) else {
+                return
+            }
+            moon.geometry?.firstMaterial?.diffuse.contents = image
+        }
         view.allowsCameraControl = false
         view.isAccessibilityElement = false
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
@@ -190,6 +252,7 @@ private struct GlobeScene: UIViewRepresentable {
         context.coordinator.milestones = milestones
         context.coordinator.radiusKm = radiusKm
         context.coordinator.spans = spans
+        context.coordinator.currentSpan = currentSpan
         context.coordinator.labels = labels
         return view
     }
@@ -203,6 +266,7 @@ private struct GlobeScene: UIViewRepresentable {
         context.coordinator.milestones = milestones
         context.coordinator.radiusKm = radiusKm
         context.coordinator.spans = spans
+        context.coordinator.currentSpan = currentSpan
         context.coordinator.labels = labels
         guard let now = view.scene?.rootNode.childNode(withName: "now", recursively: true),
               let position = FlybyPath.position(at: utc, samples: samples) else {
@@ -221,7 +285,7 @@ private struct GlobeScene: UIViewRepresentable {
         moon.segmentCount = 96
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
-        material.diffuse.contents = MoonMap.image() ?? UIColor(white: 0.35, alpha: 1)
+        material.diffuse.contents = UIColor(white: 0.35, alpha: 1)
         material.roughness.contents = 0.92
         material.metalness.contents = 0.0
         material.isDoubleSided = false
@@ -445,6 +509,7 @@ extension GlobeScene {
         var samples: [PathSample] = []
         var milestones: [Milestone] = []
         var spans: [PathSpan] = []
+        var currentSpan: PathSpan?
         var radiusKm: Double = 1
         weak var view: SCNView?
         weak var labels: GlobeLabels?
@@ -575,18 +640,55 @@ extension GlobeScene {
         }
 
         private func nearestPlayable(to point: CGPoint, in view: SCNView) -> Date? {
-            var hits: [PathHit] = []
-            hits.reserveCapacity(samples.count)
-            for sample in samples {
-                let projected = view.projectPoint(GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm))
-                let dx = CGFloat(projected.x) - point.x
-                let dy = CGFloat(projected.y) - point.y
-                hits.append(PathHit(date: sample.date, distance: Double(dx * dx + dy * dy)))
+            let grouped = screenSamples(in: view)
+            let current = currentSpan ?? spans.first
+            guard let current, let samples = grouped[current] else { return nil }
+            let others = spans.compactMap { span -> (span: PathSpan, samples: [PathScreenSample])? in
+                guard span != current, let rows = grouped[span] else { return nil }
+                return (span, rows)
             }
-            return PathScrub.nearest(hits: hits, spans: spans)
+            return PathScrub.scrub(
+                x: point.x,
+                y: point.y,
+                current: (current, samples),
+                others: others
+            )?.date
+        }
+
+        private func screenSamples(in view: SCNView) -> [PathSpan: [PathScreenSample]] {
+            var grouped: [PathSpan: [PathScreenSample]] = [:]
+            for span in spans {
+                var rows: [PathScreenSample] = []
+                for sample in samples where sample.date >= span.start && sample.date <= span.end {
+                    let projected = view.projectPoint(GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm))
+                    rows.append(PathScreenSample(date: sample.date, x: Double(projected.x), y: Double(projected.y)))
+                }
+                grouped[span] = rows
+            }
+            return grouped
         }
 
         private func nearestPin(to point: CGPoint, in view: SCNView, limit: CGFloat) -> Milestone? {
+            let current = milestones.filter { milestone in
+                guard let span = currentSpan else { return true }
+                return milestone.date >= span.start && milestone.date <= span.end
+            }
+            if let hit = closestPin(in: current, to: point, in: view, limit: limit) {
+                return hit
+            }
+            let others = milestones.filter { milestone in
+                guard let span = currentSpan else { return false }
+                return milestone.date < span.start || milestone.date > span.end
+            }
+            return closestPin(in: others, to: point, in: view, limit: min(limit, PathScrub.reach))
+        }
+
+        private func closestPin(
+            in milestones: [Milestone],
+            to point: CGPoint,
+            in view: SCNView,
+            limit: CGFloat
+        ) -> Milestone? {
             var best: (milestone: Milestone, distance: CGFloat)?
             for milestone in milestones {
                 guard let position = FlybyPath.position(at: milestone.date, samples: samples) else { continue }
