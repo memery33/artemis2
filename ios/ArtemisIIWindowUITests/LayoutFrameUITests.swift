@@ -83,7 +83,7 @@ final class LayoutFrameUITests: XCTestCase {
         let sheet = element(named: "exhibit-sheet", in: app)
         XCTAssertTrue(sheet.waitForExistence(timeout: 8))
         let source = app.staticTexts.containing(
-            NSPredicate(format: "label CONTAINS %@", "Focus column for Aristarchus Plateau")
+            NSPredicate(format: "label CONTAINS %@", "Science and Operational Focus for Aristarchus Plateau")
         ).firstMatch
         XCTAssertTrue(source.waitForExistence(timeout: 5))
     }

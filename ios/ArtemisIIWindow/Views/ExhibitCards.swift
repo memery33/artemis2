@@ -53,6 +53,7 @@ struct ExhibitCards: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            CreditLine()
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -102,6 +103,7 @@ private struct ExhibitSheet: View {
                             .foregroundStyle(.white.opacity(0.7))
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    CreditLine()
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)

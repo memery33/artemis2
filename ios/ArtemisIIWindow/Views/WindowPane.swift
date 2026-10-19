@@ -6,7 +6,7 @@ struct WindowPane: View {
     @Environment(\.displayScale) private var displayScale
     @StateObject private var cabinMotion = CabinMotion()
     @State private var turn: Double = 0
-    /// Landscape draws the clocks, quote, and credit on the glass.
+    /// Landscape draws the clocks, quote, and CreditLine on the glass.
     var glassChrome: Bool = false
 
     private var side: WindowSide { model.window }
@@ -181,7 +181,7 @@ struct WindowPane: View {
         .allowsHitTesting(false)
     }
 
-    /// Clocks, the whole quote, and the credit sit on the pane. Padding keeps
+    /// Clocks, the quote, and CreditLine sit on the pane. Padding keeps
     /// them inside the bezel and clear of the rounded corners.
     private var landscapeChrome: some View {
         VStack(spacing: 0) {
@@ -251,6 +251,17 @@ struct WindowPane: View {
     }
 }
 
+/// Small credit kept on every photograph. The words stay fully visible.
+struct CreditLine: View {
+    var body: some View {
+        Text("Credit: NASA/Artemis II Crew")
+            .font(.caption2)
+            .foregroundStyle(.white.opacity(0.82))
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("photo-credit")
+    }
+}
+
 struct FrameCaption: View {
     @EnvironmentObject private var model: PlaybackModel
     let side: WindowSide
@@ -278,8 +289,11 @@ struct FrameCaption: View {
                         .accessibilityLabel(note.spoken)
                 }
             }
+            CreditLine()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("window-caption")
     }
 
     private func dominant(_ pair: FramePair) -> Frame? {
@@ -378,35 +392,40 @@ struct CabinCard: View {
         if let frames = model.timeline?.frames,
            let card = FrameSelection.cabinCard(at: model.utc, frames: frames) {
             VStack(alignment: .leading, spacing: 4) {
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(height: height)
-                    .overlay {
-                        GeometryReader { geo in
-                            let pixels = max(geo.size.width, geo.size.height) * displayScale
-                            ZStack {
-                                if let image = model.photo(card, maxPixel: pixels) {
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: geo.size.width, height: geo.size.height)
+                VStack(alignment: .leading, spacing: 4) {
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: height)
+                        .overlay {
+                            GeometryReader { geo in
+                                let pixels = max(geo.size.width, geo.size.height) * displayScale
+                                ZStack {
+                                    if let image = model.photo(card, maxPixel: pixels) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: geo.size.width, height: geo.size.height)
+                                    }
+                                }
+                                .task(id: "\(model.frameCacheEpoch)|\(model.phoneImages)|\(card.file)@\(MediaStore.pixelBucket(pixels))") {
+                                    model.prefetch(card, maxPixel: pixels)
                                 }
                             }
-                            .task(id: "\(model.frameCacheEpoch)|\(model.phoneImages)|\(card.file)@\(MediaStore.pixelBucket(pixels))") {
-                                model.prefetch(card, maxPixel: pixels)
-                            }
                         }
-                    }
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text("Cabin · \(card.nasaID) · \(Stamp.clock(card.utc)) UTC")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.8))
-                Text("Not shown through the glass.")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    Text("Cabin · \(card.nasaID) · \(Stamp.clock(card.utc)) UTC")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.8))
+                    Text("Not shown through the glass.")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .accessibilityElement(children: .combine)
+                CreditLine()
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("cabin-card")
         }
     }
 }
@@ -517,7 +536,7 @@ struct TargetMap: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.white.opacity(0.04))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text("Named targets. Not a window boresight. Hertzsprung is not plotted.")
+            Text("Lunar Targeting Plan aim points (PDS target list), not gazetteer centers. Not a window boresight. Hertzsprung is not plotted.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)
@@ -526,7 +545,7 @@ struct TargetMap: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("geographic-targets")
-        .accessibilityLabel("Geographic targets from the flyby. Hertzsprung is not plotted.")
+        .accessibilityLabel("Lunar Targeting Plan aim points (PDS target list), not gazetteer centers. Not a window boresight. Hertzsprung is not plotted.")
     }
 }
 

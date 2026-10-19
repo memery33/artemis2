@@ -60,20 +60,25 @@ struct GateView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 22) {
-                if let hero, let image = model.photo(hero, maxPixel: 900) {
-                    // art002e009951 is a bright limb. The black sky sits on the right,
-                    // so the square keeps the lit surface.
-                    Color.clear
-                        .frame(width: 220, height: 220)
-                        .overlay(alignment: .leading) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 320, height: 220)
+                if let hero {
+                    VStack(spacing: 8) {
+                        if let image = model.photo(hero, maxPixel: 900) {
+                            // art002e009951 is a bright limb. The black sky sits on the right,
+                            // so the square keeps the lit surface.
+                            Color.clear
+                                .frame(width: 220, height: 220)
+                                .overlay(alignment: .leading) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 320, height: 220)
+                                }
+                                .clipped()
+                                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                                .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
                         }
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                        .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
+                        CreditLine()
+                    }
                 }
                 VStack(spacing: 6) {
                     Text("Orion Window")
