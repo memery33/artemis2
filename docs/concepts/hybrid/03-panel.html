@@ -1,0 +1,433 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Hybrid — panel</title><style>
+@font-face { font-family: Fraunces; src: url("fonts/Fraunces.ttf") format("truetype"); font-weight: 100 900; font-style: normal; }
+@font-face { font-family: Fraunces; src: url("fonts/Fraunces-Italic.ttf") format("truetype"); font-weight: 100 900; font-style: italic; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 393px; height: 852px; overflow: hidden; background: #070605; }
+body { font-family: Inter, "Noto Sans", sans-serif; color: #F7F3EA; -webkit-font-smoothing: antialiased; }
+.screen { position: relative; width: 393px; height: 852px; overflow: hidden; background: #070605; }
+.display { font-family: Fraunces, "Noto Serif Display", serif; font-optical-sizing: auto; }
+.photo { position: absolute; inset: 0; width: 393px; height: 852px; object-fit: cover; }
+.bloom { position: absolute; inset: -8%; width: 116%; height: 116%; object-fit: cover; filter: blur(28px) saturate(1.15); opacity: 0.38; mix-blend-mode: screen; pointer-events: none; }
+.glass { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16), inset 0 0 90px rgba(0,0,0,0.42); background:
+  radial-gradient(120% 90% at 50% 38%, transparent 42%, rgba(0,0,0,0.38) 100%),
+  linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0) 16%); }
+.glass i { position: absolute; inset: 10px; border: 1px solid rgba(255,255,255,0.08); border-radius: 28px; }
+.scrim { position: absolute; left: 0; right: 0; bottom: 0; height: 420px; pointer-events: none; background: linear-gradient(180deg, rgba(7,6,5,0) 0%, rgba(7,6,5,0.28) 28%, rgba(7,6,5,0.72) 68%, rgba(7,6,5,0.88) 100%); }
+.island { position: absolute; z-index: 40; top: 11px; left: 133.5px; width: 126px; height: 37px; border-radius: 19px; background: #000; }
+.status { position: absolute; z-index: 40; top: 18px; left: 22px; font-weight: 600; font-size: 16px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.home { position: absolute; z-index: 40; left: 129.5px; bottom: 8px; width: 134px; height: 5px; border-radius: 3px; background: rgba(247,243,234,0.78); }
+.kicker { font-weight: 600; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #E6C48A; }
+.dim { color: #C9C2B4; }
+.cta { display: inline-flex; align-items: center; justify-content: center; height: 50px; padding: 0 28px; border-radius: 25px; background: #F7F3EA; color: #141210; font-weight: 600; font-size: 17px; letter-spacing: -0.01em; box-shadow: 0 14px 36px rgba(0,0,0,0.38); }
+.cue { position: absolute; z-index: 5; left: 0; right: 0; bottom: 28px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.grab { width: 36px; height: 4px; border-radius: 2px; background: rgba(247,243,234,0.72); }
+.micro { position: relative; width: 148px; height: 2px; border-radius: 1px; background: rgba(247,243,234,0.28); }
+.micro b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 1px; background: #E6C48A; }
+.micro i { position: absolute; top: -3px; width: 2px; height: 8px; border-radius: 1px; background: #F7F3EA; }
+.panel { position: absolute; z-index: 6; left: 0; right: 0; bottom: 0; height: 430px; padding: 14px 132px 42px 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.04) 18%, rgba(12,10,8,0.18)), rgba(14,12,10,0.52);
+  -webkit-backdrop-filter: blur(28px) saturate(1.35); backdrop-filter: blur(28px) saturate(1.35);
+  border-top: 1px solid rgba(255,255,255,0.32); box-shadow: 0 -20px 50px rgba(0,0,0,0.28); }
+.rail { position: absolute; z-index: 7; top: 0; right: 0; bottom: 0; width: 128px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(7,6,5,0) 0%, rgba(7,6,5,0.35) 28%, rgba(7,6,5,0.55) 100%); }
+.tk { position: absolute; right: 14px; height: 1px; }
+.tk.line { width: 6px; background: rgba(247,243,234,0.4); }
+.tk.photo { width: 12px; background: #E6C48A; }
+.tk.span { width: 2px; right: 26px; background: #E6C48A; box-shadow: 0 0 8px rgba(230,196,138,0.8); }
+.tk.head { width: 22px; height: 2px; right: 10px; background: #F7F3EA; box-shadow: 0 0 10px rgba(230,196,138,0.95); }
+.tk.cab { width: 2px; right: 20px; background: rgba(247,243,234,0.9); }
+.lb { position: absolute; right: 36px; width: 88px; text-align: right; text-shadow: 0 1px 8px rgba(0,0,0,0.7); }
+.lb b, .lb span { display: block; }
+.lb b { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.lb span { font-size: 11px; color: #C9C2B4; }
+.lb.now b, .lb.now span { color: #E6C48A; }
+.hour { position: absolute; right: 30px; font-size: 10px; letter-spacing: 0.12em; color: rgba(247,243,234,0.55); font-variant-numeric: tabular-nums; }
+.map { position: relative; overflow: hidden; background: #1a1814; border-radius: 16px;
+  box-shadow: 0 24px 54px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.38), inset 0 0 0 1px rgba(255,255,255,0.2); }
+.map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map .shade { position: absolute; inset: 0; background: radial-gradient(90% 90% at 50% 48%, transparent 46%, rgba(0,0,0,0.22) 100%); pointer-events: none; }
+.shadow { text-shadow: 0 2px 22px rgba(0,0,0,0.62); }
+</style></head><body>
+<div class="screen">
+  
+<img class="photo" alt="art002e009806" src="../../../demo/data/images/art002e009806.720.webp" style="object-position:61% 46%">
+<img class="bloom" alt="" src="../../../demo/data/images/art002e009806.720.webp" style="object-position:61% 46%">
+<div class="glass"><i></i></div>
+
+  <div class="panel">
+    <div class="grab" style="margin:2px auto 16px"></div>
+    <div style="font-size:32px;font-weight:560;letter-spacing:-0.03em;font-variant-numeric:tabular-nums">19:36:05.938</div>
+    <div class="dim" style="margin-top:2px;font-size:13px">UTC · MET 04:21:00:53.938</div>
+    <div style="margin-top:22px;display:flex;align-items:center;justify-content:space-between;max-width:220px">
+      <div style="font-size:15px;font-weight:600;letter-spacing:0.04em">−15s</div>
+      <div style="width:56px;height:56px;border-radius:28px;border:1px solid rgba(230,196,138,0.9);display:grid;place-items:center;background:rgba(247,243,234,0.08)">
+        <svg width="14" height="16" viewBox="0 0 14 16" aria-label="Pause"><rect x="1" y="0" width="3.5" height="16" rx="0.5" fill="#F7F3EA"/><rect x="9.5" y="0" width="3.5" height="16" rx="0.5" fill="#F7F3EA"/></svg>
+      </div>
+      <div style="font-size:15px;font-weight:600;letter-spacing:0.04em">+15s</div>
+    </div>
+    <p class="display" style="margin-top:18px;font-style:italic;font-size:15px;line-height:1.3;font-variation-settings:'opsz' 48, 'wght' 420">All right, Aristarchus, very, very, very bright.</p>
+    <p class="dim" style="margin-top:10px;font-size:11px;line-height:1.4">Rate 1. Linear from 19:33:00.000 to 23:00:46.689 UTC. The bright segment is the observation, 930 s, the first 7.5%.</p>
+  </div>
+  <div class="rail"><i class="tk line" style="top:64.16px"></i>
+<i class="tk line" style="top:64.65px"></i>
+<i class="tk line" style="top:64.89px"></i>
+<i class="tk line" style="top:65.02px"></i>
+<i class="tk line" style="top:65.20px"></i>
+<i class="tk line" style="top:65.41px"></i>
+<i class="tk line" style="top:65.55px"></i>
+<i class="tk line" style="top:65.69px"></i>
+<i class="tk line" style="top:65.69px"></i>
+<i class="tk line" style="top:65.82px"></i>
+<i class="tk line" style="top:65.88px"></i>
+<i class="tk line" style="top:65.89px"></i>
+<i class="tk line" style="top:65.98px"></i>
+<i class="tk line" style="top:66.08px"></i>
+<i class="tk line" style="top:66.14px"></i>
+<i class="tk line" style="top:66.38px"></i>
+<i class="tk line" style="top:66.38px"></i>
+<i class="tk line" style="top:67.26px"></i>
+<i class="tk line" style="top:67.30px"></i>
+<i class="tk line" style="top:67.42px"></i>
+<i class="tk line" style="top:67.45px"></i>
+<i class="tk line" style="top:67.57px"></i>
+<i class="tk line" style="top:67.63px"></i>
+<i class="tk line" style="top:67.65px"></i>
+<i class="tk line" style="top:67.82px"></i>
+<i class="tk line" style="top:67.88px"></i>
+<i class="tk line" style="top:68.09px"></i>
+<i class="tk line" style="top:68.12px"></i>
+<i class="tk line" style="top:68.20px"></i>
+<i class="tk line" style="top:68.23px"></i>
+<i class="tk line" style="top:68.39px"></i>
+<i class="tk line" style="top:68.48px"></i>
+<i class="tk line" style="top:68.76px"></i>
+<i class="tk line" style="top:68.89px"></i>
+<i class="tk line" style="top:68.99px"></i>
+<i class="tk line" style="top:69.16px"></i>
+<i class="tk line" style="top:69.40px"></i>
+<i class="tk line" style="top:70.61px"></i>
+<i class="tk line" style="top:71.01px"></i>
+<i class="tk line" style="top:71.50px"></i>
+<i class="tk line" style="top:71.62px"></i>
+<i class="tk line" style="top:72.95px"></i>
+<i class="tk line" style="top:73.05px"></i>
+<i class="tk line" style="top:73.29px"></i>
+<i class="tk line" style="top:74.23px"></i>
+<i class="tk line" style="top:74.43px"></i>
+<i class="tk line" style="top:74.49px"></i>
+<i class="tk line" style="top:74.64px"></i>
+<i class="tk line" style="top:74.78px"></i>
+<i class="tk line" style="top:74.88px"></i>
+<i class="tk line" style="top:75.13px"></i>
+<i class="tk line" style="top:75.34px"></i>
+<i class="tk line" style="top:75.51px"></i>
+<i class="tk line" style="top:75.65px"></i>
+<i class="tk line" style="top:76.00px"></i>
+<i class="tk line" style="top:76.10px"></i>
+<i class="tk line" style="top:76.16px"></i>
+<i class="tk line" style="top:76.26px"></i>
+<i class="tk line" style="top:76.41px"></i>
+<i class="tk line" style="top:76.48px"></i>
+<i class="tk line" style="top:76.85px"></i>
+<i class="tk line" style="top:77.09px"></i>
+<i class="tk line" style="top:77.45px"></i>
+<i class="tk line" style="top:77.67px"></i>
+<i class="tk line" style="top:78.26px"></i>
+<i class="tk line" style="top:78.70px"></i>
+<i class="tk line" style="top:78.75px"></i>
+<i class="tk line" style="top:79.07px"></i>
+<i class="tk line" style="top:79.07px"></i>
+<i class="tk line" style="top:79.14px"></i>
+<i class="tk line" style="top:79.49px"></i>
+<i class="tk line" style="top:79.62px"></i>
+<i class="tk line" style="top:79.95px"></i>
+<i class="tk line" style="top:80.63px"></i>
+<i class="tk line" style="top:80.85px"></i>
+<i class="tk line" style="top:80.96px"></i>
+<i class="tk line" style="top:81.19px"></i>
+<i class="tk line" style="top:81.66px"></i>
+<i class="tk line" style="top:81.73px"></i>
+<i class="tk line" style="top:81.77px"></i>
+<i class="tk line" style="top:81.79px"></i>
+<i class="tk line" style="top:81.90px"></i>
+<i class="tk line" style="top:82.52px"></i>
+<i class="tk line" style="top:82.81px"></i>
+<i class="tk line" style="top:82.83px"></i>
+<i class="tk line" style="top:83.17px"></i>
+<i class="tk line" style="top:83.19px"></i>
+<i class="tk line" style="top:83.31px"></i>
+<i class="tk line" style="top:83.77px"></i>
+<i class="tk line" style="top:83.77px"></i>
+<i class="tk line" style="top:84.02px"></i>
+<i class="tk line" style="top:84.14px"></i>
+<i class="tk line" style="top:84.48px"></i>
+<i class="tk line" style="top:84.58px"></i>
+<i class="tk line" style="top:84.78px"></i>
+<i class="tk line" style="top:84.85px"></i>
+<i class="tk line" style="top:85.07px"></i>
+<i class="tk line" style="top:85.11px"></i>
+<i class="tk line" style="top:85.26px"></i>
+<i class="tk line" style="top:85.34px"></i>
+<i class="tk line" style="top:85.50px"></i>
+<i class="tk line" style="top:85.93px"></i>
+<i class="tk line" style="top:86.11px"></i>
+<i class="tk line" style="top:86.22px"></i>
+<i class="tk line" style="top:86.34px"></i>
+<i class="tk line" style="top:86.64px"></i>
+<i class="tk line" style="top:86.72px"></i>
+<i class="tk line" style="top:86.75px"></i>
+<i class="tk line" style="top:86.96px"></i>
+<i class="tk line" style="top:86.99px"></i>
+<i class="tk line" style="top:87.28px"></i>
+<i class="tk line" style="top:87.58px"></i>
+<i class="tk line" style="top:87.75px"></i>
+<i class="tk line" style="top:87.84px"></i>
+<i class="tk line" style="top:88.13px"></i>
+<i class="tk line" style="top:88.29px"></i>
+<i class="tk line" style="top:88.31px"></i>
+<i class="tk line" style="top:88.74px"></i>
+<i class="tk line" style="top:88.78px"></i>
+<i class="tk line" style="top:88.84px"></i>
+<i class="tk line" style="top:89.27px"></i>
+<i class="tk line" style="top:89.34px"></i>
+<i class="tk line" style="top:89.59px"></i>
+<i class="tk line" style="top:89.63px"></i>
+<i class="tk line" style="top:90.05px"></i>
+<i class="tk line" style="top:90.20px"></i>
+<i class="tk line" style="top:90.45px"></i>
+<i class="tk line" style="top:90.46px"></i>
+<i class="tk line" style="top:90.49px"></i>
+<i class="tk line" style="top:90.61px"></i>
+<i class="tk line" style="top:90.68px"></i>
+<i class="tk line" style="top:90.86px"></i>
+<i class="tk line" style="top:90.93px"></i>
+<i class="tk line" style="top:90.96px"></i>
+<i class="tk line" style="top:90.96px"></i>
+<i class="tk line" style="top:91.21px"></i>
+<i class="tk line" style="top:91.26px"></i>
+<i class="tk line" style="top:91.26px"></i>
+<i class="tk line" style="top:91.33px"></i>
+<i class="tk line" style="top:91.57px"></i>
+<i class="tk line" style="top:91.59px"></i>
+<i class="tk line" style="top:91.66px"></i>
+<i class="tk line" style="top:91.94px"></i>
+<i class="tk line" style="top:91.97px"></i>
+<i class="tk line" style="top:92.28px"></i>
+<i class="tk line" style="top:92.36px"></i>
+<i class="tk line" style="top:92.45px"></i>
+<i class="tk line" style="top:92.62px"></i>
+<i class="tk line" style="top:92.70px"></i>
+<i class="tk line" style="top:92.88px"></i>
+<i class="tk line" style="top:93.04px"></i>
+<i class="tk line" style="top:93.06px"></i>
+<i class="tk line" style="top:93.12px"></i>
+<i class="tk line" style="top:93.12px"></i>
+<i class="tk line" style="top:93.23px"></i>
+<i class="tk line" style="top:93.29px"></i>
+<i class="tk line" style="top:93.30px"></i>
+<i class="tk line" style="top:93.43px"></i>
+<i class="tk line" style="top:93.54px"></i>
+<i class="tk line" style="top:93.70px"></i>
+<i class="tk line" style="top:93.80px"></i>
+<i class="tk line" style="top:93.85px"></i>
+<i class="tk line" style="top:93.91px"></i>
+<i class="tk line" style="top:93.98px"></i>
+<i class="tk line" style="top:94.00px"></i>
+<i class="tk line" style="top:94.18px"></i>
+<i class="tk line" style="top:94.47px"></i>
+<i class="tk line" style="top:94.57px"></i>
+<i class="tk line" style="top:94.82px"></i>
+<i class="tk line" style="top:95.13px"></i>
+<i class="tk line" style="top:95.23px"></i>
+<i class="tk line" style="top:95.52px"></i>
+<i class="tk line" style="top:95.80px"></i>
+<i class="tk line" style="top:95.89px"></i>
+<i class="tk line" style="top:96.16px"></i>
+<i class="tk line" style="top:96.25px"></i>
+<i class="tk line" style="top:96.49px"></i>
+<i class="tk line" style="top:96.95px"></i>
+<i class="tk line" style="top:97.10px"></i>
+<i class="tk line" style="top:97.17px"></i>
+<i class="tk line" style="top:97.24px"></i>
+<i class="tk line" style="top:97.38px"></i>
+<i class="tk line" style="top:98.02px"></i>
+<i class="tk line" style="top:98.27px"></i>
+<i class="tk line" style="top:98.52px"></i>
+<i class="tk line" style="top:98.52px"></i>
+<i class="tk line" style="top:98.69px"></i>
+<i class="tk line" style="top:98.77px"></i>
+<i class="tk line" style="top:98.91px"></i>
+<i class="tk line" style="top:99.14px"></i>
+<i class="tk line" style="top:99.25px"></i>
+<i class="tk line" style="top:99.27px"></i>
+<i class="tk line" style="top:99.47px"></i>
+<i class="tk line" style="top:99.63px"></i>
+<i class="tk line" style="top:99.71px"></i>
+<i class="tk line" style="top:99.81px"></i>
+<i class="tk line" style="top:99.89px"></i>
+<i class="tk line" style="top:99.93px"></i>
+<i class="tk line" style="top:99.99px"></i>
+<i class="tk line" style="top:100.55px"></i>
+<i class="tk line" style="top:100.68px"></i>
+<i class="tk line" style="top:100.75px"></i>
+<i class="tk line" style="top:100.78px"></i>
+<i class="tk line" style="top:100.90px"></i>
+<i class="tk line" style="top:101.11px"></i>
+<i class="tk line" style="top:101.53px"></i>
+<i class="tk line" style="top:101.55px"></i>
+<i class="tk line" style="top:101.63px"></i>
+<i class="tk line" style="top:101.69px"></i>
+<i class="tk line" style="top:101.87px"></i>
+<i class="tk line" style="top:102.22px"></i>
+<i class="tk line" style="top:102.41px"></i>
+<i class="tk line" style="top:102.47px"></i>
+<i class="tk line" style="top:102.63px"></i>
+<i class="tk line" style="top:102.76px"></i>
+<i class="tk line" style="top:102.83px"></i>
+<i class="tk line" style="top:102.97px"></i>
+<i class="tk line" style="top:103.07px"></i>
+<i class="tk line" style="top:103.32px"></i>
+<i class="tk line" style="top:103.74px"></i>
+<i class="tk line" style="top:104.10px"></i>
+<i class="tk line" style="top:104.29px"></i>
+<i class="tk line" style="top:104.47px"></i>
+<i class="tk line" style="top:104.59px"></i>
+<i class="tk line" style="top:104.63px"></i>
+<i class="tk line" style="top:104.87px"></i>
+<i class="tk line" style="top:105.07px"></i>
+<i class="tk line" style="top:105.42px"></i>
+<i class="tk line" style="top:105.44px"></i>
+<i class="tk line" style="top:105.56px"></i>
+<i class="tk line" style="top:105.65px"></i>
+<i class="tk line" style="top:105.88px"></i>
+<i class="tk line" style="top:106.12px"></i>
+<i class="tk line" style="top:106.22px"></i>
+<i class="tk line" style="top:106.65px"></i>
+<i class="tk line" style="top:107.09px"></i>
+<i class="tk line" style="top:107.29px"></i>
+<i class="tk line" style="top:107.52px"></i>
+<i class="tk line" style="top:107.75px"></i>
+<i class="tk line" style="top:108.31px"></i>
+<i class="tk line" style="top:108.61px"></i>
+<i class="tk line" style="top:108.89px"></i>
+<i class="tk line" style="top:109.06px"></i>
+<i class="tk line" style="top:109.24px"></i>
+<i class="tk line" style="top:109.44px"></i>
+<i class="tk line" style="top:109.69px"></i>
+<i class="tk line" style="top:109.86px"></i>
+<i class="tk line" style="top:109.97px"></i>
+<i class="tk line" style="top:110.37px"></i>
+<i class="tk line" style="top:110.48px"></i>
+<i class="tk line" style="top:110.79px"></i>
+<i class="tk line" style="top:110.84px"></i>
+<i class="tk line" style="top:111.02px"></i>
+<i class="tk line" style="top:111.23px"></i>
+<i class="tk line" style="top:111.34px"></i>
+<i class="tk line" style="top:111.57px"></i>
+<i class="tk line" style="top:111.60px"></i>
+<i class="tk line" style="top:112.26px"></i>
+<i class="tk line" style="top:112.35px"></i>
+<i class="tk line" style="top:112.46px"></i>
+<i class="tk line" style="top:112.65px"></i>
+<i class="tk line" style="top:112.91px"></i>
+<i class="tk line" style="top:113.05px"></i>
+<i class="tk line" style="top:113.34px"></i>
+<i class="tk line" style="top:113.44px"></i>
+<i class="tk line" style="top:113.57px"></i>
+<i class="tk line" style="top:113.70px"></i>
+<i class="tk line" style="top:113.97px"></i>
+<i class="tk line" style="top:114.62px"></i>
+<i class="tk line" style="top:114.76px"></i>
+<i class="tk line" style="top:114.92px"></i>
+<i class="tk line" style="top:114.98px"></i>
+<i class="tk line" style="top:115.10px"></i>
+<i class="tk line" style="top:115.21px"></i>
+<i class="tk line" style="top:115.29px"></i>
+<i class="tk line" style="top:115.58px"></i>
+<i class="tk line" style="top:115.72px"></i>
+<i class="tk line" style="top:115.77px"></i>
+<i class="tk line" style="top:116.00px"></i>
+<i class="tk line" style="top:116.23px"></i>
+<i class="tk line" style="top:116.28px"></i>
+<i class="tk line" style="top:116.43px"></i>
+<i class="tk line" style="top:116.64px"></i>
+<i class="tk line" style="top:116.69px"></i>
+<i class="tk line" style="top:116.75px"></i>
+<i class="tk line" style="top:116.81px"></i>
+<i class="tk line" style="top:116.93px"></i>
+<i class="tk line" style="top:116.98px"></i>
+<i class="tk line" style="top:117.01px"></i>
+<i class="tk line" style="top:117.05px"></i>
+<i class="tk line" style="top:117.13px"></i>
+<i class="tk line" style="top:117.14px"></i>
+<i class="tk line" style="top:117.20px"></i>
+<i class="tk line" style="top:117.33px"></i>
+<i class="tk line" style="top:118.37px"></i>
+<i class="tk line" style="top:118.98px"></i>
+<i class="tk line" style="top:119.13px"></i>
+<i class="tk line" style="top:119.62px"></i>
+<i class="tk line" style="top:120.10px"></i>
+<i class="tk line" style="top:120.21px"></i>
+<i class="tk line" style="top:120.56px"></i>
+<i class="tk line" style="top:120.61px"></i>
+<i class="tk line" style="top:120.63px"></i>
+<i class="tk photo" style="top:64.24px"></i>
+<i class="tk photo" style="top:65.62px"></i>
+<i class="tk photo" style="top:67.66px"></i>
+<i class="tk photo" style="top:68.36px"></i>
+<i class="tk photo" style="top:68.43px"></i>
+<i class="tk photo" style="top:69.45px"></i>
+<i class="tk photo" style="top:70.12px"></i>
+<i class="tk photo" style="top:70.41px"></i>
+<i class="tk photo" style="top:70.91px"></i>
+<i class="tk photo" style="top:71.18px"></i>
+<i class="tk photo" style="top:71.28px"></i>
+<i class="tk photo" style="top:72.48px"></i>
+<i class="tk photo" style="top:73.07px"></i>
+<i class="tk photo" style="top:74.49px"></i>
+<i class="tk photo" style="top:75.81px"></i>
+<i class="tk photo" style="top:77.69px"></i>
+<i class="tk photo" style="top:78.90px"></i>
+<i class="tk photo" style="top:79.14px"></i>
+<i class="tk photo" style="top:80.38px"></i>
+<i class="tk photo" style="top:80.83px"></i>
+<i class="tk photo" style="top:81.59px"></i>
+<i class="tk photo" style="top:82.72px"></i>
+<i class="tk photo" style="top:83.49px"></i>
+<i class="tk photo" style="top:85.94px"></i>
+<i class="tk photo" style="top:86.17px"></i>
+<i class="tk photo" style="top:89.22px"></i>
+<i class="tk photo" style="top:90.83px"></i>
+<i class="tk photo" style="top:91.38px"></i>
+<i class="tk photo" style="top:94.26px"></i>
+<i class="tk photo" style="top:95.25px"></i>
+<i class="tk photo" style="top:98.90px"></i>
+<i class="tk photo" style="top:99.19px"></i>
+<i class="tk photo" style="top:99.67px"></i>
+<i class="tk photo" style="top:102.45px"></i>
+<i class="tk photo" style="top:102.87px"></i>
+<i class="tk photo" style="top:106.73px"></i>
+<i class="tk photo" style="top:108.83px"></i>
+<i class="tk photo" style="top:109.35px"></i>
+<i class="tk photo" style="top:112.49px"></i>
+<i class="tk photo" style="top:113.46px"></i>
+<i class="tk photo" style="top:114.73px"></i>
+<i class="tk photo" style="top:115.31px"></i>
+<i class="tk span" style="top:64.00px;height:56.70px"></i>
+<i class="tk head" style="top:75.34px"></i>
+<i class="tk cab" style="top:733.55px;height:31.09px"></i>
+<div class="lb" style="top:148.00px"><b>19:33:00</b><span>Opens</span></div>
+<div class="lb" style="top:188.00px"><b>19:33:02</b><span>Aristarchus</span></div>
+<div class="lb" style="top:228.00px"><b>19:35:52</b><span>009806</span></div>
+<div class="lb now" style="top:268.00px"><b>19:36:05</b><span>Wiseman</span></div>
+<div class="lb" style="top:308.00px"><b>19:38:52</b><span>Albedo</span></div>
+<div class="lb" style="top:348.00px"><b>19:40:57</b><span>Reiner Gamma</span></div>
+<div class="lb" style="top:388.00px"><b>19:48:30</b><span>Closes</span></div>
+<i style="position:absolute;right:14px;top:64px;bottom:36px;width:1px;background:rgba(247,243,234,0.32)"></i>
+<svg style="position:absolute;right:14px;top:92.3px;width:18px;height:307.7px" viewBox="0 0 18 307.7" preserveAspectRatio="none"><path d="M18 0 H7 V307.7" stroke="rgba(230,196,138,0.9)" fill="none" stroke-width="1.25" vector-effect="non-scaling-stroke"/></svg>
+<div class="lb" style="top:717.55px"><b>22:36:03</b><span>Cab Cam 2</span></div>
+<div class="lb" style="top:808.00px"><b>23:00:46</b><span>Closest</span></div>
+<div class="hour" style="top:601.69px">22:00</div></div>
+  <div class="island"></div><div class="status">19:36</div><div class="home"></div>
+</div></body></html>
