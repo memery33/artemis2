@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mission — playback</title>
+<style>
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 852px; height: 393px; overflow: hidden; background: #12110E; }
+body { color: #E8E2D6; font-family: "JetBrains Mono", ui-monospace, monospace; -webkit-font-smoothing: antialiased; }
+.screen { position: relative; width: 852px; height: 393px; overflow: hidden; background: #12110E; }
+.dim { color: #8E887C; }
+.gold { color: #D4B483; }
+.k { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #8E887C; }
+.num { font-variant-numeric: tabular-nums; font-weight: 500; letter-spacing: -0.03em; }
+.map { position: relative; overflow: hidden; background: #1A1814; border: 1px solid #2C2A26; }
+.map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cue { position: absolute; left: 48px; right: 28px; bottom: 10px; height: 18px; border-top: 1px solid #2C2A26; }
+.cue i { position: absolute; top: -1px; width: 2px; height: 7px; background: #D4B483; }
+.cue span { position: absolute; left: 50%; transform: translateX(-50%); top: -7px; font-size: 9px; letter-spacing: 0.18em; color: #D4B483; background: #12110E; padding: 0 8px; }
+.ruler { position: relative; height: 62px; margin: 0 8px; }
+.base { position: absolute; left: 0; right: 0; top: 30px; height: 1px; background: #3A362F; }
+.band { position: absolute; top: 28px; height: 5px; background: rgba(212,180,131,0.45); }
+.mk { position: absolute; top: 24px; width: 1px; height: 12px; background: rgba(232,226,214,0.45); }
+.mk.frame { top: 18px; height: 12px; background: #D4B483; }
+.mk.line { top: 30px; height: 8px; }
+.mk.cab, .mk.cabmark { background: #E8E2D6; height: 16px; top: 22px; }
+.mk.play { top: 12px; height: 28px; width: 2px; background: #D4B483; }
+.mk.approach { top: 14px; height: 24px; width: 2px; background: #E8E2D6; }
+.nm { position: absolute; width: 120px; font-size: 8px; line-height: 1.25; color: #E8E2D6; }
+.nm b { display: block; color: #D4B483; font-weight: 500; }
+.nm.above { top: 0; }
+.nm.below { top: 40px; }
+.nm.mid { transform: translateX(-50%); text-align: center; }
+.nm.start { text-align: left; }
+.nm.end { transform: translateX(-100%); text-align: right; }
+.panel { position: absolute; left: 0; right: 0; bottom: 0; height: 214px; background: #0C0B09; border-top: 1px solid #D4B483; padding: 10px 20px 8px 48px; }
+
+</style>
+</head>
+<body>
+
+<div class="screen">
+  
+  <div style="position:absolute;top:14px;left:48px;right:24px;display:flex;justify-content:space-between;align-items:baseline">
+    <div style="font-size:11px;letter-spacing:0.18em">ORION <span class="dim">FD06</span></div>
+    <div class="dim" style="font-size:10px;letter-spacing:0.12em">19:36:05.938 UTC</div>
+  </div>
+  <div class="map" style="position:absolute;top:40px;left:48px;width:468px;height:222px">
+    <img alt="LROC color map cropped to the flyby track, SVS 4720" src="lroc-track.jpg">
+    
+<svg viewBox="0 0 1000 500" preserveAspectRatio="none">
+  <polyline points="451.39,257.40 452.23,257.45 453.08,257.50 453.94,257.55 454.80,257.60 455.67,257.65 456.54,257.70 457.42,257.75 458.31,257.80 459.20,257.85 460.09,257.90 461.00,257.95 461.90,258.00 462.82,258.05 463.74,258.11 464.67,258.16 465.60,258.22 466.54,258.27 467.48,258.32 468.43,258.38 469.39,258.44 470.36,258.49 471.33,258.55 472.31,258.61 473.29,258.66 474.28,258.72 475.28,258.78 476.28,258.84 477.30,258.90 478.31,258.96 479.34,259.02 480.37,259.08 481.41,259.14 482.46,259.21 483.52,259.27 484.58,259.33 485.65,259.40 486.73,259.46 487.81,259.53 488.90,259.59 490.00,259.66 491.11,259.73 492.23,259.79 493.35,259.86 494.49,259.93 495.63,260.00 496.78,260.07 497.93,260.14 499.10,260.21 500.27,260.28 501.46,260.35 502.65,260.43 503.85,260.50 505.06,260.58 506.27,260.65 507.50,260.73 508.74,260.80 509.98,260.88 511.24,260.96 512.50,261.04 513.78,261.11 515.06,261.19 516.35,261.27 517.65,261.36 518.97,261.44 520.29,261.52 521.62,261.60 522.96,261.69 524.31,261.77 525.68,261.86 527.05,261.95 528.43,262.03 529.83,262.12 531.23,262.21 532.65,262.30 534.07,262.39 535.51,262.48 536.96,262.57 538.42,262.67 539.89,262.76 541.37,262.85 542.86,262.95 544.37,263.05 545.88,263.14 547.41,263.24 548.95,263.34 550.50,263.44 552.07,263.54 553.64,263.64 555.23,263.74 556.83,263.85 558.45,263.95 560.07,264.06 561.71,264.16 563.36,264.27 565.03,264.38 566.70,264.49 568.39,264.60 570.10,264.71 571.81,264.82 573.54,264.93 575.29,265.05 577.04,265.16 578.81,265.28 580.60,265.39 582.40,265.51 584.21,265.63 586.04,265.75 587.88,265.87 589.73,265.99 591.60,266.11 593.48,266.23 595.38,266.36 597.29,266.48 599.22,266.61 601.16,266.74 603.12,266.87 605.09,267.00 607.08,267.13 609.08,267.26 611.10,267.39 613.13,267.52 615.18,267.66 617.24,267.79 619.32,267.93 621.41,268.07 623.52,268.20 625.65,268.34 627.79,268.48 629.95,268.62 632.12,268.77 634.31,268.91 636.51,269.05 638.73,269.20 640.97,269.34 643.22,269.49 645.49,269.64 647.77,269.79 650.07,269.94 652.39,270.09 654.72,270.24 657.06,270.39 659.43,270.54 661.81,270.70 664.20,270.85 666.62,271.01 669.04,271.16 671.49,271.32 673.95,271.48 676.42,271.64 678.91,271.80 681.42,271.96 683.94,272.12 686.48,272.28 689.03,272.44 691.60,272.60 694.19,272.76 696.79,272.93 699.40,273.09 702.03,273.25 704.68,273.42 707.34,273.58 710.01,273.75 712.70,273.92 715.40,274.08 718.12,274.25 720.85,274.42 723.59,274.58 726.35,274.75 729.12,274.92 731.91,275.09 734.71,275.25 737.52,275.42 740.34,275.59 743.18,275.76 746.02,275.92 748.88,276.09 751.76,276.26 754.64,276.43 757.53,276.59 760.44,276.76 763.35,276.93 766.28,277.09 769.21,277.26 772.16,277.43 775.11,277.59 778.07,277.75 781.04,277.92 784.02,278.08 787.01,278.24 790.01,278.41 793.01,278.57 796.02,278.73 799.03,278.89 802.06,279.05 805.08,279.20 808.12,279.36 811.15,279.52 814.20,279.67 817.24,279.82 820.29,279.98 823.35,280.13 826.40,280.28 829.46,280.43 832.52,280.58 835.58,280.72 838.65,280.87 841.71,281.01 844.10,281.12" fill="none" stroke="#F7F3EB" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+  <polyline points="451.39,257.40 452.23,257.45 453.08,257.50 453.94,257.55 454.80,257.60 455.67,257.65 456.54,257.70 457.42,257.75 458.31,257.80 459.20,257.85 460.09,257.90 461.00,257.95 461.90,258.00 462.82,258.05 463.74,258.11 464.67,258.16 465.60,258.22 466.54,258.27 467.48,258.32 468.43,258.38 469.39,258.44 470.36,258.49 471.33,258.55 472.31,258.61 473.29,258.66 474.28,258.72 475.28,258.78 476.28,258.84 477.30,258.90 478.31,258.96 479.34,259.02 480.37,259.08 481.41,259.14 482.46,259.21 483.52,259.27 484.58,259.33 485.65,259.40 486.73,259.46 487.81,259.53 488.90,259.59 490.00,259.66 491.11,259.73 492.23,259.79 493.35,259.86 494.49,259.93 495.63,260.00 496.78,260.07 497.93,260.14 499.10,260.21 500.27,260.28 501.46,260.35 502.65,260.43 503.85,260.50 505.06,260.58 506.27,260.65 507.50,260.73 508.74,260.80 509.98,260.88 511.24,260.96 512.50,261.04 513.78,261.11 515.06,261.19 516.35,261.27 517.65,261.36 518.97,261.44 520.29,261.52 521.62,261.60 522.96,261.69 524.31,261.77 525.68,261.86 527.05,261.95 528.43,262.03 529.83,262.12 531.23,262.21 532.65,262.30 534.07,262.39 535.51,262.48 536.96,262.57 538.42,262.67 539.89,262.76 541.37,262.85 542.86,262.95 544.37,263.05 545.88,263.14 547.41,263.24 548.95,263.34 550.50,263.44 552.07,263.54 553.64,263.64 555.23,263.74 556.83,263.85 558.45,263.95 560.07,264.06 561.71,264.16 563.36,264.27 565.03,264.38 566.70,264.49 568.39,264.60 570.10,264.71 571.81,264.82 573.54,264.93 575.29,265.05 577.04,265.16 578.81,265.28 580.60,265.39 582.40,265.51 584.21,265.63 586.04,265.75 587.88,265.87 589.73,265.99 591.60,266.11 593.48,266.23 595.38,266.36 597.29,266.48 599.22,266.61 601.16,266.74 603.12,266.87 605.09,267.00 607.08,267.13 609.08,267.26 611.10,267.39 613.13,267.52 615.18,267.66 617.24,267.79 619.32,267.93 621.41,268.07 623.52,268.20 625.65,268.34 627.79,268.48 629.95,268.62 632.12,268.77 634.31,268.91 636.51,269.05 638.73,269.20 640.97,269.34 643.22,269.49 645.49,269.64 647.77,269.79 650.07,269.94 652.39,270.09 654.72,270.24 657.06,270.39 659.43,270.54 661.81,270.70 664.20,270.85 666.62,271.01 669.04,271.16 671.49,271.32 673.95,271.48 676.42,271.64 678.91,271.80 681.42,271.96 683.94,272.12 686.48,272.28 689.03,272.44 691.60,272.60 694.19,272.76 696.79,272.93 699.40,273.09 702.03,273.25 704.68,273.42 707.34,273.58 710.01,273.75 712.70,273.92 715.40,274.08 718.12,274.25 720.85,274.42 723.59,274.58 726.35,274.75 729.12,274.92 731.91,275.09 734.71,275.25 737.52,275.42 740.34,275.59 743.18,275.76 746.02,275.92 748.88,276.09 751.76,276.26 754.64,276.43 757.53,276.59 760.44,276.76 763.35,276.93 766.28,277.09 769.21,277.26 772.16,277.43 775.11,277.59 778.07,277.75 781.04,277.92 784.02,278.08 787.01,278.24 790.01,278.41 793.01,278.57 796.02,278.73 799.03,278.89 802.06,279.05 805.08,279.20 808.12,279.36 811.15,279.52 814.20,279.67 817.24,279.82 820.29,279.98 823.35,280.13 826.40,280.28 829.46,280.43 832.52,280.58 835.58,280.72 838.65,280.87 841.71,281.01 844.10,281.12" fill="none" stroke="#1B1814" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="451.39" cy="257.40" r="7" fill="#F7F3EB" stroke="#1B1814" stroke-width="2"/>
+  <circle cx="844.10" cy="281.12" r="9" fill="none" stroke="#1B1814" stroke-width="2.4"/>
+  <circle cx="454.03" cy="257.55" r="10" fill="#D4B483" stroke="#1B1814" stroke-width="2"/>
+  <rect x="137.68" y="127.83" width="14" height="14" fill="#F7F3EB" stroke="#1B1814" stroke-width="2"/><text x="156.68" y="126.83" fill="#1B1814" font-size="18" font-family="JetBrains Mono, monospace">A</text><rect x="198.05" y="218.61" width="14" height="14" fill="#F7F3EB" stroke="#1B1814" stroke-width="2"/><text x="217.05" y="217.61" fill="#1B1814" font-size="18" font-family="JetBrains Mono, monospace">R</text>
+</svg>
+
+  </div>
+  <div style="position:absolute;top:268px;left:48px;width:470px;font-size:7.5px;line-height:1.3;color:#8E887C">The globe uses the NASA SVS CGI Moon Kit 2025 LROC color map, file lroc_color_2k.jpg, 2048 by 1024, public domain. Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio, Lunar Reconnaissance Orbiter Camera, Arizona State University, and Noah Petro (NASA/GSFC), visualization by Ernie Wright. SVS 4720. The map is centered on 0° longitude and is an aesthetic rendering, not a photograph and not the flyby lighting. This frame is that map cropped from 340° E to 150° E and 48° N to 42° S. Sub-observer track, Horizons quantity 14, IAU MOON_ME. Squares are USGS gazetteer centers: A Aristarchus, R Reiner Gamma. Not a window boresight.</div>
+  <div style="position:absolute;top:40px;left:534px;right:24px">
+    <div class="k">Range</div>
+    <div class="num" style="font-size:26px;margin-top:2px">15,951.93 km</div>
+    <div style="display:flex;gap:18px;margin-top:10px">
+      <div><div class="k">Altitude</div><div class="num" style="font-size:14px;margin-top:2px">14,214.53 km</div></div>
+      <div><div class="k">Sub-lon</div><div class="num" style="font-size:14px;margin-top:2px">253.735° E</div></div>
+      <div><div class="k">Sub-lat</div><div class="num" style="font-size:14px;margin-top:2px">1.641° N</div></div>
+    </div>
+    <p class="dim" style="margin-top:10px;font-size:10px;line-height:1.4">MET 04:21:00:53.938. Showing art002e009806, 19:35:52.140 UTC, target Aristarchus Plateau. Wiseman on PCD3.</p>
+  </div>
+
+  <div style="position:absolute;left:534px;top:196px;right:22px">
+    <div class="k">PCD3 · Wiseman · 19:36:05.938</div>
+    <p style="margin-top:4px;font-size:12px;line-height:1.35;color:#E8E2D6">All right, Aristarchus, very, very, very bright.</p>
+  </div>
+  <div class="cue"><i style="left:1.491%"></i><span>TIMELINE</span></div>
+</div>
+
+</body>
+</html>

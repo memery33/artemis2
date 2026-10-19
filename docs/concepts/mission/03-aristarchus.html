@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mission — Aristarchus</title>
+<style>
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 852px; height: 393px; overflow: hidden; background: #12110E; }
+body { color: #E8E2D6; font-family: "JetBrains Mono", ui-monospace, monospace; -webkit-font-smoothing: antialiased; }
+.screen { position: relative; width: 852px; height: 393px; overflow: hidden; background: #12110E; }
+.dim { color: #8E887C; }
+.gold { color: #D4B483; }
+.k { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #8E887C; }
+.num { font-variant-numeric: tabular-nums; font-weight: 500; letter-spacing: -0.03em; }
+.map { position: relative; overflow: hidden; background: #1A1814; border: 1px solid #2C2A26; }
+.map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cue { position: absolute; left: 48px; right: 28px; bottom: 10px; height: 18px; border-top: 1px solid #2C2A26; }
+.cue i { position: absolute; top: -1px; width: 2px; height: 7px; background: #D4B483; }
+.cue span { position: absolute; left: 50%; transform: translateX(-50%); top: -7px; font-size: 9px; letter-spacing: 0.18em; color: #D4B483; background: #12110E; padding: 0 8px; }
+.ruler { position: relative; height: 62px; margin: 0 8px; }
+.base { position: absolute; left: 0; right: 0; top: 30px; height: 1px; background: #3A362F; }
+.band { position: absolute; top: 28px; height: 5px; background: rgba(212,180,131,0.45); }
+.mk { position: absolute; top: 24px; width: 1px; height: 12px; background: rgba(232,226,214,0.45); }
+.mk.frame { top: 18px; height: 12px; background: #D4B483; }
+.mk.line { top: 30px; height: 8px; }
+.mk.cab, .mk.cabmark { background: #E8E2D6; height: 16px; top: 22px; }
+.mk.play { top: 12px; height: 28px; width: 2px; background: #D4B483; }
+.mk.approach { top: 14px; height: 24px; width: 2px; background: #E8E2D6; }
+.nm { position: absolute; width: 120px; font-size: 8px; line-height: 1.25; color: #E8E2D6; }
+.nm b { display: block; color: #D4B483; font-weight: 500; }
+.nm.above { top: 0; }
+.nm.below { top: 40px; }
+.nm.mid { transform: translateX(-50%); text-align: center; }
+.nm.start { text-align: left; }
+.nm.end { transform: translateX(-100%); text-align: right; }
+.panel { position: absolute; left: 0; right: 0; bottom: 0; height: 214px; background: #0C0B09; border-top: 1px solid #D4B483; padding: 10px 20px 8px 48px; }
+
+</style>
+</head>
+<body>
+
+<div class="screen">
+  <div style="position:absolute;top:16px;left:48px;right:24px;display:flex;justify-content:space-between">
+    <div style="font-size:11px;letter-spacing:0.18em">ORION <span class="dim">ARISTARCHUS</span></div>
+    <div class="dim" style="font-size:10px">USGS FEATURE 380</div>
+  </div>
+  <img alt="art002e009806" src="../../../demo/data/images/art002e009806.720.webp" style="position:absolute;top:44px;left:48px;width:360px;height:240px;object-fit:cover;border:1px solid #2C2A26">
+  <div style="position:absolute;top:290px;left:48px;width:360px;display:flex;justify-content:space-between;font-size:8px" class="dim">
+    <span>art002e009806 · 19:35:52.140 UTC · 400 mm · Window 2</span>
+  </div>
+  <div style="position:absolute;top:306px;left:48px;font-size:9px;letter-spacing:0.06em">Credit: NASA/Artemis II Crew</div>
+  <div style="position:absolute;top:42px;left:428px;right:22px">
+    <div class="k">Crater center</div>
+    <div class="num" style="font-size:22px;margin-top:2px">23.73° N</div>
+    <div class="num" style="font-size:22px">47.49° W</div>
+    <p class="dim" style="margin-top:6px;font-size:10px;line-height:1.35">USGS Gazetteer of Planetary Nomenclature, feature 380. LTP aim for Aristarchus Plateau is a different point: 26.05° N, 309.26° E.</p>
+    <p style="margin-top:8px;font-size:11px;line-height:1.35">Plateau known for its volcanic diversity and the bright Aristarchus crater, looking for color, albedo, and texture variations across the plateau and surrounding mare.</p>
+    <p class="dim" style="margin-top:4px;font-size:9px;line-height:1.35">Guide to the Artemis II Lunar Targeting Plan, NASA Science. Science and Operational Focus for Aristarchus Plateau.</p>
+    <p style="margin-top:8px;font-size:11px;line-height:1.35">Plateau is known for its volcanic diversity and the bright Aristarchus Crater.</p>
+    <p class="dim" style="font-size:9px">HANSEN 19:33:23.114 UTC PCD2</p>
+    <p style="margin-top:6px;font-size:11px;line-height:1.35">It&#x27;s weird that Aristarchus is so white and albedo, but its rays are so dim, so muted.</p>
+    <p class="dim" style="font-size:9px">WISEMAN 19:38:52.750 UTC PCD3</p>
+    <p class="dim" style="margin-top:6px;font-size:9px;line-height:1.35">No per-window attitude. The NAIF SPICE bundle is delayed and no CK/FK/SCLK is public. Footprints are georeferenced Nikon frames, not a window boresight.</p>
+    <p style="margin-top:4px;font-size:9px">This app is not affiliated with or endorsed by NASA.</p>
+  </div>
+</div>
+
+</body>
+</html>

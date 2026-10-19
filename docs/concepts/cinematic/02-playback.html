@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cinematic — playback</title>
+<style>
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 393px; height: 852px; overflow: hidden; background: #050505; }
+body { color: #F3EFE6; font-family: Inter, "Noto Sans", sans-serif; -webkit-font-smoothing: antialiased; }
+.screen { position: relative; width: 393px; height: 852px; overflow: hidden; background: #050505; }
+img.bleed { position: absolute; inset: 0; width: 393px; height: 852px; object-fit: cover; object-position: 36% 42%; }
+.scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,5,5,0.35) 0%, rgba(5,5,5,0.05) 22%, rgba(5,5,5,0) 42%, rgba(5,5,5,0.55) 68%, rgba(5,5,5,0.88) 100%); }
+.kicker { font-weight: 500; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #C6A36A; }
+.serif { font-family: "Noto Serif Display", "Noto Serif", serif; font-weight: 400; }
+.dim { color: #B7B0A4; }
+.plate { display: block; width: 393px; height: 262px; object-fit: cover; object-position: center; }
+.rule { width: 28px; height: 1px; background: #C6A36A; border: 0; }
+.cue { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; flex-direction: column; align-items: center; gap: 7px; color: #C6A36A; }
+.cue svg { display: block; }
+.cue span { font-size: 9px; letter-spacing: 0.18em; font-weight: 500; }
+.micro { position: relative; width: 168px; height: 1px; background: rgba(243,239,230,0.28); }
+.micro .obs { position: absolute; left: 0; top: 0; height: 1px; background: #C6A36A; }
+.micro .now { position: absolute; top: -3px; width: 1px; height: 7px; background: #C6A36A; }
+.rail { position: absolute; top: 0; right: 0; bottom: 0; width: 156px; background: linear-gradient(90deg, rgba(5,5,5,0) 0%, #050505 18%); }
+.tk { position: absolute; right: 18px; height: 1px; background: rgba(243,239,230,0.55); }
+.tk.line { width: 7px; background: rgba(243,239,230,0.38); }
+.tk.photo { width: 16px; right: 18px; background: #C6A36A; }
+.tk.cab { background: #F3EFE6; }
+.tk.span { width: 2px; right: 36px; background: rgba(198,163,106,0.85); height: 40px; }
+.tk.cabspan { right: 28px; width: 2px; background: rgba(243,239,230,0.85); }
+.tk.head { width: 28px; height: 2px; right: 12px; background: #C6A36A; }
+.tk.hour { width: 10px; background: rgba(243,239,230,0.7); }
+.lb { position: absolute; right: 40px; width: 108px; text-align: right; }
+.lb b, .lb span { display: block; }
+.lb b { font-size: 10px; font-weight: 500; letter-spacing: 0.04em; color: #F3EFE6; font-variant-numeric: tabular-nums; }
+.lb span { margin-top: 1px; font-size: 10px; color: #B7B0A4; }
+.lb.now b, .lb.now span { color: #C6A36A; }
+.hour { position: absolute; right: 36px; font-size: 9px; letter-spacing: 0.14em; color: rgba(243,239,230,0.55); font-variant-numeric: tabular-nums; }
+.leader { position: absolute; right: 28px; width: 16px; overflow: visible; }
+.leader path { fill: none; stroke: rgba(198,163,106,0.45); stroke-width: 1; }
+.sheet { position: absolute; left: 0; right: 156px; bottom: 0; height: 318px; padding: 16px 18px 22px; background: #0C0C0B; border-top: 1px solid rgba(198,163,106,0.45); }
+.grab { width: 28px; height: 1px; background: rgba(198,163,106,0.8); margin-bottom: 14px; }
+.transport { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
+.skip, .pause { background: none; border: 0; color: #F3EFE6; font-family: Inter, sans-serif; }
+.skip { font-size: 12px; letter-spacing: 0.14em; font-weight: 500; }
+.pause { width: 52px; height: 52px; border: 1px solid #C6A36A; border-radius: 50%; display: grid; place-items: center; }
+
+</style>
+</head>
+<body>
+
+<div class="screen">
+  <div style="position:absolute;top:52px;left:24px;right:24px;display:flex;justify-content:space-between;align-items:baseline">
+    <div class="kicker">Window 2 · Nikon D5</div>
+    <div style="font-variant-numeric:tabular-nums;font-size:12px;letter-spacing:0.04em">19:36:05.938 <span class="dim">UTC</span></div>
+  </div>
+  <img class="plate" style="position:absolute;top:88px;left:0" alt="art002e009806" src="../../../demo/data/images/art002e009806.720.webp">
+  <div style="position:absolute;top:358px;left:24px;right:24px;display:flex;justify-content:space-between">
+    <div class="dim" style="font-size:10px;letter-spacing:0.08em">400 mm · Aristarchus Plateau</div>
+    <div style="font-size:10px;letter-spacing:0.06em">Credit: NASA/Artemis II Crew</div>
+  </div>
+  <div style="position:absolute;left:24px;right:36px;bottom:78px">
+    <div class="rule"></div>
+    <div class="kicker" style="margin-top:14px">Wiseman · PCD3 · art002a000021</div>
+    <p class="serif" style="margin-top:8px;font-style:italic;font-size:30px;line-height:1.16;letter-spacing:-0.02em">All right, Aristarchus, very, very, very bright.</p>
+    <p class="dim" style="margin-top:12px;font-size:12px;line-height:1.4;max-width:320px">Frame art002e009806 · 19:35:52.140 UTC. The line is 13.798 s after this frame.</p>
+  </div>
+  <div class="cue">
+    <div class="micro"><i class="obs" style="width:7.460%"></i><i class="now" style="left:1.491%"></i></div>
+    <svg width="11" height="7" viewBox="0 0 11 7" aria-hidden="true"><path d="M1 6 L5.5 1.5 L10 6" fill="none" stroke="#C6A36A" stroke-width="1"/></svg>
+    <span>19:36:05</span>
+  </div>
+</div>
+
+</body>
+</html>

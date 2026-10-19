@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mission — timeline</title>
+<style>
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 852px; height: 393px; overflow: hidden; background: #12110E; }
+body { color: #E8E2D6; font-family: "JetBrains Mono", ui-monospace, monospace; -webkit-font-smoothing: antialiased; }
+.screen { position: relative; width: 852px; height: 393px; overflow: hidden; background: #12110E; }
+.dim { color: #8E887C; }
+.gold { color: #D4B483; }
+.k { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #8E887C; }
+.num { font-variant-numeric: tabular-nums; font-weight: 500; letter-spacing: -0.03em; }
+.map { position: relative; overflow: hidden; background: #1A1814; border: 1px solid #2C2A26; }
+.map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cue { position: absolute; left: 48px; right: 28px; bottom: 10px; height: 18px; border-top: 1px solid #2C2A26; }
+.cue i { position: absolute; top: -1px; width: 2px; height: 7px; background: #D4B483; }
+.cue span { position: absolute; left: 50%; transform: translateX(-50%); top: -7px; font-size: 9px; letter-spacing: 0.18em; color: #D4B483; background: #12110E; padding: 0 8px; }
+.ruler { position: relative; height: 62px; margin: 0 8px; }
+.base { position: absolute; left: 0; right: 0; top: 30px; height: 1px; background: #3A362F; }
+.band { position: absolute; top: 28px; height: 5px; background: rgba(212,180,131,0.45); }
+.mk { position: absolute; top: 24px; width: 1px; height: 12px; background: rgba(232,226,214,0.45); }
+.mk.frame { top: 18px; height: 12px; background: #D4B483; }
+.mk.line { top: 30px; height: 8px; }
+.mk.cab, .mk.cabmark { background: #E8E2D6; height: 16px; top: 22px; }
+.mk.play { top: 12px; height: 28px; width: 2px; background: #D4B483; }
+.mk.approach { top: 14px; height: 24px; width: 2px; background: #E8E2D6; }
+.nm { position: absolute; width: 120px; font-size: 8px; line-height: 1.25; color: #E8E2D6; }
+.nm b { display: block; color: #D4B483; font-weight: 500; }
+.nm.above { top: 0; }
+.nm.below { top: 40px; }
+.nm.mid { transform: translateX(-50%); text-align: center; }
+.nm.start { text-align: left; }
+.nm.end { transform: translateX(-100%); text-align: right; }
+.panel { position: absolute; left: 0; right: 0; bottom: 0; height: 214px; background: #0C0B09; border-top: 1px solid #D4B483; padding: 10px 20px 8px 48px; }
+
+</style>
+</head>
+<body>
+
+<div class="screen">
+  <div style="position:absolute;top:12px;left:48px;right:20px;display:flex;justify-content:space-between;align-items:baseline">
+    <div style="font-size:11px;letter-spacing:0.16em">ORION <span class="dim">SCRUB</span></div>
+    <div class="num gold" style="font-size:16px">19:36:05.938 <span class="dim">UTC</span></div>
+  </div>
+  <div class="map" style="position:absolute;top:38px;left:48px;width:250px;height:120px">
+    <img alt="LROC color map cropped to the flyby track, SVS 4720" src="lroc-track.jpg">
+    
+<svg viewBox="0 0 1000 500" preserveAspectRatio="none">
+  <polyline points="451.39,257.40 452.23,257.45 453.08,257.50 453.94,257.55 454.80,257.60 455.67,257.65 456.54,257.70 457.42,257.75 458.31,257.80 459.20,257.85 460.09,257.90 461.00,257.95 461.90,258.00 462.82,258.05 463.74,258.11 464.67,258.16 465.60,258.22 466.54,258.27 467.48,258.32 468.43,258.38 469.39,258.44 470.36,258.49 471.33,258.55 472.31,258.61 473.29,258.66 474.28,258.72 475.28,258.78 476.28,258.84 477.30,258.90 478.31,258.96 479.34,259.02 480.37,259.08 481.41,259.14 482.46,259.21 483.52,259.27 484.58,259.33 485.65,259.40 486.73,259.46 487.81,259.53 488.90,259.59 490.00,259.66 491.11,259.73 492.23,259.79 493.35,259.86 494.49,259.93 495.63,260.00 496.78,260.07 497.93,260.14 499.10,260.21 500.27,260.28 501.46,260.35 502.65,260.43 503.85,260.50 505.06,260.58 506.27,260.65 507.50,260.73 508.74,260.80 509.98,260.88 511.24,260.96 512.50,261.04 513.78,261.11 515.06,261.19 516.35,261.27 517.65,261.36 518.97,261.44 520.29,261.52 521.62,261.60 522.96,261.69 524.31,261.77 525.68,261.86 527.05,261.95 528.43,262.03 529.83,262.12 531.23,262.21 532.65,262.30 534.07,262.39 535.51,262.48 536.96,262.57 538.42,262.67 539.89,262.76 541.37,262.85 542.86,262.95 544.37,263.05 545.88,263.14 547.41,263.24 548.95,263.34 550.50,263.44 552.07,263.54 553.64,263.64 555.23,263.74 556.83,263.85 558.45,263.95 560.07,264.06 561.71,264.16 563.36,264.27 565.03,264.38 566.70,264.49 568.39,264.60 570.10,264.71 571.81,264.82 573.54,264.93 575.29,265.05 577.04,265.16 578.81,265.28 580.60,265.39 582.40,265.51 584.21,265.63 586.04,265.75 587.88,265.87 589.73,265.99 591.60,266.11 593.48,266.23 595.38,266.36 597.29,266.48 599.22,266.61 601.16,266.74 603.12,266.87 605.09,267.00 607.08,267.13 609.08,267.26 611.10,267.39 613.13,267.52 615.18,267.66 617.24,267.79 619.32,267.93 621.41,268.07 623.52,268.20 625.65,268.34 627.79,268.48 629.95,268.62 632.12,268.77 634.31,268.91 636.51,269.05 638.73,269.20 640.97,269.34 643.22,269.49 645.49,269.64 647.77,269.79 650.07,269.94 652.39,270.09 654.72,270.24 657.06,270.39 659.43,270.54 661.81,270.70 664.20,270.85 666.62,271.01 669.04,271.16 671.49,271.32 673.95,271.48 676.42,271.64 678.91,271.80 681.42,271.96 683.94,272.12 686.48,272.28 689.03,272.44 691.60,272.60 694.19,272.76 696.79,272.93 699.40,273.09 702.03,273.25 704.68,273.42 707.34,273.58 710.01,273.75 712.70,273.92 715.40,274.08 718.12,274.25 720.85,274.42 723.59,274.58 726.35,274.75 729.12,274.92 731.91,275.09 734.71,275.25 737.52,275.42 740.34,275.59 743.18,275.76 746.02,275.92 748.88,276.09 751.76,276.26 754.64,276.43 757.53,276.59 760.44,276.76 763.35,276.93 766.28,277.09 769.21,277.26 772.16,277.43 775.11,277.59 778.07,277.75 781.04,277.92 784.02,278.08 787.01,278.24 790.01,278.41 793.01,278.57 796.02,278.73 799.03,278.89 802.06,279.05 805.08,279.20 808.12,279.36 811.15,279.52 814.20,279.67 817.24,279.82 820.29,279.98 823.35,280.13 826.40,280.28 829.46,280.43 832.52,280.58 835.58,280.72 838.65,280.87 841.71,281.01 844.10,281.12" fill="none" stroke="#F7F3EB" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+  <polyline points="451.39,257.40 452.23,257.45 453.08,257.50 453.94,257.55 454.80,257.60 455.67,257.65 456.54,257.70 457.42,257.75 458.31,257.80 459.20,257.85 460.09,257.90 461.00,257.95 461.90,258.00 462.82,258.05 463.74,258.11 464.67,258.16 465.60,258.22 466.54,258.27 467.48,258.32 468.43,258.38 469.39,258.44 470.36,258.49 471.33,258.55 472.31,258.61 473.29,258.66 474.28,258.72 475.28,258.78 476.28,258.84 477.30,258.90 478.31,258.96 479.34,259.02 480.37,259.08 481.41,259.14 482.46,259.21 483.52,259.27 484.58,259.33 485.65,259.40 486.73,259.46 487.81,259.53 488.90,259.59 490.00,259.66 491.11,259.73 492.23,259.79 493.35,259.86 494.49,259.93 495.63,260.00 496.78,260.07 497.93,260.14 499.10,260.21 500.27,260.28 501.46,260.35 502.65,260.43 503.85,260.50 505.06,260.58 506.27,260.65 507.50,260.73 508.74,260.80 509.98,260.88 511.24,260.96 512.50,261.04 513.78,261.11 515.06,261.19 516.35,261.27 517.65,261.36 518.97,261.44 520.29,261.52 521.62,261.60 522.96,261.69 524.31,261.77 525.68,261.86 527.05,261.95 528.43,262.03 529.83,262.12 531.23,262.21 532.65,262.30 534.07,262.39 535.51,262.48 536.96,262.57 538.42,262.67 539.89,262.76 541.37,262.85 542.86,262.95 544.37,263.05 545.88,263.14 547.41,263.24 548.95,263.34 550.50,263.44 552.07,263.54 553.64,263.64 555.23,263.74 556.83,263.85 558.45,263.95 560.07,264.06 561.71,264.16 563.36,264.27 565.03,264.38 566.70,264.49 568.39,264.60 570.10,264.71 571.81,264.82 573.54,264.93 575.29,265.05 577.04,265.16 578.81,265.28 580.60,265.39 582.40,265.51 584.21,265.63 586.04,265.75 587.88,265.87 589.73,265.99 591.60,266.11 593.48,266.23 595.38,266.36 597.29,266.48 599.22,266.61 601.16,266.74 603.12,266.87 605.09,267.00 607.08,267.13 609.08,267.26 611.10,267.39 613.13,267.52 615.18,267.66 617.24,267.79 619.32,267.93 621.41,268.07 623.52,268.20 625.65,268.34 627.79,268.48 629.95,268.62 632.12,268.77 634.31,268.91 636.51,269.05 638.73,269.20 640.97,269.34 643.22,269.49 645.49,269.64 647.77,269.79 650.07,269.94 652.39,270.09 654.72,270.24 657.06,270.39 659.43,270.54 661.81,270.70 664.20,270.85 666.62,271.01 669.04,271.16 671.49,271.32 673.95,271.48 676.42,271.64 678.91,271.80 681.42,271.96 683.94,272.12 686.48,272.28 689.03,272.44 691.60,272.60 694.19,272.76 696.79,272.93 699.40,273.09 702.03,273.25 704.68,273.42 707.34,273.58 710.01,273.75 712.70,273.92 715.40,274.08 718.12,274.25 720.85,274.42 723.59,274.58 726.35,274.75 729.12,274.92 731.91,275.09 734.71,275.25 737.52,275.42 740.34,275.59 743.18,275.76 746.02,275.92 748.88,276.09 751.76,276.26 754.64,276.43 757.53,276.59 760.44,276.76 763.35,276.93 766.28,277.09 769.21,277.26 772.16,277.43 775.11,277.59 778.07,277.75 781.04,277.92 784.02,278.08 787.01,278.24 790.01,278.41 793.01,278.57 796.02,278.73 799.03,278.89 802.06,279.05 805.08,279.20 808.12,279.36 811.15,279.52 814.20,279.67 817.24,279.82 820.29,279.98 823.35,280.13 826.40,280.28 829.46,280.43 832.52,280.58 835.58,280.72 838.65,280.87 841.71,281.01 844.10,281.12" fill="none" stroke="#1B1814" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="451.39" cy="257.40" r="7" fill="#F7F3EB" stroke="#1B1814" stroke-width="2"/>
+  <circle cx="844.10" cy="281.12" r="9" fill="none" stroke="#1B1814" stroke-width="2.4"/>
+  <circle cx="454.03" cy="257.55" r="10" fill="#D4B483" stroke="#1B1814" stroke-width="2"/>
+  <rect x="137.68" y="127.83" width="14" height="14" fill="#F7F3EB" stroke="#1B1814" stroke-width="2"/><text x="156.68" y="126.83" fill="#1B1814" font-size="18" font-family="JetBrains Mono, monospace">A</text><rect x="198.05" y="218.61" width="14" height="14" fill="#F7F3EB" stroke="#1B1814" stroke-width="2"/><text x="217.05" y="217.61" fill="#1B1814" font-size="18" font-family="JetBrains Mono, monospace">R</text>
+</svg>
+
+  </div>
+  <div style="position:absolute;top:40px;left:312px;right:18px;display:flex;gap:16px">
+    <div><div class="k">Range</div><div class="num" style="font-size:16px">15,951.93 km</div></div>
+    <div><div class="k">Altitude</div><div class="num" style="font-size:16px">14,214.53 km</div></div>
+    <div><div class="k">MET</div><div class="num" style="font-size:16px">04:21:00:53.938</div></div>
+  </div>
+  <p class="dim" style="position:absolute;top:96px;left:312px;right:18px;font-size:10px;line-height:1.35">All right, Aristarchus, very, very, very bright.<br>Wiseman · PCD3 · art002a000021</p>
+  <div class="panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div style="display:flex;gap:22px;align-items:center;font-size:12px;letter-spacing:0.12em">
+        <span>−15s</span><span class="gold">PAUSE</span><span>+15s</span>
+      </div>
+      <div class="dim" style="font-size:10px">RATE 1</div>
+    </div>
+    <div class="k" style="margin:2px 8px 0">Observation · 19:33:00.000–19:48:30.000 · 930 s · linear across this width</div>
+    <div class="ruler"><i class="base"></i>
+<i class="mk line" style="left:0.2903%"></i>
+<i class="mk line" style="left:1.1538%"></i>
+<i class="mk line" style="left:1.5714%"></i>
+<i class="mk line" style="left:1.7982%"></i>
+<i class="mk line" style="left:2.1090%"></i>
+<i class="mk line" style="left:2.4854%"></i>
+<i class="mk line" style="left:2.7319%"></i>
+<i class="mk line" style="left:2.9774%"></i>
+<i class="mk line" style="left:2.9787%"></i>
+<i class="mk line" style="left:3.2142%"></i>
+<i class="mk line" style="left:3.3218%"></i>
+<i class="mk line" style="left:3.3406%"></i>
+<i class="mk line" style="left:3.5002%"></i>
+<i class="mk line" style="left:3.6767%"></i>
+<i class="mk line" style="left:3.7759%"></i>
+<i class="mk line" style="left:4.2042%"></i>
+<i class="mk line" style="left:4.2060%"></i>
+<i class="mk line" style="left:5.7557%"></i>
+<i class="mk line" style="left:5.8189%"></i>
+<i class="mk line" style="left:6.0340%"></i>
+<i class="mk line" style="left:6.0875%"></i>
+<i class="mk line" style="left:6.3026%"></i>
+<i class="mk line" style="left:6.4101%"></i>
+<i class="mk line" style="left:6.4415%"></i>
+<i class="mk line" style="left:6.7366%"></i>
+<i class="mk line" style="left:6.8402%"></i>
+<i class="mk line" style="left:7.2090%"></i>
+<i class="mk line" style="left:7.2598%"></i>
+<i class="mk line" style="left:7.4148%"></i>
+<i class="mk line" style="left:7.4655%"></i>
+<i class="mk line" style="left:7.7374%"></i>
+<i class="mk line" style="left:7.8956%"></i>
+<i class="mk line" style="left:8.3902%"></i>
+<i class="mk line" style="left:8.6249%"></i>
+<i class="mk line" style="left:8.8101%"></i>
+<i class="mk line" style="left:9.1009%"></i>
+<i class="mk line" style="left:9.5310%"></i>
+<i class="mk line" style="left:11.6673%"></i>
+<i class="mk line" style="left:12.3674%"></i>
+<i class="mk line" style="left:13.2276%"></i>
+<i class="mk line" style="left:13.4427%"></i>
+<i class="mk line" style="left:15.7935%"></i>
+<i class="mk line" style="left:15.9596%"></i>
+<i class="mk line" style="left:16.3897%"></i>
+<i class="mk line" style="left:18.0363%"></i>
+<i class="mk line" style="left:18.4045%"></i>
+<i class="mk line" style="left:18.4949%"></i>
+<i class="mk line" style="left:18.7619%"></i>
+<i class="mk line" style="left:19.0073%"></i>
+<i class="mk line" style="left:19.1925%"></i>
+<i class="mk line" style="left:19.6226%"></i>
+<i class="mk line" style="left:19.9933%"></i>
+<i class="mk line" style="left:20.3099%"></i>
+<i class="mk line" style="left:20.5424%"></i>
+<i class="mk line" style="left:21.1663%"></i>
+<i class="mk line" style="left:21.3442%"></i>
+<i class="mk line" style="left:21.4517%"></i>
+<i class="mk line" style="left:21.6187%"></i>
+<i class="mk line" style="left:21.8818%"></i>
+<i class="mk line" style="left:22.0043%"></i>
+<i class="mk line" style="left:22.6656%"></i>
+<i class="mk line" style="left:23.0942%"></i>
+<i class="mk line" style="left:23.7275%"></i>
+<i class="mk line" style="left:24.1168%"></i>
+<i class="mk line" style="left:25.1546%"></i>
+<i class="mk line" style="left:25.9254%"></i>
+<i class="mk line" style="left:26.0184%"></i>
+<i class="mk line" style="left:26.5842%"></i>
+<i class="mk line" style="left:26.5889%"></i>
+<i class="mk line" style="left:26.6965%"></i>
+<i class="mk line" style="left:27.3212%"></i>
+<i class="mk line" style="left:27.5495%"></i>
+<i class="mk line" style="left:28.1246%"></i>
+<i class="mk line" style="left:29.3352%"></i>
+<i class="mk line" style="left:29.7185%"></i>
+<i class="mk line" style="left:29.9105%"></i>
+<i class="mk line" style="left:30.3133%"></i>
+<i class="mk line" style="left:31.1446%"></i>
+<i class="mk line" style="left:31.2775%"></i>
+<i class="mk line" style="left:31.3378%"></i>
+<i class="mk line" style="left:31.3851%"></i>
+<i class="mk line" style="left:31.5747%"></i>
+<i class="mk line" style="left:32.6640%"></i>
+<i class="mk line" style="left:33.1802%"></i>
+<i class="mk line" style="left:33.2111%"></i>
+<i class="mk line" style="left:33.8074%"></i>
+<i class="mk line" style="left:33.8501%"></i>
+<i class="mk line" style="left:34.0571%"></i>
+<i class="mk line" style="left:34.8687%"></i>
+<i class="mk line" style="left:34.8775%"></i>
+<i class="mk line" style="left:35.3076%"></i>
+<i class="mk line" style="left:35.5189%"></i>
+<i class="mk line" style="left:36.1303%"></i>
+<i class="mk line" style="left:36.3067%"></i>
+<i class="mk line" style="left:36.6576%"></i>
+<i class="mk line" style="left:36.7825%"></i>
+<i class="mk line" style="left:37.1576%"></i>
+<i class="mk line" style="left:37.2347%"></i>
+<i class="mk line" style="left:37.5060%"></i>
+<i class="mk line" style="left:37.6395%"></i>
+<i class="mk line" style="left:37.9301%"></i>
+<i class="mk line" style="left:38.6752%"></i>
+<i class="mk line" style="left:39.0067%"></i>
+<i class="mk line" style="left:39.1922%"></i>
+<i class="mk line" style="left:39.3992%"></i>
+<i class="mk line" style="left:39.9276%"></i>
+<i class="mk line" style="left:40.0744%"></i>
+<i class="mk line" style="left:40.1353%"></i>
+<i class="mk line" style="left:40.5045%"></i>
+<i class="mk line" style="left:40.5422%"></i>
+<i class="mk line" style="left:41.0567%"></i>
+<i class="mk line" style="left:41.5992%"></i>
+<i class="mk line" style="left:41.8963%"></i>
+<i class="mk line" style="left:42.0556%"></i>
+<i class="mk line" style="left:42.5529%"></i>
+<i class="mk line" style="left:42.8371%"></i>
+<i class="mk line" style="left:42.8755%"></i>
+<i class="mk line" style="left:43.6282%"></i>
+<i class="mk line" style="left:43.6990%"></i>
+<i class="mk line" style="left:43.8067%"></i>
+<i class="mk line" style="left:44.5710%"></i>
+<i class="mk line" style="left:44.7034%"></i>
+<i class="mk line" style="left:45.1335%"></i>
+<i class="mk line" style="left:45.2126%"></i>
+<i class="mk line" style="left:45.9544%"></i>
+<i class="mk line" style="left:46.2192%"></i>
+<i class="mk line" style="left:46.6494%"></i>
+<i class="mk line" style="left:46.6651%"></i>
+<i class="mk line" style="left:46.7180%"></i>
+<i class="mk line" style="left:46.9343%"></i>
+<i class="mk line" style="left:47.0548%"></i>
+<i class="mk line" style="left:47.3822%"></i>
+<i class="mk line" style="left:47.5028%"></i>
+<i class="mk line" style="left:47.5501%"></i>
+<i class="mk line" style="left:47.5609%"></i>
+<i class="mk line" style="left:48.0023%"></i>
+<i class="mk line" style="left:48.0820%"></i>
+<i class="mk line" style="left:48.0841%"></i>
+<i class="mk line" style="left:48.2091%"></i>
+<i class="mk line" style="left:48.6217%"></i>
+<i class="mk line" style="left:48.6656%"></i>
+<i class="mk line" style="left:48.7884%"></i>
+<i class="mk line" style="left:49.2899%"></i>
+<i class="mk line" style="left:49.3260%"></i>
+<i class="mk line" style="left:49.8776%"></i>
+<i class="mk line" style="left:50.0226%"></i>
+<i class="mk line" style="left:50.1862%"></i>
+<i class="mk line" style="left:50.4749%"></i>
+<i class="mk line" style="left:50.6163%"></i>
+<i class="mk line" style="left:50.9389%"></i>
+<i class="mk line" style="left:51.2276%"></i>
+<i class="mk line" style="left:51.2615%"></i>
+<i class="mk line" style="left:51.3558%"></i>
+<i class="mk line" style="left:51.3690%"></i>
+<i class="mk line" style="left:51.5585%"></i>
+<i class="mk line" style="left:51.6641%"></i>
+<i class="mk line" style="left:51.6784%"></i>
+<i class="mk line" style="left:51.9097%"></i>
+<i class="mk line" style="left:52.1085%"></i>
+<i class="mk line" style="left:52.3905%"></i>
+<i class="mk line" style="left:52.5548%"></i>
+<i class="mk line" style="left:52.6461%"></i>
+<i class="mk line" style="left:52.7543%"></i>
+<i class="mk line" style="left:52.8774%"></i>
+<i class="mk line" style="left:52.9092%"></i>
+<i class="mk line" style="left:53.2257%"></i>
+<i class="mk line" style="left:53.7358%"></i>
+<i class="mk line" style="left:53.9188%"></i>
+<i class="mk line" style="left:54.3623%"></i>
+<i class="mk line" style="left:54.9132%"></i>
+<i class="mk line" style="left:55.0919%"></i>
+<i class="mk line" style="left:55.6004%"></i>
+<i class="mk line" style="left:56.0957%"></i>
+<i class="mk line" style="left:56.2522%"></i>
+<i class="mk line" style="left:56.7265%"></i>
+<i class="mk line" style="left:56.8839%"></i>
+<i class="mk line" style="left:57.3039%"></i>
+<i class="mk line" style="left:58.1243%"></i>
+<i class="mk line" style="left:58.3913%"></i>
+<i class="mk line" style="left:58.4988%"></i>
+<i class="mk line" style="left:58.6270%"></i>
+<i class="mk line" style="left:58.8740%"></i>
+<i class="mk line" style="left:60.0038%"></i>
+<i class="mk line" style="left:60.4524%"></i>
+<i class="mk line" style="left:60.8825%"></i>
+<i class="mk line" style="left:60.8895%"></i>
+<i class="mk line" style="left:61.1838%"></i>
+<i class="mk line" style="left:61.3223%"></i>
+<i class="mk line" style="left:61.5806%"></i>
+<i class="mk line" style="left:61.9784%"></i>
+<i class="mk line" style="left:62.1814%"></i>
+<i class="mk line" style="left:62.2023%"></i>
+<i class="mk line" style="left:62.5619%"></i>
+<i class="mk line" style="left:62.8425%"></i>
+<i class="mk line" style="left:62.9814%"></i>
+<i class="mk line" style="left:63.1633%"></i>
+<i class="mk line" style="left:63.3040%"></i>
+<i class="mk line" style="left:63.3784%"></i>
+<i class="mk line" style="left:63.4809%"></i>
+<i class="mk line" style="left:64.4733%"></i>
+<i class="mk line" style="left:64.6946%"></i>
+<i class="mk line" style="left:64.8157%"></i>
+<i class="mk line" style="left:64.8738%"></i>
+<i class="mk line" style="left:65.0783%"></i>
+<i class="mk line" style="left:65.4572%"></i>
+<i class="mk line" style="left:66.1976%"></i>
+<i class="mk line" style="left:66.2348%"></i>
+<i class="mk line" style="left:66.3812%"></i>
+<i class="mk line" style="left:66.4716%"></i>
+<i class="mk line" style="left:66.7942%"></i>
+<i class="mk line" style="left:67.4101%"></i>
+<i class="mk line" style="left:67.7416%"></i>
+<i class="mk line" style="left:67.8491%"></i>
+<i class="mk line" style="left:68.1398%"></i>
+<i class="mk line" style="left:68.3637%"></i>
+<i class="mk line" style="left:68.4928%"></i>
+<i class="mk line" style="left:68.7360%"></i>
+<i class="mk line" style="left:68.9126%"></i>
+<i class="mk line" style="left:69.3594%"></i>
+<i class="mk line" style="left:70.0917%"></i>
+<i class="mk line" style="left:70.7369%"></i>
+<i class="mk line" style="left:71.0673%"></i>
+<i class="mk line" style="left:71.3863%"></i>
+<i class="mk line" style="left:71.6014%"></i>
+<i class="mk line" style="left:71.6605%"></i>
+<i class="mk line" style="left:72.0939%"></i>
+<i class="mk line" style="left:72.4339%"></i>
+<i class="mk line" style="left:73.0608%"></i>
+<i class="mk line" style="left:73.0888%"></i>
+<i class="mk line" style="left:73.3039%"></i>
+<i class="mk line" style="left:73.4551%"></i>
+<i class="mk line" style="left:73.8662%"></i>
+<i class="mk line" style="left:74.2947%"></i>
+<i class="mk line" style="left:74.4670%"></i>
+<i class="mk line" style="left:75.2239%"></i>
+<i class="mk line" style="left:76.0077%"></i>
+<i class="mk line" style="left:76.3529%"></i>
+<i class="mk line" style="left:76.7535%"></i>
+<i class="mk line" style="left:77.1637%"></i>
+<i class="mk line" style="left:78.1495%"></i>
+<i class="mk line" style="left:78.6919%"></i>
+<i class="mk line" style="left:79.1741%"></i>
+<i class="mk line" style="left:79.4798%"></i>
+<i class="mk line" style="left:79.8024%"></i>
+<i class="mk line" style="left:80.1537%"></i>
+<i class="mk line" style="left:80.5820%"></i>
+<i class="mk line" style="left:80.8963%"></i>
+<i class="mk line" style="left:81.0870%"></i>
+<i class="mk line" style="left:81.7941%"></i>
+<i class="mk line" style="left:81.9900%"></i>
+<i class="mk line" style="left:82.5276%"></i>
+<i class="mk line" style="left:82.6098%"></i>
+<i class="mk line" style="left:82.9319%"></i>
+<i class="mk line" style="left:83.2969%"></i>
+<i class="mk line" style="left:83.4959%"></i>
+<i class="mk line" style="left:83.9092%"></i>
+<i class="mk line" style="left:83.9560%"></i>
+<i class="mk line" style="left:85.1170%"></i>
+<i class="mk line" style="left:85.2762%"></i>
+<i class="mk line" style="left:85.4815%"></i>
+<i class="mk line" style="left:85.8139%"></i>
+<i class="mk line" style="left:86.2616%"></i>
+<i class="mk line" style="left:86.5130%"></i>
+<i class="mk line" style="left:87.0190%"></i>
+<i class="mk line" style="left:87.2000%"></i>
+<i class="mk line" style="left:87.4304%"></i>
+<i class="mk line" style="left:87.6595%"></i>
+<i class="mk line" style="left:88.1326%"></i>
+<i class="mk line" style="left:89.2871%"></i>
+<i class="mk line" style="left:89.5283%"></i>
+<i class="mk line" style="left:89.8084%"></i>
+<i class="mk line" style="left:89.9268%"></i>
+<i class="mk line" style="left:90.1314%"></i>
+<i class="mk line" style="left:90.3253%"></i>
+<i class="mk line" style="left:90.4586%"></i>
+<i class="mk line" style="left:90.9741%"></i>
+<i class="mk line" style="left:91.2216%"></i>
+<i class="mk line" style="left:91.3208%"></i>
+<i class="mk line" style="left:91.7173%"></i>
+<i class="mk line" style="left:92.1260%"></i>
+<i class="mk line" style="left:92.2042%"></i>
+<i class="mk line" style="left:92.4844%"></i>
+<i class="mk line" style="left:92.8466%"></i>
+<i class="mk line" style="left:92.9414%"></i>
+<i class="mk line" style="left:93.0411%"></i>
+<i class="mk line" style="left:93.1440%"></i>
+<i class="mk line" style="left:93.3660%"></i>
+<i class="mk line" style="left:93.4458%"></i>
+<i class="mk line" style="left:93.5083%"></i>
+<i class="mk line" style="left:93.5665%"></i>
+<i class="mk line" style="left:93.7153%"></i>
+<i class="mk line" style="left:93.7248%"></i>
+<i class="mk line" style="left:93.8424%"></i>
+<i class="mk line" style="left:94.0623%"></i>
+<i class="mk line" style="left:95.9059%"></i>
+<i class="mk line" style="left:96.9692%"></i>
+<i class="mk line" style="left:97.2343%"></i>
+<i class="mk line" style="left:98.1070%"></i>
+<i class="mk line" style="left:98.9452%"></i>
+<i class="mk line" style="left:99.1455%"></i>
+<i class="mk line" style="left:99.7640%"></i>
+<i class="mk line" style="left:99.8523%"></i>
+<i class="mk line" style="left:99.8911%"></i>
+<i class="mk frame" style="left:0.4204%"></i>
+<i class="mk frame" style="left:2.8634%"></i>
+<i class="mk frame" style="left:6.4505%"></i>
+<i class="mk frame" style="left:7.6935%"></i>
+<i class="mk frame" style="left:7.8086%"></i>
+<i class="mk frame" style="left:9.6097%"></i>
+<i class="mk frame" style="left:10.7903%"></i>
+<i class="mk cab" style="left:11.1828%"></i>
+<i class="mk frame" style="left:11.3054%"></i>
+<i class="mk frame" style="left:12.1817%"></i>
+<i class="mk frame" style="left:12.6624%"></i>
+<i class="mk frame" style="left:12.8409%"></i>
+<i class="mk frame" style="left:14.9559%"></i>
+<i class="mk frame" style="left:15.9957%"></i>
+<i class="mk frame" style="left:18.5097%"></i>
+<i class="mk frame" style="left:20.8301%"></i>
+<i class="mk frame" style="left:24.1398%"></i>
+<i class="mk frame" style="left:26.2882%"></i>
+<i class="mk frame" style="left:26.6978%"></i>
+<i class="mk frame" style="left:28.8882%"></i>
+<i class="mk frame" style="left:29.6925%"></i>
+<i class="mk frame" style="left:31.0258%"></i>
+<i class="mk frame" style="left:33.0258%"></i>
+<i class="mk frame" style="left:34.3763%"></i>
+<i class="mk frame" style="left:38.7065%"></i>
+<i class="mk frame" style="left:39.1043%"></i>
+<i class="mk frame" style="left:44.4806%"></i>
+<i class="mk frame" style="left:47.3226%"></i>
+<i class="mk frame" style="left:48.2882%"></i>
+<i class="mk frame" style="left:53.3731%"></i>
+<i class="mk frame" style="left:55.1269%"></i>
+<i class="mk frame" style="left:61.5645%"></i>
+<i class="mk frame" style="left:62.0624%"></i>
+<i class="mk cab" style="left:62.7957%"></i>
+<i class="mk frame" style="left:62.9183%"></i>
+<i class="mk frame" style="left:67.8118%"></i>
+<i class="mk frame" style="left:68.5516%"></i>
+<i class="mk frame" style="left:75.3602%"></i>
+<i class="mk frame" style="left:79.0796%"></i>
+<i class="mk frame" style="left:79.9935%"></i>
+<i class="mk frame" style="left:85.5247%"></i>
+<i class="mk frame" style="left:87.2473%"></i>
+<i class="mk frame" style="left:89.4828%"></i>
+<i class="mk frame" style="left:90.5054%"></i>
+<i class="mk cab" style="left:1180.9677%"></i>
+<i class="mk cab" style="left:1184.1935%"></i>
+<i class="mk cab" style="left:1187.4194%"></i>
+<i class="mk cab" style="left:1190.6452%"></i>
+<i class="mk cab" style="left:1193.8710%"></i>
+<i class="mk cab" style="left:1197.0968%"></i>
+<i class="mk cab" style="left:1200.3226%"></i>
+<i class="mk cab" style="left:1203.5484%"></i>
+<i class="mk cab" style="left:1206.7742%"></i>
+<i class="mk cab" style="left:1210.0000%"></i>
+<i class="mk cab" style="left:1213.2258%"></i>
+<i class="mk cab" style="left:1216.4516%"></i>
+<i class="mk cab" style="left:1219.7849%"></i>
+<i class="mk cab" style="left:1222.9032%"></i>
+<i class="mk cab" style="left:1226.1290%"></i>
+<i class="mk cab" style="left:1229.3548%"></i>
+<i class="mk cab" style="left:1232.5806%"></i>
+<i class="mk cab" style="left:1235.8065%"></i>
+<i class="mk play" style="left:19.9933%"></i>
+<div class="nm above start" style="left:0.2903%"><b>19:33:02</b>Aristarchus</div>
+<div class="nm below mid" style="left:18.5097%"><b>19:35:52</b>art002e009806</div>
+<div class="nm above mid" style="left:19.9933%"><b>19:36:05.938</b>Wiseman</div>
+<div class="nm below mid" style="left:37.9301%"><b>19:38:52</b>Albedo</div>
+<div class="nm above mid" style="left:51.3558%"><b>19:40:57</b>Reiner Gamma</div>
+<div class="nm below end" style="left:100.0000%"><b>19:48:30</b>Window closes</div></div>
+    <div class="k" style="margin:0 8px">Whole flyby · 19:33:00.000–23:00:46.689 · 12466.7 s · linear. Gold band is the observation, 7.5% of the ruler.</div>
+    <div class="ruler" style="height:48px"><i class="base"></i>
+<i class="band" style="left:0;width:7.4599%"></i>
+<i class="mk frame" style="left:0.0314%"></i>
+<i class="mk frame" style="left:0.2136%"></i>
+<i class="mk frame" style="left:0.4812%"></i>
+<i class="mk frame" style="left:0.5739%"></i>
+<i class="mk frame" style="left:0.5825%"></i>
+<i class="mk frame" style="left:0.7169%"></i>
+<i class="mk frame" style="left:0.8049%"></i>
+<i class="mk cab" style="left:0.8342%"></i>
+<i class="mk frame" style="left:0.8434%"></i>
+<i class="mk frame" style="left:0.9087%"></i>
+<i class="mk frame" style="left:0.9446%"></i>
+<i class="mk frame" style="left:0.9579%"></i>
+<i class="mk frame" style="left:1.1157%"></i>
+<i class="mk frame" style="left:1.1933%"></i>
+<i class="mk frame" style="left:1.3808%"></i>
+<i class="mk frame" style="left:1.5539%"></i>
+<i class="mk frame" style="left:1.8008%"></i>
+<i class="mk frame" style="left:1.9611%"></i>
+<i class="mk frame" style="left:1.9916%"></i>
+<i class="mk frame" style="left:2.1550%"></i>
+<i class="mk frame" style="left:2.2150%"></i>
+<i class="mk frame" style="left:2.3145%"></i>
+<i class="mk frame" style="left:2.4637%"></i>
+<i class="mk frame" style="left:2.5644%"></i>
+<i class="mk frame" style="left:2.8875%"></i>
+<i class="mk frame" style="left:2.9171%"></i>
+<i class="mk frame" style="left:3.3182%"></i>
+<i class="mk frame" style="left:3.5302%"></i>
+<i class="mk frame" style="left:3.6022%"></i>
+<i class="mk frame" style="left:3.9816%"></i>
+<i class="mk frame" style="left:4.1124%"></i>
+<i class="mk frame" style="left:4.5926%"></i>
+<i class="mk frame" style="left:4.6298%"></i>
+<i class="mk cab" style="left:4.6845%"></i>
+<i class="mk frame" style="left:4.6936%"></i>
+<i class="mk frame" style="left:5.0587%"></i>
+<i class="mk frame" style="left:5.1139%"></i>
+<i class="mk frame" style="left:5.6218%"></i>
+<i class="mk frame" style="left:5.8992%"></i>
+<i class="mk frame" style="left:5.9674%"></i>
+<i class="mk frame" style="left:6.3800%"></i>
+<i class="mk frame" style="left:6.5085%"></i>
+<i class="mk frame" style="left:6.6753%"></i>
+<i class="mk frame" style="left:6.7516%"></i>
+<i class="mk cab" style="left:88.0988%"></i>
+<i class="mk cab" style="left:88.3394%"></i>
+<i class="mk cab" style="left:88.5801%"></i>
+<i class="mk cab" style="left:88.8207%"></i>
+<i class="mk cab" style="left:89.0613%"></i>
+<i class="mk cab" style="left:89.3020%"></i>
+<i class="mk cab" style="left:89.5426%"></i>
+<i class="mk cab" style="left:89.7833%"></i>
+<i class="mk cab" style="left:90.0239%"></i>
+<i class="mk cab" style="left:90.2645%"></i>
+<i class="mk cab" style="left:90.5052%"></i>
+<i class="mk cab" style="left:90.7458%"></i>
+<i class="mk cab" style="left:90.9945%"></i>
+<i class="mk cab" style="left:91.2271%"></i>
+<i class="mk cab" style="left:91.4677%"></i>
+<i class="mk cab" style="left:91.7084%"></i>
+<i class="mk cab" style="left:91.9490%"></i>
+<i class="mk cab" style="left:92.1897%"></i>
+<i class="mk play" style="left:1.4915%"></i>
+<i class="mk approach" style="left:100.0000%"></i>
+<i class="mk cabmark" style="left:88.0988%"></i>
+<div class="nm below start" style="left:0.0000%"><b>19:33:00</b>Window</div>
+<div class="nm above end" style="left:88.0988%"><b>22:36:03</b>Cab Cam 2</div>
+<div class="nm above end" style="left:100.0000%"><b>23:00:46</b>Closest approach</div></div>
+  </div>
+</div>
+
+</body>
+</html>
