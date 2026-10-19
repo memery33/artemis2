@@ -232,4 +232,37 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(PathScrub.snap(inside, recordings: [clip], span: flyby), inside)
         XCTAssertNil(PathScrub.snap(start, recordings: [], span: flyby))
     }
+
+    func testDraggingTheWholeBrightSegmentReachesTheSpanEnd() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let end = start.addingTimeInterval(900)
+        let flyby = PathSpan(start: start, end: end)
+        let short = [
+            PathScreenSample(date: start, x: 0, y: 0),
+            PathScreenSample(date: end, x: 80, y: 0)
+        ]
+        let arrived = PathScrub.drag(
+            anchorDate: start,
+            translationX: 80,
+            translationY: 0,
+            fingerX: 80,
+            fingerY: 0,
+            current: (flyby, short),
+            others: []
+        )
+        XCTAssertEqual(arrived?.date, end)
+        XCTAssertEqual(arrived?.span, flyby)
+
+        let partial = PathScrub.drag(
+            anchorDate: start,
+            translationX: 16,
+            translationY: 0,
+            fingerX: 16,
+            fingerY: 0,
+            current: (flyby, short),
+            others: []
+        )
+        XCTAssertEqual(partial?.date.timeIntervalSince(start) ?? -1, 90, accuracy: 2)
+        XCTAssertNotEqual(partial?.date, end)
+    }
 }

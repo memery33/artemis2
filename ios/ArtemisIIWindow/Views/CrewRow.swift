@@ -61,30 +61,22 @@ struct LyricLines: View {
     var focus: LyricFocus
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            slot("previous", focus.previous, prominent: false)
-            slot("current", focus.current, prominent: true)
-            slot("upcoming", focus.upcoming, prominent: false)
+        VStack(alignment: .leading, spacing: 8) {
+            // The line that just finished sits above the current one. It is a different view, so it cannot fade in place behind the new words.
+            if let previous = focus.previous {
+                verse(previous, prominent: false)
+            }
+            if let current = focus.current {
+                verse(current, prominent: true)
+            }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .transaction { transaction in
             transaction.animation = nil
             transaction.disablesAnimations = true
         }
-        .accessibilityElement(children: .combine)
-    }
-
-    /// Each role keeps its own row. A line change replaces that row in place, so the fading line cannot draw over the next one.
-    @ViewBuilder
-    private func slot(_ role: String, _ line: TranscriptLine?, prominent: Bool) -> some View {
-        Group {
-            if let line {
-                verse(line, prominent: prominent)
-            }
-        }
-        .id(role)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .transition(.identity)
+        .animation(nil, value: focus)
+        .accessibilityElement(children: .contain)
     }
 
     private func verse(_ line: TranscriptLine, prominent: Bool) -> some View {
@@ -92,14 +84,20 @@ struct LyricLines: View {
         return VStack(alignment: .leading, spacing: 2) {
             Text(line.speaker)
                 .font(prominent ? .caption.weight(.semibold) : .caption2)
-                .foregroundStyle(Color(red: tint.0, green: tint.1, blue: tint.2).opacity(prominent ? 1 : 0.5))
+                .foregroundStyle(Color(red: tint.0, green: tint.1, blue: tint.2).opacity(prominent ? 1 : 0.55))
+                .lineLimit(1)
             Text(line.text)
                 .font(prominent ? .title3.weight(.semibold) : .body)
-                .foregroundStyle(.white.opacity(prominent ? 1 : 0.38))
-                .contentTransition(.identity)
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(.white.opacity(prominent ? 1 : 0.72))
+                .lineLimit(3)
                 .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .id(line.id)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .clipped()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("subtitle-line")
+        .accessibilityLabel(line.text)
     }
 }

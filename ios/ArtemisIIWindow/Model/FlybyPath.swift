@@ -232,7 +232,8 @@ enum PathScrub {
     }
 
     /// Moves the clock by the finger's travel along the current bright segment, starting from `anchorDate`.
-    /// The whole segment's on-screen length maps to that span. A later fold that happens to sit near the finger cannot skip ahead of the drag.
+    /// A short arc still takes `floorLength` points to cross, and finishing that arc lands on the span end.
+    /// A later fold that happens to sit near the finger cannot skip ahead of the drag.
     /// Another span is used only when the finger is actually on that segment.
     static func drag(
         anchorDate: Date,
@@ -276,7 +277,8 @@ enum PathScrub {
         guard samples.count >= 2 else { return nil }
         let duration = span.end.timeIntervalSince(span.start)
         guard duration > 0 else { return clamp(anchor, to: span) }
-        let basis = max(polylineLength(samples), floorLength)
+        let length = polylineLength(samples)
+        let basis = max(length, floorLength)
         guard basis > 0 else { return clamp(anchor, to: span) }
         let travel = (translationX * translationX + translationY * translationY).squareRoot()
         let origin = arcLength(at: anchor, samples: samples) ?? 0
@@ -285,6 +287,11 @@ enum PathScrub {
             delta = min(max(hit.arc - origin, -travel), travel)
         } else {
             delta = 0
+        }
+        // Reaching the last point of this bright segment is the span end, even when the drawn arc is shorter than the drag floor.
+        let nextArc = origin + delta
+        if length > 1, nextArc >= length - 0.5 {
+            return span.end
         }
         let shifted = anchor.addingTimeInterval(delta / basis * duration)
         return clamp(shifted, to: span)

@@ -334,6 +334,25 @@ final class MilestonesTests: XCTestCase {
     }
 
     @MainActor
+    func testReleasingAPathDragAtTheSpanEndShowsTheEndCard() throws {
+        let model = PlaybackModel()
+        let span = try XCTUnwrap(model.activeSpan)
+        model.playing = true
+        model.beginPathScrub()
+        model.scrubPath(to: span.end)
+        XCTAssertEqual(model.utc, span.end)
+        XCTAssertFalse(model.ended)
+        model.endPathScrub()
+        XCTAssertFalse(model.scrubbing)
+        XCTAssertTrue(model.ended)
+        XCTAssertEqual(model.utc, span.end)
+        XCTAssertFalse(model.playing)
+
+        XCTAssertTrue(PlaybackModel.opensAtSpanEnd(["-seekToEnd"]))
+        XCTAssertFalse(PlaybackModel.opensAtSpanEnd([]))
+    }
+
+    @MainActor
     func testDiveOpensAtTheSelectedMoment() throws {
         let model = PlaybackModel()
         let span = try XCTUnwrap(model.activeSpan)

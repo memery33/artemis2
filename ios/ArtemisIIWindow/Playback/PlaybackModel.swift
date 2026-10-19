@@ -142,7 +142,20 @@ final class PlaybackModel: NSObject, ObservableObject {
         installRemoteCommands()
         startDisplayLink()
         haptic.prepare()
+        if Self.opensAtSpanEnd(ProcessInfo.processInfo.arguments), let end = activeSpan?.end {
+            utc = end
+            ended = true
+            playing = false
+            refreshNowPlaying(force: true)
+            return
+        }
         play()
+    }
+
+    /// UI tests pass `-seekToEnd` so the end card can be reached without dragging the path.
+    /// Playing from that instant would rewind to the span start.
+    nonisolated static func opensAtSpanEnd(_ arguments: [String]) -> Bool {
+        arguments.contains("-seekToEnd")
     }
 
     /// `fromHold` reschedules the real file at the offset saved across an interruption.
@@ -470,6 +483,11 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     func endPathScrub() {
         guard scrubbing else { return }
+        if let span = activeSpan, utc >= span.end {
+            utc = span.end
+            endScrub()
+            return
+        }
         if let timeline, let span = activeSpan, let landed = recordedDate(near: utc, in: span, timeline: timeline) {
             if segment(at: landed) == nil,
                let track = timeline.segments.first(where: { landed >= $0.start && landed < $0.end })?.track,
@@ -1409,10 +1427,12 @@ enum MediaStore {
         inflight.insert(name)
         waiters[name] = ready
         let pixels = CGFloat(pixelBucket(maxPixel))
-        Task.detached(priority: .userInitiated) {
+        DispatchQueue.global(qos: .userInteractive).async {
             let owned = ImageDecode.thumbnail(url: url, maxPixel: pixels)
-            await MainActor.run {
-                MediaStore.finishPrefetch(name: name, owned: owned, url: url, maxPixel: pixels)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    MediaStore.finishPrefetch(name: name, owned: owned, url: url, maxPixel: pixels)
+                }
             }
         }
     }

@@ -135,6 +135,7 @@ struct EndCard: View {
             .padding(28)
             .frame(maxWidth: 520, alignment: .leading)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("end-card")
     }
 }

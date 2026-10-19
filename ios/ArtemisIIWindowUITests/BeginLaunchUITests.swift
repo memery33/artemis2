@@ -16,4 +16,16 @@ final class BeginLaunchUITests: XCTestCase {
         wait(for: [hold], timeout: 12)
         XCTAssertEqual(app.state, .runningForeground)
     }
+
+    func testSeekToEndShowsTheEndCard() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-seekToEnd"]
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+        let card = app.descendants(matching: .any)["end-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 8))
+        XCTAssertTrue(card.staticTexts["End of this span"].waitForExistence(timeout: 5))
+    }
 }

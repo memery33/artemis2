@@ -18,13 +18,16 @@ enum MoonMap {
     }
 
     /// Decodes off the main thread. The unit-test host never starts this work.
+    /// The decode queue matches the main thread's QoS, and the result hops back asynchronously, so the main thread never waits on it.
     static func load(completion: @escaping @MainActor (UIImage?) -> Void) {
         guard !RuntimeHost.isUnitTestHost else { return }
         let url = resourceURL()
-        Task.detached(priority: .userInitiated) {
+        DispatchQueue.global(qos: .userInteractive).async {
             let owned = url.flatMap { decoded($0) }
-            await MainActor.run {
-                completion(owned.map { UIImage(cgImage: $0.image) })
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    completion(owned.map { UIImage(cgImage: $0.image) })
+                }
             }
         }
     }
