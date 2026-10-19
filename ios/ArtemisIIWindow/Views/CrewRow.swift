@@ -105,7 +105,6 @@ struct LyricLines: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: prominent ? 132 : 88)
-            .fixedSize(horizontal: false, vertical: true)
         }
         .id(line.id)
         .transition(.identity)

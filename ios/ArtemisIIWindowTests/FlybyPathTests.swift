@@ -351,6 +351,53 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertGreaterThan(againstMoved, -120)
     }
 
+    /// Horizontal travel stays on the span being scrubbed. A fold in the arc, or a drag toward the other span, does not leave it.
+    func testHorizontalScrubClampsToTheCurrentSpan() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let duration = 900.0
+        let end = start.addingTimeInterval(duration)
+        let flyby = PathSpan(start: start, end: end)
+        let folded = [
+            PathScreenSample(date: start, x: 0, y: 0),
+            PathScreenSample(date: start.addingTimeInterval(450), x: 100, y: 0),
+            PathScreenSample(date: end, x: 6, y: 2)
+        ]
+        let foldedDrag = PathScrub.drag(
+            anchorDate: start,
+            translationX: 6,
+            panelWidth: 390,
+            samples: folded,
+            span: flyby
+        )
+        let foldedDelta = foldedDrag?.date.timeIntervalSince(start) ?? 999
+        XCTAssertEqual(foldedDrag?.span, flyby)
+        XCTAssertGreaterThan(foldedDelta, 0)
+        XCTAssertLessThan(foldedDelta, 90)
+        XCTAssertNotEqual(foldedDrag?.date, end)
+
+        let cab = PathSpan(start: start.addingTimeInterval(10_000), end: start.addingTimeInterval(10_500))
+        let pastThePanel = PathScrub.drag(
+            anchorDate: start,
+            translationX: 5_000,
+            panelWidth: 390,
+            samples: folded,
+            span: flyby
+        )
+        XCTAssertEqual(pastThePanel?.date, end)
+        XCTAssertEqual(pastThePanel?.span, flyby)
+        XCTAssertNotEqual(pastThePanel?.span, cab)
+
+        let beforeTheStart = PathScrub.drag(
+            anchorDate: start.addingTimeInterval(30),
+            translationX: -5_000,
+            panelWidth: 390,
+            samples: folded,
+            span: flyby
+        )
+        XCTAssertEqual(beforeTheStart?.date, start)
+        XCTAssertEqual(beforeTheStart?.span, flyby)
+    }
+
     /// Horizons quantity 15 at 2026-04-06 19:40 UT, CENTER=500@-1024, prints SunSub-LON 306.562535° and SunSub-LAT 1.028083°.
     func testSubSolarPointMatchesTheHorizonsQuery() throws {
         let document = try XCTUnwrap(SolarEphemeris.load())

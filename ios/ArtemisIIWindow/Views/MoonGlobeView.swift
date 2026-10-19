@@ -406,6 +406,7 @@ private struct GlobeScene: UIViewRepresentable {
                   milestone.date >= first, milestone.date <= last,
                   let position = FlybyPath.position(at: milestone.date, samples: samples) else { continue }
             let pin = SCNSphere(radius: 0.045)
+            pin.segmentCount = 8
             pin.firstMaterial?.diffuse.contents = UIColor(red: 1, green: 0.78, blue: 0.45, alpha: 1)
             pin.firstMaterial?.emission.contents = UIColor(red: 1, green: 0.72, blue: 0.35, alpha: 1)
             pin.firstMaterial?.lightingModel = .constant
@@ -418,6 +419,7 @@ private struct GlobeScene: UIViewRepresentable {
         for site in LunarSites.marked {
             let unit = MoonFrame.unit(latitude: site.latitude, longitudeEast: site.longitudeEast)
             let mark = SCNSphere(radius: 0.018)
+            mark.segmentCount = 8
             mark.firstMaterial?.diffuse.contents = UIColor.white
             mark.firstMaterial?.emission.contents = UIColor.white
             mark.firstMaterial?.lightingModel = .constant

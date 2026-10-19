@@ -116,6 +116,70 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
     }
 
+    /// `-ui-tests` turns playback services off. Launch still ends a leftover, and it does not leave the ActivityKit client installed.
+    @MainActor
+    func testUITestLaunchEndsLeftoversWhenPlaybackServicesAreOff() async {
+        let fake = FakeFlybyActivities(identifiers: ["left-over"])
+        var built = 0
+        let previousFactory = FlybyLiveActivity.systemClientFactory
+        let previous = FlybyLiveActivity.install(SilentFlybyActivities())
+        defer {
+            FlybyLiveActivity.systemClientFactory = previousFactory
+            FlybyLiveActivity.install(previous)
+        }
+        FlybyLiveActivity.systemClientFactory = {
+            built += 1
+            return fake
+        }
+        FlybyLiveActivity.endLeftoversAtLaunch(unitTestHost: false, allowsPlayback: false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["left-over"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+        fake.identifiersStore = ["still-up"]
+        FlybyLiveActivity.useSystemClient(unitTestHost: false, allowsPlayback: false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(built, 2)
+        XCTAssertEqual(fake.ended, ["still-up"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+        XCTAssertTrue(FlybyLiveActivity.client is SilentFlybyActivities)
+        XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
+    }
+
+    /// The shipping launch installs the client and ends leftovers. Playback services being on is not what gates the end.
+    @MainActor
+    func testShippingLaunchInstallsTheClientAndEndsLeftovers() async {
+        let fake = FakeFlybyActivities(identifiers: ["left-over"])
+        let previousFactory = FlybyLiveActivity.systemClientFactory
+        let previous = FlybyLiveActivity.install(SilentFlybyActivities())
+        defer {
+            FlybyLiveActivity.systemClientFactory = previousFactory
+            FlybyLiveActivity.install(previous)
+        }
+        FlybyLiveActivity.systemClientFactory = { fake }
+        FlybyLiveActivity.endLeftoversAtLaunch(unitTestHost: false, allowsPlayback: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["left-over"])
+        XCTAssertTrue(FlybyLiveActivity.client is FakeFlybyActivities)
+        XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
+    }
+
+    /// The unit-test host does not ask for an ActivityKit client, even when playback services are off.
+    @MainActor
+    func testUnitTestHostDoesNotBuildTheActivityClient() async {
+        var built = false
+        let previousFactory = FlybyLiveActivity.systemClientFactory
+        defer { FlybyLiveActivity.systemClientFactory = previousFactory }
+        FlybyLiveActivity.systemClientFactory = {
+            built = true
+            return FakeFlybyActivities(identifiers: [])
+        }
+        FlybyLiveActivity.useSystemClient(unitTestHost: true, allowsPlayback: false)
+        FlybyLiveActivity.endLeftoversAtLaunch(unitTestHost: true, allowsPlayback: false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertFalse(built)
+        XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
+    }
+
     /// Launch ends leftovers through the injected client. The test host never constructs ActivityKit.
     @MainActor
     func testLaunchEndsLeftoversWithoutConstructingActivityKit() async {

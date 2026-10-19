@@ -1389,7 +1389,8 @@ final class PlaybackModel: NSObject, ObservableObject {
         let speakerChanged = speaker != lastActivitySpeaker
         let endedChanged = spanEnded != lastActivityEnded
         let due = playing && Date().timeIntervalSince(lastActivityPush) >= Self.activityPushInterval
-        guard requested || becameMissing || playbackChanged || speakerChanged || endedChanged || due else { return }
+        // Background, pause, seek, and span end pass force and are not held for the 15s cadence.
+        guard force || requested || becameMissing || playbackChanged || speakerChanged || endedChanged || due else { return }
         lastActivityPush = Date()
         lastActivitySpeaker = speaker
         lastActivityPlaying = playing

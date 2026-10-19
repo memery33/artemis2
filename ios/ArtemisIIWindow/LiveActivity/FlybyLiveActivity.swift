@@ -64,9 +64,15 @@ enum FlybyLiveActivity {
     @MainActor
     private static var chain: Task<Void, Never>?
 
-    /// Starts silent. The system client is installed only from playback, and only outside the unit-test host.
+    /// Starts silent. The system client is installed only outside the unit-test host.
     @MainActor
     static var client: any FlybyActivityClient = SilentFlybyActivities()
+
+    /// Builds the ActivityKit client. Tests replace this so the unit-test host never constructs one.
+    @MainActor
+    static var systemClientFactory: @MainActor () -> any FlybyActivityClient = {
+        SystemFlybyActivities()
+    }
 
     @MainActor
     static var isRunning: Bool {
@@ -82,30 +88,56 @@ enum FlybyLiveActivity {
         return previous
     }
 
-    /// Ends whatever the current client can see. The unit-test host keeps the injected client and does not construct ActivityKit.
-    /// The shipping app installs the ActivityKit client first, so a leftover from the previous launch is included.
+    /// Ends a Live Activity left up by a previous launch.
+    /// The shipping app and UI tests (`-ui-tests`) both do this. Playback services being off does not skip it.
+    /// Only the unit-test host returns before ActivityKit is constructed.
     @MainActor
-    static func endLeftoversAtLaunch() {
-        guard !RuntimeHost.isUnitTestHost else {
+    static func endLeftoversAtLaunch(
+        unitTestHost: Bool = RuntimeHost.isUnitTestHost,
+        allowsPlayback: Bool = RuntimeHost.allowsPlaybackServices()
+    ) {
+        if unitTestHost {
             scheduleEndAllImmediately()
             return
         }
-        guard RuntimeHost.allowsPlaybackServices() else { return }
+        endThroughSystemClient(keepInstalled: allowsPlayback)
+    }
+
+    /// Installs the ActivityKit client when playback may start, and always clears leftovers outside the unit-test host.
+    /// UI tests keep the silent client after the clear, so Begin does not request a new activity.
+    @MainActor
+    static func useSystemClient(
+        unitTestHost: Bool = RuntimeHost.isUnitTestHost,
+        allowsPlayback: Bool = RuntimeHost.allowsPlaybackServices()
+    ) {
+        guard !unitTestHost else { return }
+        if !allowsPlayback {
+            endThroughSystemClient(keepInstalled: false)
+            return
+        }
         if !(client is SystemFlybyActivities) {
-            client = SystemFlybyActivities()
+            client = systemClientFactory()
         }
         scheduleEndAllImmediately()
     }
 
-    /// Installs the ActivityKit client and ends anything still up.
-    /// The unit-test host returns before that type is constructed.
+    /// Reads the live activities from an ActivityKit client and ends those ids.
+    /// `keepInstalled` leaves that client in place for later updates. Otherwise the silent client stays.
     @MainActor
-    static func useSystemClient() {
-        guard !RuntimeHost.isUnitTestHost else { return }
-        guard RuntimeHost.allowsPlaybackServices() else { return }
-        guard !(client is SystemFlybyActivities) else { return }
-        client = SystemFlybyActivities()
-        scheduleEndAllImmediately()
+    private static func endThroughSystemClient(keepInstalled: Bool) {
+        let system: any FlybyActivityClient
+        if keepInstalled, client is SystemFlybyActivities {
+            system = client
+        } else {
+            system = systemClientFactory()
+            if keepInstalled {
+                client = system
+            }
+        }
+        let ids = system.identifiers()
+        enqueue {
+            await system.end(identifiers: ids)
+        }
     }
 
     /// Ends every activity visible on this turn, including one left up after a previous launch.
@@ -126,9 +158,10 @@ enum FlybyLiveActivity {
     @MainActor
     @discardableResult
     static func scheduleEndAllImmediately() -> Task<Void, Never> {
-        let ids = client.identifiers()
+        let ending = client
+        let ids = ending.identifiers()
         return enqueue {
-            await client.end(identifiers: ids)
+            await ending.end(identifiers: ids)
         }
     }
 
