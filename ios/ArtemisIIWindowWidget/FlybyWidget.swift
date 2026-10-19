@@ -2,6 +2,8 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
+extension FlybyActivityAttributes: ActivityAttributes {}
+
 @main
 struct FlybyWidgetBundle: WidgetBundle {
     var body: some Widget {
@@ -55,29 +57,13 @@ struct FlybyLiveActivityWidget: Widget {
     }
 }
 
-/// While playback is running, the hour is fixed and the minutes and seconds are a
-/// count-up under one hour, so the widget draws real seconds at 1x. A paused
-/// activity shows the last `HH:mm:ss` string.
+/// Absolute mission UTC, pushed with each activity update. A `Text(timerInterval:)` of minutes and seconds renders as `--` and does not advance.
 struct MissionClockText: View {
     var state: FlybyActivityAttributes.ContentState
     var font: Font
 
     var body: some View {
-        Group {
-            if state.playing {
-                HStack(spacing: 0) {
-                    Text(state.hourText)
-                    Text(
-                        timerInterval: state.missionTimer,
-                        pauseTime: nil,
-                        countsDown: false,
-                        showsHours: false
-                    )
-                }
-            } else {
-                Text(state.clock)
-            }
-        }
-        .font(font.monospacedDigit())
+        Text(state.clock)
+            .font(font.monospacedDigit())
     }
 }

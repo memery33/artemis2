@@ -34,6 +34,79 @@ struct FlybyDocument: Decodable, Sendable {
     }
 }
 
+struct SunDocument: Decodable, Sendable {
+    var source: String
+    var query: String
+    var frame: String
+    var samples: [Row]
+
+    struct Row: Decodable, Sendable {
+        var t: String
+        var lonEast: Double
+        var lat: Double
+    }
+}
+
+struct SunSample: Equatable, Sendable {
+    var date: Date
+    var longitudeEast: Double
+    var latitude: Double
+}
+
+/// Sub-solar point of the Moon in IAU MOON_ME, from Horizons quantity 15.
+enum SolarEphemeris {
+    static let bundled: (document: SunDocument, samples: [SunSample])? = {
+        guard let document = load() else { return nil }
+        let rows = samples(in: document)
+        guard !rows.isEmpty else { return nil }
+        return (document, rows)
+    }()
+
+    static func load(from bundle: Bundle = .main) -> SunDocument? {
+        guard let url = bundle.url(forResource: "horizons_sun_moon", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(SunDocument.self, from: data)
+    }
+
+    static func samples(in document: SunDocument) -> [SunSample] {
+        document.samples.compactMap { row in
+            guard let date = try? ISO8601.parse(row.t) else { return nil }
+            return SunSample(date: date, longitudeEast: row.lonEast, latitude: row.lat)
+        }
+    }
+
+    /// Unit vector from the Moon's center toward the Sun. Longitude and latitude are interpolated; the vector is not invented.
+    static func direction(at date: Date, samples: [SunSample]) -> (x: Double, y: Double, z: Double)? {
+        guard let first = samples.first else { return nil }
+        if date <= first.date {
+            return MoonFrame.unit(latitude: first.latitude, longitudeEast: first.longitudeEast)
+        }
+        guard let last = samples.last else { return nil }
+        if date >= last.date {
+            return MoonFrame.unit(latitude: last.latitude, longitudeEast: last.longitudeEast)
+        }
+        var low = 0
+        var high = samples.count - 1
+        while high - low > 1 {
+            let mid = (low + high) / 2
+            if samples[mid].date <= date {
+                low = mid
+            } else {
+                high = mid
+            }
+        }
+        let start = samples[low]
+        let end = samples[high]
+        let span = end.date.timeIntervalSince(start.date)
+        let portion = span > 0 ? date.timeIntervalSince(start.date) / span : 0
+        let longitude = start.longitudeEast + (end.longitudeEast - start.longitudeEast) * portion
+        let latitude = start.latitude + (end.latitude - start.latitude) * portion
+        return MoonFrame.unit(latitude: latitude, longitudeEast: longitude)
+    }
+}
+
 enum FlybyEphemeris {
     static let bundled: (document: FlybyDocument, samples: [PathSample])? = {
         guard let document = load() else { return nil }
@@ -226,15 +299,17 @@ struct PathScrubChoice: Equatable, Sendable {
 enum PathScrub {
     /// The finger has to be this close, in points, to a different bright segment before the clock leaves the current span.
     static let reach: Double = 24
-    /// A bright arc drawn shorter than this still takes this many points of finger travel to cross.
-    static let floorLength: Double = 160
+    /// A release this close to the end of a bright polyline, in screen points, is the span end.
+    /// The polyline has to actually finish on the span end. The last half-point of a short arc is not enough.
+    static let endPoints: Double = 4
 
     static func contains(_ date: Date, spans: [PathSpan]) -> Bool {
         spans.contains { date >= $0.start && date <= $0.end }
     }
 
     /// Moves the clock by the finger's travel along the current bright segment, starting from `anchorDate`.
-    /// A short arc still takes `floorLength` points to cross, and finishing that arc lands on the span end.
+    /// The finger is projected onto that polyline. The time change is the arc length moved, as a fraction of the polyline, times the time that polyline covers.
+    /// The span end, and the end card, happen only when the release is within the last few points of a polyline that ends there.
     /// A later fold that happens to sit near the finger cannot skip ahead of the drag.
     /// Another span is used only when the finger is actually on that segment.
     static func drag(
@@ -266,7 +341,8 @@ enum PathScrub {
         return PathScrubChoice(date: date, span: current.span)
     }
 
-    /// Time change is the finger's movement along the polyline, capped by how far the finger actually traveled.
+    /// Time change is the arc length between the anchor and the nearest point on the polyline, as a fraction of that polyline.
+    /// Finger travel caps the arc so a fold sitting next to the finger cannot skip ahead.
     static func advanced(
         _ anchor: Date,
         translationX: Double,
@@ -280,8 +356,7 @@ enum PathScrub {
         let duration = span.end.timeIntervalSince(span.start)
         guard duration > 0 else { return clamp(anchor, to: span) }
         let length = polylineLength(samples)
-        let basis = max(length, floorLength)
-        guard basis > 0 else { return clamp(anchor, to: span) }
+        guard length > 0 else { return clamp(anchor, to: span) }
         let travel = (translationX * translationX + translationY * translationY).squareRoot()
         let origin = arcLength(at: anchor, samples: samples) ?? 0
         let delta: Double
@@ -290,13 +365,27 @@ enum PathScrub {
         } else {
             delta = 0
         }
-        // Reaching the last point of this bright segment is the span end, even when the drawn arc is shorter than the drag floor.
         let nextArc = origin + delta
-        if length > 1, nextArc >= length - 0.5 {
+        if releasesSpanEnd(nextArc: nextArc, length: length, samples: samples, span: span) {
             return span.end
         }
-        let shifted = anchor.addingTimeInterval(delta / basis * duration)
+        // Scale by the time this visible polyline actually covers. A limb cutoff must not stretch onto the span end.
+        let covered = samples[samples.count - 1].date.timeIntervalSince(samples[0].date)
+        let basis = covered > 0 ? covered : duration
+        let shifted = anchor.addingTimeInterval(delta / length * basis)
         return clamp(shifted, to: span)
+    }
+
+    /// True when the drag has reached the last few screen points of a polyline whose last sample is the span end.
+    private static func releasesSpanEnd(
+        nextArc: Double,
+        length: Double,
+        samples: [PathScreenSample],
+        span: PathSpan
+    ) -> Bool {
+        guard length > endPoints, nextArc >= length - endPoints else { return false }
+        guard let last = samples.last else { return false }
+        return abs(last.date.timeIntervalSince(span.end)) < 1
     }
 
     private static func reachedSpan(

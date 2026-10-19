@@ -149,6 +149,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             arrived = true
             return
         }
+        FlybyLiveActivity.useSystemClient()
         do {
             try activateSpokenSession()
         } catch {
@@ -179,10 +180,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         playing = true
         resumeAfterInterrupt = false
-        guard !RuntimeHost.isUnitTestHost else {
-            refreshNowPlaying(force: true)
-            return
-        }
+        guard !RuntimeHost.isUnitTestHost else { return }
         guard !engineFailed else {
             refreshNowPlaying(force: true)
             return
@@ -217,6 +215,14 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// That clears the interruption resume flag so a later `.shouldResume`
     /// does not start the recording again.
     func pause(user: Bool) {
+        if skipsAudio {
+            playing = false
+            if user {
+                resumeAfterInterrupt = false
+            }
+            FlybyLiveActivity.scheduleEndAllImmediately()
+            return
+        }
         let nodeWasPlaying = player.isPlaying
         let rendered = nodeWasPlaying ? renderedSeconds() : max(0, holdSeconds)
         let wait = audibleHostSeconds.map {
@@ -1361,17 +1367,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
         let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID
-        let remaining = max(1, span.end.timeIntervalSince(utc))
         FlybyLiveActivity.sync(
             arrived: arrived,
             playing: playing,
             progress: FlybyActivityCopy.progress(elapsed: elapsed, duration: duration),
             nextMilestone: FlybyActivityCopy.nextLabel(after: utc, milestones: milestones),
             speaker: speaker,
-            clock: FlybyActivityCopy.clock(utc),
-            utcStart: utc,
-            wallStart: Date(),
-            staleDate: Date().addingTimeInterval(remaining)
+            clock: FlybyActivityCopy.lockScreenClock(utc),
+            staleDate: FlybyActivityCopy.staleDate(spanEnd: span.end)
         )
     }
 

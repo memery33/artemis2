@@ -371,7 +371,79 @@ final class FlybyPathTests: XCTestCase {
             current: (flyby, short),
             others: []
         )
-        XCTAssertEqual(partial?.date.timeIntervalSince(start) ?? -1, 90, accuracy: 2)
+        XCTAssertEqual(partial?.date.timeIntervalSince(start) ?? -1, 180, accuracy: 2)
         XCTAssertNotEqual(partial?.date, end)
+    }
+
+    /// The compressed bright arc is short on screen. Six percent of that arc is six percent of the span, under three minutes, and it does not raise the end.
+    func testSixPercentDragOnTheCompressedArcMovesLessThanThreeMinutes() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let duration = 15.5 * 60.0
+        let end = start.addingTimeInterval(duration)
+        let flyby = PathSpan(start: start, end: end)
+        let screen = 48.0
+        let arc = [
+            PathScreenSample(date: start, x: 0, y: 0),
+            PathScreenSample(date: end, x: screen, y: 0)
+        ]
+        let anchor = start.addingTimeInterval(duration * 0.30)
+        let fromX = screen * 0.30
+        let toX = screen * 0.36
+        let dragged = PathScrub.drag(
+            anchorDate: anchor,
+            translationX: toX - fromX,
+            translationY: 0,
+            fingerX: toX,
+            fingerY: 0,
+            current: (flyby, arc),
+            others: []
+        )
+        let moved = dragged?.date.timeIntervalSince(anchor) ?? 999
+        XCTAssertEqual(moved, duration * 0.06, accuracy: 1)
+        XCTAssertLessThan(abs(moved), 180)
+        XCTAssertNotEqual(dragged?.date, end)
+        XCTAssertEqual(dragged?.span, flyby)
+
+        // The visible polyline stops before the span end, so its last point is not the end card.
+        let cutoff = start.addingTimeInterval(duration * 0.40)
+        let partialArc = [
+            PathScreenSample(date: start, x: 0, y: 0),
+            PathScreenSample(date: cutoff, x: screen, y: 0)
+        ]
+        let atVisualEnd = PathScrub.drag(
+            anchorDate: start,
+            translationX: screen,
+            translationY: 0,
+            fingerX: screen,
+            fingerY: 0,
+            current: (flyby, partialArc),
+            others: []
+        )
+        XCTAssertNotEqual(atVisualEnd?.date, end)
+        XCTAssertLessThan(atVisualEnd?.date.timeIntervalSince(start) ?? 999, duration * 0.5)
+    }
+
+    /// Horizons quantity 15 at 2026-04-06 19:40 UT, CENTER=500@-1024, prints SunSub-LON 306.562535° and SunSub-LAT 1.028083°.
+    func testSubSolarPointMatchesTheHorizonsQuery() throws {
+        let document = try XCTUnwrap(SolarEphemeris.load())
+        XCTAssertEqual(document.frame, "MOON_ME")
+        XCTAssertTrue(document.query.contains("COMMAND=301"))
+        XCTAssertTrue(document.query.contains("CENTER=500@-1024"))
+        XCTAssertTrue(document.query.contains("QUANTITIES=15"))
+        let row = try XCTUnwrap(document.samples.first { $0.t == "2026-04-06T19:40:00Z" })
+        XCTAssertEqual(row.lonEast, 306.562535, accuracy: 0.000001)
+        XCTAssertEqual(row.lat, 1.028083, accuracy: 0.000001)
+        let samples = SolarEphemeris.samples(in: document)
+        let date = Self.utc("2026-04-06T19:40:00Z")
+        let direction = try XCTUnwrap(SolarEphemeris.direction(at: date, samples: samples))
+        let expected = MoonFrame.unit(latitude: row.lat, longitudeEast: row.lonEast)
+        XCTAssertEqual(direction.x, expected.x, accuracy: 1e-9)
+        XCTAssertEqual(direction.y, expected.y, accuracy: 1e-9)
+        XCTAssertEqual(direction.z, expected.z, accuracy: 1e-9)
+        let placed = GlobeMapping.scene(direction, radiusKm: 1)
+        let length = Self.length(placed)
+        XCTAssertEqual(Double(length), 1, accuracy: 0.0001)
+        XCTAssertGreaterThan(placed.x, Float(0))
+        XCTAssertGreaterThan(placed.z, Float(0))
     }
 }

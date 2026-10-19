@@ -36,7 +36,7 @@ struct MoonGlobeView: View {
             Color.black
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("orion-path")
-            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. The arc is drawn at 5% of its true altitude so it sits around the Moon. Latitude and longitude are unchanged. Drag the bright path to move the clock.")
+            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. The arc is drawn at 5% of its true altitude so it sits around the Moon. Latitude and longitude are unchanged. The dim arc is the rest of that window, past and future. Drag the bright path to move the clock. The key light is the sub-solar point from Horizons quantity 15.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.72))
                 .accessibilityIdentifier("globe-caption")
@@ -103,7 +103,7 @@ struct MoonGlobeView: View {
 
     private func caption(samples: [PathSample], radiusKm: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. The arc is drawn at 5% of its true altitude so it sits around the Moon. Latitude and longitude are unchanged. Drag the bright path to move the clock.")
+            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. The arc is drawn at 5% of its true altitude so it sits around the Moon. Latitude and longitude are unchanged. The dim arc is the rest of that window, past and future. Drag the bright path to move the clock. The key light is the sub-solar point from Horizons quantity 15.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
@@ -117,7 +117,7 @@ struct MoonGlobeView: View {
     }
 
     private func accessibilityText(samples: [PathSample], radiusKm: Double) -> String {
-        var text = "Orion path from JPL Horizons. Drag the bright path to move the mission clock."
+        var text = "Orion path from JPL Horizons. The dim arc continues past and future. Drag the bright path to move the mission clock."
         if let approach = FlybyPath.closestApproach(samples, radiusKm: radiusKm) {
             text += " " + approachLine(approach)
         }
@@ -247,22 +247,27 @@ private struct GlobeScene: UIViewRepresentable {
             return
         }
         now.position = GlobeMapping.scene(position, radiusKm: radiusKm, compressAltitude: true)
-        placeCamera(in: view.scene?.rootNode, toward: position)
+        placeCamera(in: view.scene?.rootNode, toward: position, at: utc)
         context.coordinator.refreshLabels(in: view)
     }
 
-    /// Looks along Orion’s current Moon-fixed direction and lights the globe from the side, as before.
-    /// No separate Sun vector is bundled, so the light stays the previous camera-relative key.
-    private func placeCamera(in root: SCNNode?, toward me: (x: Double, y: Double, z: Double)) {
+    /// Looks along Orion’s current Moon-fixed direction. The key light is the bundled sub-solar vector, not a camera-relative fill.
+    private func placeCamera(in root: SCNNode?, toward me: (x: Double, y: Double, z: Double), at date: Date) {
         guard let root,
               let cameraNode = root.childNode(withName: "camera", recursively: false),
               let sun = root.childNode(withName: "sun", recursively: false) else { return }
         let cameraPosition = GlobeMapping.cameraPosition(toward: me)
         cameraNode.position = cameraPosition
         cameraNode.look(at: SCNVector3(0, 0, 0))
-        let side = cross(cameraPosition, SCNVector3(0, 1, 0))
-        let sideLength = max(0.001, simdLength(side))
-        sun.position = SCNVector3(side.x / sideLength * 8, 3.2, side.z / sideLength * 8)
+        guard let samples = SolarEphemeris.bundled?.samples,
+              let sunME = SolarEphemeris.direction(at: date, samples: samples) else {
+            sun.light?.intensity = 0
+            return
+        }
+        let placed = GlobeMapping.scene(sunME, radiusKm: 1)
+        let length = max(0.001, simdLength(placed))
+        sun.light?.intensity = 1100
+        sun.position = SCNVector3(placed.x / length * 8, placed.y / length * 8, placed.z / length * 8)
         sun.look(at: SCNVector3(0, 0, 0))
     }
 
@@ -326,12 +331,24 @@ private struct GlobeScene: UIViewRepresentable {
 
         if samples.count > 1 {
             let context = lineGeometry(samples.map { GlobeMapping.scene(($0.x, $0.y, $0.z), radiusKm: radiusKm, compressAltitude: true) })
-            context.firstMaterial?.diffuse.contents = UIColor(white: 0.42, alpha: 1)
-            context.firstMaterial?.emission.contents = UIColor(white: 0.28, alpha: 1)
+            context.firstMaterial?.diffuse.contents = UIColor(red: 0.72, green: 0.82, blue: 0.95, alpha: 1)
+            context.firstMaterial?.emission.contents = UIColor(red: 0.62, green: 0.74, blue: 0.9, alpha: 1)
             context.firstMaterial?.lightingModel = .constant
             let contextNode = SCNNode(geometry: context)
             contextNode.name = "path"
             scene.rootNode.addChildNode(contextNode)
+            // The full Horizons window, past and future, as a readable dim arc. The bright span stays on top.
+            for (index, sample) in samples.enumerated() where index % 10 == 0 {
+                let dot = SCNSphere(radius: 0.007)
+                dot.segmentCount = 8
+                dot.firstMaterial?.diffuse.contents = UIColor(red: 0.75, green: 0.84, blue: 0.96, alpha: 1)
+                dot.firstMaterial?.emission.contents = UIColor(red: 0.65, green: 0.76, blue: 0.92, alpha: 1)
+                dot.firstMaterial?.lightingModel = .constant
+                let dotNode = SCNNode(geometry: dot)
+                dotNode.name = "path-context"
+                dotNode.position = GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm, compressAltitude: true)
+                scene.rootNode.addChildNode(dotNode)
+            }
 
             for span in spans {
                 let bright = samples.filter { $0.date >= span.start && $0.date <= span.end }
@@ -346,12 +363,26 @@ private struct GlobeScene: UIViewRepresentable {
             }
         }
 
-        let now = SCNSphere(radius: 0.08)
+        let halo = SCNSphere(radius: 0.026)
+        halo.segmentCount = 16
+        halo.firstMaterial?.lightingModel = .constant
+        halo.firstMaterial?.diffuse.contents = UIColor(white: 1, alpha: 0.16)
+        halo.firstMaterial?.emission.contents = UIColor(white: 1, alpha: 0.2)
+        halo.firstMaterial?.transparency = 0.28
+        halo.firstMaterial?.transparencyMode = .dualLayer
+        halo.firstMaterial?.blendMode = .add
+        halo.firstMaterial?.writesToDepthBuffer = false
+        halo.firstMaterial?.readsFromDepthBuffer = false
+        let haloNode = SCNNode(geometry: halo)
+        haloNode.name = "now-halo"
+        let now = SCNSphere(radius: 0.011)
+        now.segmentCount = 12
         now.firstMaterial?.diffuse.contents = UIColor.white
         now.firstMaterial?.emission.contents = UIColor.white
         now.firstMaterial?.lightingModel = .constant
         let nowNode = SCNNode(geometry: now)
         nowNode.name = "now"
+        nowNode.addChildNode(haloNode)
         if let position = FlybyPath.position(at: utc, samples: samples) {
             nowNode.position = GlobeMapping.scene(position, radiusKm: radiusKm, compressAltitude: true)
         }
@@ -400,8 +431,9 @@ private struct GlobeScene: UIViewRepresentable {
         sun.light?.color = UIColor(white: 1, alpha: 1)
         scene.rootNode.addChildNode(sun)
         let aim = FlybyPath.position(at: utc, samples: samples) ?? (x: 1.0, y: 0.0, z: 0.0)
-        placeCamera(in: scene.rootNode, toward: aim)
+        placeCamera(in: scene.rootNode, toward: aim, at: utc)
 
+        // Fill so the night side stays readable. It is not a solar measurement; the key light is the Horizons sub-solar vector.
         let ambient = SCNNode()
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
@@ -466,14 +498,6 @@ private struct GlobeScene: UIViewRepresentable {
 
     private func simdLength(_ vector: SCNVector3) -> Float {
         (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).squareRoot()
-    }
-
-    private func cross(_ a: SCNVector3, _ b: SCNVector3) -> SCNVector3 {
-        SCNVector3(
-            a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x
-        )
     }
 }
 

@@ -1,4 +1,3 @@
-import ActivityKit
 import Foundation
 
 enum FlybyActivityCopy {
@@ -9,6 +8,11 @@ enum FlybyActivityCopy {
 
     static func nextLabel(after date: Date, milestones: [Milestone]) -> String {
         milestones.first { $0.date > date }?.label ?? "End of this span"
+    }
+
+    /// The activity goes stale one minute after the mission span ends. Passed on every request and update.
+    static func staleDate(spanEnd: Date) -> Date {
+        spanEnd.addingTimeInterval(60)
     }
 
     @MainActor
@@ -24,6 +28,12 @@ enum FlybyActivityCopy {
     static func clock(_ date: Date) -> String {
         clockFormatter.string(from: date)
     }
+
+    /// Lock-screen line. A minutes-and-seconds `Text(timerInterval:)` renders as `--` and does not advance, so this is the absolute UTC string.
+    @MainActor
+    static func lockScreenClock(_ date: Date) -> String {
+        "at \(clock(date)) UTC"
+    }
 }
 
 /// The app talks to ActivityKit through this so a unit test can run the end path without a Live Activity.
@@ -35,7 +45,7 @@ protocol FlybyActivityClient: AnyObject {
     func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async
 }
 
-/// Used while this process is the unit-test host. It never calls ActivityKit.
+/// Used for the whole unit-test host. It never calls ActivityKit, and nothing constructs an activity here.
 @MainActor
 final class SilentFlybyActivities: FlybyActivityClient {
     func identifiers() -> [String] { [] }
@@ -44,43 +54,14 @@ final class SilentFlybyActivities: FlybyActivityClient {
     func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {}
 }
 
-@MainActor
-final class SystemFlybyActivities: FlybyActivityClient {
-    func identifiers() -> [String] {
-        Activity<FlybyActivityAttributes>.activities.map(\.id)
-    }
-
-    func end(identifiers: [String]) async {
-        let ending = Set(identifiers)
-        for activity in Activity<FlybyActivityAttributes>.activities where ending.contains(activity.id) {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
-    }
-
-    func request(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {
-        _ = try? Activity.request(
-            attributes: FlybyActivityAttributes(title: "Orion Window"),
-            content: ActivityContent(state: state, staleDate: staleDate),
-            pushType: nil
-        )
-    }
-
-    func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {
-        await Activity<FlybyActivityAttributes>.activities.first?.update(
-            ActivityContent(state: state, staleDate: staleDate)
-        )
-    }
-}
-
 enum FlybyLiveActivity {
     /// Ends and updates run one at a time. An end only dismisses the ids captured when it was scheduled.
     @MainActor
     private static var chain: Task<Void, Never>?
 
+    /// Starts silent. The system client is installed only from playback, and only outside the unit-test host.
     @MainActor
-    static var client: any FlybyActivityClient = RuntimeHost.isUnitTestHost
-        ? SilentFlybyActivities()
-        : SystemFlybyActivities()
+    static var client: any FlybyActivityClient = SilentFlybyActivities()
 
     @MainActor
     static var isRunning: Bool {
@@ -94,6 +75,17 @@ enum FlybyLiveActivity {
         let previous = client
         client = replacement
         return previous
+    }
+
+    /// Installs the ActivityKit client and ends anything a previous launch left up.
+    /// The unit-test host returns before that type is constructed.
+    @MainActor
+    static func useSystemClient() {
+        guard !RuntimeHost.isUnitTestHost else { return }
+        guard RuntimeHost.allowsPlaybackServices() else { return }
+        guard !(client is SystemFlybyActivities) else { return }
+        client = SystemFlybyActivities()
+        scheduleEndAllImmediately()
     }
 
     /// Ends every activity visible on this turn, including one left up after a previous launch.
@@ -114,23 +106,6 @@ enum FlybyLiveActivity {
         }
     }
 
-    /// Ends every activity and does not return until that end has finished.
-    /// Launch calls this before the player exists. The unit-test host skips it.
-    @MainActor
-    static func finishLaunchCleanup() {
-        guard !RuntimeHost.isUnitTestHost else { return }
-        let gate = LaunchCleanup()
-        enqueue {
-            let ids = client.identifiers()
-            await client.end(identifiers: ids)
-            gate.finish()
-        }
-        let deadline = Date().addingTimeInterval(2)
-        while !gate.isFinished, Date() < deadline {
-            RunLoop.current.run(mode: .common, before: Date().addingTimeInterval(0.05))
-        }
-    }
-
     @MainActor
     static func sync(
         arrived: Bool,
@@ -139,8 +114,6 @@ enum FlybyLiveActivity {
         nextMilestone: String,
         speaker: String,
         clock: String,
-        utcStart: Date,
-        wallStart: Date,
         staleDate: Date?
     ) {
         enqueue {
@@ -149,10 +122,7 @@ enum FlybyLiveActivity {
                 nextMilestone: nextMilestone,
                 speaker: speaker,
                 clock: clock,
-                hourText: FlybyActivityAttributes.ContentState.hourText(for: utcStart),
-                playing: playing,
-                utcStart: utcStart,
-                wallStart: wallStart
+                playing: playing
             )
             guard RuntimeHost.allowsPlaybackServices(), arrived, playing else {
                 let ids = client.identifiers()
@@ -177,23 +147,5 @@ enum FlybyLiveActivity {
         }
         chain = task
         return task
-    }
-}
-
-/// Lets launch wait until the dismissal task has finished without leaving the main actor.
-private final class LaunchCleanup: @unchecked Sendable {
-    private let lock = NSLock()
-    private var finished = false
-
-    var isFinished: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return finished
-    }
-
-    func finish() {
-        lock.lock()
-        finished = true
-        lock.unlock()
     }
 }
