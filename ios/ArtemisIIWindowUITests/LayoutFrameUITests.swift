@@ -1,8 +1,7 @@
 import XCTest
 
-/// Portrait and landscape playback. The map caption and the Spatial row stay
-/// on screen and clear of each other. The landscape rail scrolls instead of
-/// running past the bottom.
+/// Portrait and landscape. On the globe screen the path, its caption, and the
+/// transport capsule stay on screen and clear of each other.
 @MainActor
 final class LayoutFrameUITests: XCTestCase {
     nonisolated override func setUp() {
@@ -26,38 +25,67 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
         begin.tap()
 
-        let map = element(named: "geographic-targets", in: app)
-        let spatial = element(named: "spatial-toggle", in: app)
-        XCTAssertTrue(spatial.waitForExistence(timeout: 15))
-        XCTAssertTrue(map.waitForExistence(timeout: 15))
+        let path = element(named: "orion-path", in: app)
+        let caption = element(named: "globe-caption", in: app)
+        let capsule = element(named: "transport-capsule", in: app)
+        XCTAssertTrue(path.waitForExistence(timeout: 15))
+        XCTAssertTrue(caption.waitForExistence(timeout: 8))
+        XCTAssertTrue(capsule.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["playback-toggle"].waitForExistence(timeout: 8))
+
+        assertInside(path, screen: app.frame)
+        assertInside(caption, screen: app.frame)
+        assertInside(capsule, screen: app.frame)
+        XCTAssertFalse(path.frame.intersects(capsule.frame))
+        XCTAssertFalse(caption.frame.intersects(capsule.frame))
 
         let column = scroller("phone-column", in: app)
-        reveal(map, using: column)
-        assertInside(map, screen: app.frame)
-        assertInside(spatial, screen: app.frame)
-        XCTAssertFalse(map.frame.intersects(spatial.frame))
-        let note = element(named: "spatial-note", in: app)
-        if note.exists {
-            assertInside(note, screen: app.frame)
-            XCTAssertFalse(map.frame.intersects(note.frame))
-        }
+        let note = element(named: "crew-note", in: app)
+        reveal(note, using: column)
+        assertInside(note, screen: app.frame)
+        XCTAssertTrue(note.label.contains("Hansen") || note.label.contains("portrait"))
+        XCTAssertFalse(note.frame.intersects(capsule.frame))
 
         XCUIDevice.shared.orientation = .landscapeLeft
-        // XCUIApplication.frame stays portrait after rotation. The window
-        // bounds are the landscape screen.
-        let rail = app.scrollViews["landscape-rail"]
-        XCTAssertTrue(rail.waitForExistence(timeout: 8))
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 8))
         let screen = window.frame
-        assertInside(rail, screen: screen)
-        assertInside(spatial, screen: screen)
-        reveal(map, using: rail)
-        assertInside(map, screen: screen)
-        assertInside(map, screen: rail.frame.insetBy(dx: -1, dy: -1))
-        if spatial.exists && spatial.frame.intersects(screen) {
-            XCTAssertFalse(map.frame.intersects(spatial.frame))
-        }
+        XCTAssertTrue(path.waitForExistence(timeout: 8))
+        XCTAssertTrue(caption.waitForExistence(timeout: 8))
+        XCTAssertTrue(capsule.waitForExistence(timeout: 8))
+        assertInside(path, screen: screen)
+        assertInside(caption, screen: screen)
+        assertInside(capsule, screen: screen)
+        XCTAssertFalse(path.frame.intersects(capsule.frame))
+        XCTAssertFalse(caption.frame.intersects(capsule.frame))
+        XCTAssertFalse(app.scrollViews["landscape-rail"].exists)
+        let landscapeNote = element(named: "crew-note", in: app)
+        XCTAssertTrue(landscapeNote.waitForExistence(timeout: 8))
+        assertInside(landscapeNote, screen: screen)
+        XCTAssertFalse(landscapeNote.frame.intersects(path.frame))
+        XCTAssertFalse(landscapeNote.frame.intersects(capsule.frame))
+        XCTAssertGreaterThan(landscapeNote.frame.width, 160)
+    }
+
+    func testExhibitCardOpensASheet() {
+        let app = XCUIApplication()
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let column = scroller("phone-column", in: app)
+        let card = element(named: "exhibit-aristarchus-plateau", in: app)
+        XCTAssertTrue(card.waitForExistence(timeout: 15))
+        reveal(card, using: column)
+        card.tap()
+
+        let sheet = element(named: "exhibit-sheet", in: app)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 8))
+        let source = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "Focus column for Aristarchus Plateau")
+        ).firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 5))
     }
 
     private func element(named identifier: String, in app: XCUIApplication) -> XCUIElement {

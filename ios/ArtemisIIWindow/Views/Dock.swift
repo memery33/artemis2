@@ -23,10 +23,122 @@ struct DockBar: View {
     private var controls: some View {
         switch placement {
         case .bottom:
-            bottomControls
+            if model.immersed {
+                bottomControls
+            } else {
+                capsuleControls
+            }
         case .rail:
             railControls
         }
+    }
+
+    /// Globe screen. Play, skip, Moments, and Info stay out. The rest is in the menu.
+    private var capsuleControls: some View {
+        HStack(spacing: 2) {
+            capsuleSkip(
+                system: "gobackward.15",
+                label: "Skip back 15 seconds",
+                identifier: "skip-back"
+            ) {
+                model.skip(by: -PlaybackModel.skipInterval)
+            }
+            capsulePlay
+            capsuleSkip(
+                system: "goforward.15",
+                label: "Skip forward 15 seconds",
+                identifier: "skip-forward"
+            ) {
+                model.skip(by: PlaybackModel.skipInterval)
+            }
+            capsuleText("Moments", label: "Moments", identifier: "moments-button") { moments = true }
+            capsuleText("Info", label: "Info and Credits", identifier: "info-button") { about = true }
+            moreMenu
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background {
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .accessibilityIdentifier("transport-capsule")
+    }
+
+    private var capsulePlay: some View {
+        let playing = model.playing
+        return Button(action: { model.toggle() }) {
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.black)
+                .frame(width: 44, height: 36)
+                .background(Color.white, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("playback-toggle")
+        .accessibilityLabel(playing ? "Pause" : "Play")
+    }
+
+    private func capsuleSkip(
+        system: String,
+        label: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .accessibilityLabel(label)
+    }
+
+    private func capsuleText(
+        _ title: String,
+        label: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .frame(minHeight: 44)
+                .padding(.horizontal, 6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .accessibilityLabel(label)
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Button(model.spatial ? "Spatial on" : "Spatial") {
+                model.setSpatial(!model.spatial)
+            }
+            Button("Window 2") { model.setWindow(.nikon) }
+            Button("Window 3") { model.setWindow(.cab) }
+            Button("Lines") { transcript = true }
+            Button(model.range == .flyby ? "Cab run" : "Flyby") {
+                if model.range == .flyby { model.showCabRun() } else { model.showFlyby() }
+            }
+            Button("Crew, \(model.crewID)") { model.cycleCrew() }
+            Button("Dive into the window") { model.dive() }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("More")
+        .accessibilityIdentifier("more-controls")
     }
 
     private var bottomControls: some View {
@@ -129,8 +241,6 @@ struct DockBar: View {
                 aboutButton
                 CabinCard(height: 72)
                 ExhibitCards()
-                MoonGlobeView()
-                    .frame(height: 168)
                 TargetMap()
                     .frame(height: 120)
             }
@@ -383,8 +493,6 @@ struct AboutView: View {
                     if let attribution = model.timeline?.attribution {
                         Text(attribution.credit)
                             .font(.headline)
-                        Text(attribution.endorsement)
-                            .font(.body)
                     }
                     Text("This app is not affiliated with or endorsed by NASA.")
                         .font(.body)

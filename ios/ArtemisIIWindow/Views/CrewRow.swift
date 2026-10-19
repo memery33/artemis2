@@ -34,10 +34,12 @@ struct CrewRow: View {
                                         )
                                     }
                                 Text(member.id)
-                                    .font(.caption2)
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(.white.opacity(followed ? 1 : 0.7))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
                             }
-                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(minWidth: 64, minHeight: 44)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Follow \(member.id)")
@@ -49,6 +51,8 @@ struct CrewRow: View {
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("crew-note")
         }
     }
 }

@@ -9,11 +9,11 @@ struct LyricFocus: Equatable, Sendable {
     static func focus(at time: Date, track: String, lines: [TranscriptLine]) -> LyricFocus {
         let rows = lines.filter { $0.track == track }.sorted { $0.date < $1.date }
         guard !rows.isEmpty else { return LyricFocus() }
-        var index = rows.lastIndex { $0.date <= time }
-        if index == nil {
+        let index = rows.lastIndex { $0.date <= time }
+        guard let index else {
             return LyricFocus(previous: nil, current: nil, upcoming: rows.first)
         }
-        let currentIndex = index!
+        let currentIndex = index
         return LyricFocus(
             previous: currentIndex > 0 ? rows[currentIndex - 1] : nil,
             current: rows[currentIndex],

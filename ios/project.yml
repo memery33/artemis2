@@ -34,7 +34,11 @@ targets:
       - path: ArtemisIIWindow
         excludes:
           - PrivacyInfo.xcprivacy
+          - Resources/lroc_color_2k.jpg
       - path: ArtemisIIWindow/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      # Loose JPEG, not an asset-catalog image. UIImage(named:) will not see it.
+      - path: ArtemisIIWindow/Resources/lroc_color_2k.jpg
         buildPhase: resources
     settings:
       base:

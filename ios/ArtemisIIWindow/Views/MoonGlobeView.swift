@@ -2,30 +2,54 @@ import SceneKit
 import SwiftUI
 import UIKit
 
-/// Moon-centered Orion path. Dragging the path seeks the mission clock.
-/// The color map is the bundled SVS CGI Moon Kit image, lit evenly because
-/// this view is a map, not a reconstruction of the flyby lighting.
+/// Bundled SVS LROC color map. It is a loose JPEG in the app resources, not an asset catalog image.
+enum MoonMap {
+    static func resourceURL(in bundle: Bundle = .main) -> URL? {
+        if let url = bundle.url(forResource: "lroc_color_2k", withExtension: "jpg") {
+            return url
+        }
+        return bundle.url(forResource: "lroc_color_2k", withExtension: "jpg", subdirectory: "Resources")
+    }
+
+    static func image(in bundle: Bundle = .main) -> UIImage? {
+        guard let url = resourceURL(in: bundle) else { return nil }
+        return UIImage(contentsOfFile: url.path)
+    }
+}
+
+/// Moon-centered Orion path. The bright arc is the playable spans; the dim arc is context.
 struct MoonGlobeView: View {
     @EnvironmentObject private var model: PlaybackModel
+    @StateObject private var labels = GlobeLabels()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let loaded = FlybyEphemeris.bundled {
                 let document = loaded.document
                 let samples = loaded.samples
-                GlobeScene(
-                    samples: samples,
-                    radiusKm: document.radiusKm,
-                    utc: model.utc,
-                    milestones: pins,
-                    onSeek: { model.seek(to: $0) },
-                    onPin: { model.dive(to: $0) }
-                )
+                ZStack {
+                    GlobeScene(
+                        samples: samples,
+                        radiusKm: document.radiusKm,
+                        utc: model.utc,
+                        milestones: pins,
+                        spans: playableSpans,
+                        labels: labels,
+                        onScrubBegan: { model.beginPathScrub() },
+                        onScrub: { model.scrubPath(to: $0) },
+                        onScrubEnded: { model.endPathScrub() },
+                        onPin: { model.dive(to: $0) }
+                    )
+                    SiteLabelOverlay(labels: labels)
+                        .allowsHitTesting(false)
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
                 .accessibilityElement(children: .ignore)
                 .accessibilityIdentifier("orion-path")
                 .accessibilityLabel(accessibilityText(samples: samples, radiusKm: document.radiusKm))
                 caption(samples: samples, radiusKm: document.radiusKm)
+                    .accessibilityIdentifier("globe-caption")
             } else {
                 Text("The Horizons path was not copied into the app.")
                     .font(.caption)
@@ -40,9 +64,18 @@ struct MoonGlobeView: View {
         return MilestoneList.derive(timeline)
     }
 
+    private var playableSpans: [PathSpan] {
+        guard let timeline = model.timeline else { return [] }
+        var spans = [PathSpan(start: timeline.window.start, end: timeline.window.end)]
+        if let cab = timeline.cabRun {
+            spans.append(PathSpan(start: cab.start, end: cab.end))
+        }
+        return spans
+    }
+
     private func caption(samples: [PathSample], radiusKm: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Orion’s path from JPL Horizons, Moon center, MEAN_ME. Drag the path to move the clock.")
+            Text("Orion’s path from JPL Horizons, Moon center, MEAN_ME. Drag the bright path to move the clock.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
@@ -56,7 +89,7 @@ struct MoonGlobeView: View {
     }
 
     private func accessibilityText(samples: [PathSample], radiusKm: Double) -> String {
-        var text = "Orion path from JPL Horizons. Drag to move the mission clock."
+        var text = "Orion path from JPL Horizons. Drag the bright path to move the mission clock."
         if let approach = FlybyPath.closestApproach(samples, radiusKm: radiusKm) {
             text += " " + approachLine(approach)
         }
@@ -77,22 +110,74 @@ struct MoonGlobeView: View {
     }
 }
 
+final class GlobeLabels: ObservableObject {
+    struct Site: Equatable, Identifiable {
+        var id: String
+        var title: String
+        var anchor: CGPoint
+        var label: CGPoint
+        var visible: Bool
+    }
+
+    @Published var sites: [Site] = []
+}
+
+private struct SiteLabelOverlay: View {
+    @ObservedObject var labels: GlobeLabels
+
+    var body: some View {
+        Canvas { context, _ in
+            for site in labels.sites where site.visible {
+                var path = Path()
+                path.move(to: site.anchor)
+                path.addLine(to: site.label)
+                context.stroke(path, with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+            }
+        }
+        .overlay {
+            ForEach(labels.sites.filter(\.visible)) { site in
+                Text(site.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.black.opacity(0.72), in: Capsule())
+                    .overlay {
+                        Capsule().strokeBorder(Color.white.opacity(0.45), lineWidth: 0.5)
+                    }
+                    .position(site.label)
+                    .accessibilityLabel(site.title)
+            }
+        }
+    }
+}
+
 private struct GlobeScene: UIViewRepresentable {
     var samples: [PathSample]
     var radiusKm: Double
     var utc: Date
     var milestones: [Milestone]
-    var onSeek: (Date) -> Void
+    var spans: [PathSpan]
+    var labels: GlobeLabels
+    var onScrubBegan: () -> Void
+    var onScrub: (Date) -> Void
+    var onScrubEnded: () -> Void
     var onPin: (Milestone) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onSeek: onSeek, onPin: onPin)
+        Coordinator(
+            onScrubBegan: onScrubBegan,
+            onScrub: onScrub,
+            onScrubEnded: onScrubEnded,
+            onPin: onPin
+        )
     }
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
         view.backgroundColor = .black
         view.antialiasingMode = .multisampling2X
+        view.clipsToBounds = true
         view.scene = makeScene()
         view.allowsCameraControl = false
         view.isAccessibilityElement = false
@@ -104,29 +189,41 @@ private struct GlobeScene: UIViewRepresentable {
         context.coordinator.samples = samples
         context.coordinator.milestones = milestones
         context.coordinator.radiusKm = radiusKm
+        context.coordinator.spans = spans
+        context.coordinator.labels = labels
         return view
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
-        context.coordinator.onSeek = onSeek
+        context.coordinator.onScrubBegan = onScrubBegan
+        context.coordinator.onScrub = onScrub
+        context.coordinator.onScrubEnded = onScrubEnded
         context.coordinator.onPin = onPin
         context.coordinator.samples = samples
         context.coordinator.milestones = milestones
         context.coordinator.radiusKm = radiusKm
+        context.coordinator.spans = spans
+        context.coordinator.labels = labels
         guard let now = view.scene?.rootNode.childNode(withName: "now", recursively: true),
               let position = FlybyPath.position(at: utc, samples: samples) else {
+            context.coordinator.refreshLabels(in: view)
             return
         }
         now.position = GlobeMapping.scene(position, radiusKm: radiusKm)
+        context.coordinator.refreshLabels(in: view)
     }
 
     private func makeScene() -> SCNScene {
         let scene = SCNScene()
+        scene.background.contents = UIColor.black
+
         let moon = SCNSphere(radius: 1)
         moon.segmentCount = 96
         let material = SCNMaterial()
-        material.diffuse.contents = UIImage(named: "lroc_color_2k")
-        material.lightingModel = .constant
+        material.lightingModel = .physicallyBased
+        material.diffuse.contents = MoonMap.image() ?? UIColor(white: 0.35, alpha: 1)
+        material.roughness.contents = 0.92
+        material.metalness.contents = 0.0
         material.isDoubleSided = false
         moon.materials = [material]
         let moonNode = SCNNode(geometry: moon)
@@ -136,19 +233,53 @@ private struct GlobeScene: UIViewRepresentable {
         moonNode.eulerAngles.y = -.pi / 2
         scene.rootNode.addChildNode(moonNode)
 
-        var points: [SCNVector3] = []
-        points.reserveCapacity(samples.count)
-        for sample in samples {
-            points.append(GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm))
-        }
-        if points.count > 1 {
-            let path = lineGeometry(points)
-            path.firstMaterial?.diffuse.contents = UIColor.white
-            path.firstMaterial?.emission.contents = UIColor(white: 1, alpha: 0.9)
-            path.firstMaterial?.lightingModel = .constant
-            let pathNode = SCNNode(geometry: path)
-            pathNode.name = "path"
-            scene.rootNode.addChildNode(pathNode)
+        let glow = SCNSphere(radius: 1.045)
+        glow.segmentCount = 64
+        let rim = SCNMaterial()
+        rim.lightingModel = .constant
+        rim.diffuse.contents = UIColor.clear
+        rim.emission.contents = UIColor(red: 0.62, green: 0.78, blue: 1, alpha: 1)
+        rim.transparent.contents = UIColor(white: 1, alpha: 1)
+        rim.transparencyMode = .rgbZero
+        rim.blendMode = .add
+        rim.writesToDepthBuffer = false
+        rim.isDoubleSided = false
+        rim.shaderModifiers = [
+            .surface: """
+            #pragma body
+            float ndotv = abs(dot(normalize(_surface.normal), normalize(_surface.view)));
+            float fresnel = pow(1.0 - ndotv, 2.6);
+            _surface.emission.rgb *= fresnel;
+            _surface.transparent.a = fresnel * 0.85;
+            """
+        ]
+        glow.materials = [rim]
+        let glowNode = SCNNode(geometry: glow)
+        glowNode.name = "atmosphere"
+        scene.rootNode.addChildNode(glowNode)
+
+        addStars(to: scene)
+
+        if samples.count > 1 {
+            let context = lineGeometry(samples.map { GlobeMapping.scene(($0.x, $0.y, $0.z), radiusKm: radiusKm) })
+            context.firstMaterial?.diffuse.contents = UIColor(white: 0.42, alpha: 1)
+            context.firstMaterial?.emission.contents = UIColor(white: 0.28, alpha: 1)
+            context.firstMaterial?.lightingModel = .constant
+            let contextNode = SCNNode(geometry: context)
+            contextNode.name = "path"
+            scene.rootNode.addChildNode(contextNode)
+
+            for span in spans {
+                let bright = samples.filter { $0.date >= span.start && $0.date <= span.end }
+                guard bright.count > 1 else { continue }
+                let geometry = lineGeometry(bright.map { GlobeMapping.scene(($0.x, $0.y, $0.z), radiusKm: radiusKm) })
+                geometry.firstMaterial?.diffuse.contents = UIColor(red: 0.82, green: 0.93, blue: 1, alpha: 1)
+                geometry.firstMaterial?.emission.contents = UIColor(red: 0.75, green: 0.9, blue: 1, alpha: 1)
+                geometry.firstMaterial?.lightingModel = .constant
+                let node = SCNNode(geometry: geometry)
+                node.name = "path-playable"
+                scene.rootNode.addChildNode(node)
+            }
         }
 
         let now = SCNSphere(radius: 0.08)
@@ -178,47 +309,82 @@ private struct GlobeScene: UIViewRepresentable {
 
         for site in LunarSites.marked {
             let unit = MoonFrame.unit(latitude: site.latitude, longitudeEast: site.longitudeEast)
-            let text = SCNText(string: site.label, extrusionDepth: 0)
-            text.font = UIFont.systemFont(ofSize: 8, weight: .medium)
-            text.flatness = 0.2
-            text.firstMaterial?.diffuse.contents = UIColor.white
-            text.firstMaterial?.lightingModel = .constant
-            let node = SCNNode(geometry: text)
-            node.scale = SCNVector3(0.012, 0.012, 0.012)
-            node.position = GlobeMapping.scene(unit, radiusKm: 1 / 1.08)
-            node.constraints = [SCNBillboardConstraint()]
-            scene.rootNode.addChildNode(node)
-
-            let mark = SCNSphere(radius: 0.02)
+            let mark = SCNSphere(radius: 0.018)
             mark.firstMaterial?.diffuse.contents = UIColor.white
+            mark.firstMaterial?.emission.contents = UIColor.white
             mark.firstMaterial?.lightingModel = .constant
             let markNode = SCNNode(geometry: mark)
+            markNode.name = "site-\(site.id)"
             markNode.position = GlobeMapping.scene(unit, radiusKm: 1)
             scene.rootNode.addChildNode(markNode)
         }
 
         let camera = SCNCamera()
         camera.zNear = 0.01
-        camera.zFar = 80
+        camera.zFar = 200
         camera.fieldOfView = 38
         let cameraNode = SCNNode()
         cameraNode.camera = camera
+        cameraNode.name = "camera"
+        var cameraPosition = SCNVector3(0, 2, 16)
         if let approach = FlybyPath.closestApproach(samples, radiusKm: radiusKm),
            let position = FlybyPath.position(at: approach.date, samples: samples) {
             let placed = GlobeMapping.scene(position, radiusKm: radiusKm)
             let length = max(0.001, simdLength(placed))
-            let outward =  length + 6
-            cameraNode.position = SCNVector3(
+            let outward: Float = length + 6
+            cameraPosition = SCNVector3(
                 placed.x / length * outward,
                 placed.y / length * outward * 0.35 + 1.2,
                 placed.z / length * outward
             )
-        } else {
-            cameraNode.position = SCNVector3(0, 2, 16)
         }
+        cameraNode.position = cameraPosition
         cameraNode.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(cameraNode)
+
+        let sun = SCNNode()
+        sun.light = SCNLight()
+        sun.light?.type = .directional
+        sun.light?.intensity = 1100
+        sun.light?.color = UIColor(white: 1, alpha: 1)
+        let side = cross(cameraPosition, SCNVector3(0, 1, 0))
+        let sideLength = max(0.001, simdLength(side))
+        sun.position = SCNVector3(side.x / sideLength * 8, 3.2, side.z / sideLength * 8)
+        sun.look(at: SCNVector3(0, 0, 0))
+        scene.rootNode.addChildNode(sun)
+
+        let ambient = SCNNode()
+        ambient.light = SCNLight()
+        ambient.light?.type = .ambient
+        ambient.light?.intensity = 140
+        ambient.light?.color = UIColor(white: 0.55, alpha: 1)
+        scene.rootNode.addChildNode(ambient)
         return scene
+    }
+
+    /// Unnamed points. The seed is fixed so the field does not shimmer between launches.
+    private func addStars(to scene: SCNScene) {
+        var rng = SplitMix(state: 0x4F72696F6E)
+        let stars = SCNNode()
+        stars.name = "stars"
+        for _ in 0..<160 {
+            let theta = Float(rng.next()) * 2 * .pi
+            let z = Float(rng.next()) * 2 - 1
+            let ring = (1 - z * z).squareRoot()
+            let radius = Float(18 + rng.next() * 16)
+            let point = SCNVector3(ring * cos(theta) * radius, z * radius, ring * sin(theta) * radius)
+            let star = SCNSphere(radius: CGFloat(0.012 + rng.next() * 0.02))
+            let material = SCNMaterial()
+            material.lightingModel = .constant
+            let shade = CGFloat(0.75 + rng.next() * 0.25)
+            material.diffuse.contents = UIColor(white: shade, alpha: 1)
+            material.emission.contents = UIColor(white: shade, alpha: 1)
+            star.materials = [material]
+            let node = SCNNode(geometry: star)
+            node.position = point
+            stars.addChildNode(node)
+        }
+        scene.rootNode.addChildNode(stars)
     }
 
     private func lineGeometry(_ points: [SCNVector3]) -> SCNGeometry {
@@ -242,6 +408,23 @@ private struct GlobeScene: UIViewRepresentable {
     private func simdLength(_ vector: SCNVector3) -> Float {
         (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).squareRoot()
     }
+
+    private func cross(_ a: SCNVector3, _ b: SCNVector3) -> SCNVector3 {
+        SCNVector3(
+            a.y * b.z - a.z * b.y,
+            a.z * b.x - a.x * b.z,
+            a.x * b.y - a.y * b.x
+        )
+    }
+}
+
+private struct SplitMix {
+    var state: UInt64
+
+    mutating func next() -> Double {
+        state = state &* 6364136223846793005 &+ 1442695040888963407
+        return Double(state >> 11) / Double(1 << 53)
+    }
 }
 
 private enum GlobeMapping {
@@ -255,23 +438,52 @@ private enum GlobeMapping {
 extension GlobeScene {
     @MainActor
     final class Coordinator: NSObject {
-        var onSeek: (Date) -> Void
+        var onScrubBegan: () -> Void
+        var onScrub: (Date) -> Void
+        var onScrubEnded: () -> Void
         var onPin: (Milestone) -> Void
         var samples: [PathSample] = []
         var milestones: [Milestone] = []
+        var spans: [PathSpan] = []
         var radiusKm: Double = 1
         weak var view: SCNView?
+        weak var labels: GlobeLabels?
+        private var scrubbing = false
 
-        init(onSeek: @escaping (Date) -> Void, onPin: @escaping (Milestone) -> Void) {
-            self.onSeek = onSeek
+        init(
+            onScrubBegan: @escaping () -> Void,
+            onScrub: @escaping (Date) -> Void,
+            onScrubEnded: @escaping () -> Void,
+            onPin: @escaping (Milestone) -> Void
+        ) {
+            self.onScrubBegan = onScrubBegan
+            self.onScrub = onScrub
+            self.onScrubEnded = onScrubEnded
             self.onPin = onPin
         }
 
         @objc func pan(_ gesture: UIPanGestureRecognizer) {
             guard let view else { return }
             let point = gesture.location(in: view)
-            guard let date = nearestSample(to: point, in: view) else { return }
-            onSeek(date)
+            switch gesture.state {
+            case .began:
+                scrubbing = true
+                onScrubBegan()
+                if let date = nearestPlayable(to: point, in: view) {
+                    onScrub(date)
+                }
+            case .changed:
+                if let date = nearestPlayable(to: point, in: view) {
+                    onScrub(date)
+                }
+            case .ended, .cancelled, .failed:
+                if scrubbing {
+                    scrubbing = false
+                    onScrubEnded()
+                }
+            default:
+                break
+            }
         }
 
         @objc func tap(_ gesture: UITapGestureRecognizer) {
@@ -281,23 +493,97 @@ extension GlobeScene {
                 onPin(milestone)
                 return
             }
-            if let date = nearestSample(to: point, in: view) {
-                onSeek(date)
+            if let date = nearestPlayable(to: point, in: view) {
+                onScrubBegan()
+                onScrub(date)
+                onScrubEnded()
             }
         }
 
-        private func nearestSample(to point: CGPoint, in view: SCNView) -> Date? {
-            var best: (date: Date, distance: CGFloat)?
+        func refreshLabels(in view: SCNView) {
+            guard view.bounds.width > 1, view.bounds.height > 1, let labels else { return }
+            let center = view.projectPoint(SCNVector3(0, 0, 0))
+            guard let camera = view.pointOfView else { return }
+            let fov = CGFloat(camera.camera?.fieldOfView ?? 38)
+            let halfFov = fov * .pi / 180 / 2
+            let cameraDistance = CGFloat((
+                camera.presentation.worldPosition.x * camera.presentation.worldPosition.x +
+                camera.presentation.worldPosition.y * camera.presentation.worldPosition.y +
+                camera.presentation.worldPosition.z * camera.presentation.worldPosition.z
+            ).squareRoot())
+            guard cameraDistance > 1.05, halfFov > 0.01 else { return }
+            let limbAngle = asin(min(1, 1 / cameraDistance))
+            let moonRadius = min(view.bounds.width, view.bounds.height) / 2 * tan(limbAngle) / tan(halfFov)
+            guard moonRadius > 1 else { return }
+            let cameraPosition = camera.presentation.worldPosition
+            let cameraLength = (
+                cameraPosition.x * cameraPosition.x +
+                cameraPosition.y * cameraPosition.y +
+                cameraPosition.z * cameraPosition.z
+            ).squareRoot()
+            guard cameraLength > 0.001 else { return }
+            var next: [GlobeLabels.Site] = []
+            let bounds = view.bounds.insetBy(dx: 40, dy: 18)
+            for site in LunarSites.marked {
+                let unit = MoonFrame.unit(latitude: site.latitude, longitudeEast: site.longitudeEast)
+                let placed = GlobeMapping.scene(unit, radiusKm: 1)
+                let facing = (
+                    placed.x * cameraPosition.x +
+                    placed.y * cameraPosition.y +
+                    placed.z * cameraPosition.z
+                ) / cameraLength
+                let projected = view.projectPoint(placed)
+                let anchor = CGPoint(x: CGFloat(projected.x), y: CGFloat(projected.y))
+                let visible = facing > 0.2 && projected.z < 1 && bounds.insetBy(dx: -36, dy: -18).contains(anchor)
+                var direction = CGVector(dx: anchor.x - CGFloat(center.x), dy: anchor.y - CGFloat(center.y))
+                let length = hypot(direction.dx, direction.dy)
+                if length < 1 {
+                    direction = CGVector(dx: 0, dy: -1)
+                } else {
+                    direction = CGVector(dx: direction.dx / length, dy: direction.dy / length)
+                }
+                let fromCenter = hypot(anchor.x - CGFloat(center.x), anchor.y - CGFloat(center.y))
+                let nearLimb = fromCenter > moonRadius * 0.82
+                let push: CGFloat = nearLimb ? moonRadius + 26 : max(fromCenter + 34, moonRadius * 0.55)
+                var label = CGPoint(
+                    x: CGFloat(center.x) + direction.dx * push,
+                    y: CGFloat(center.y) + direction.dy * push
+                )
+                if hypot(label.x - CGFloat(center.x), label.y - CGFloat(center.y)) < moonRadius + 20 {
+                    label = CGPoint(
+                        x: CGFloat(center.x) + direction.dx * (moonRadius + 24),
+                        y: CGFloat(center.y) + direction.dy * (moonRadius + 24)
+                    )
+                }
+                label.x = min(max(label.x, bounds.minX), bounds.maxX)
+                label.y = min(max(label.y, bounds.minY), bounds.maxY)
+                next.append(GlobeLabels.Site(
+                    id: site.id,
+                    title: site.label,
+                    anchor: rounded(anchor),
+                    label: rounded(label),
+                    visible: visible
+                ))
+            }
+            if next != labels.sites {
+                labels.sites = next
+            }
+        }
+
+        private func rounded(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: (point.x * 2).rounded() / 2, y: (point.y * 2).rounded() / 2)
+        }
+
+        private func nearestPlayable(to point: CGPoint, in view: SCNView) -> Date? {
+            var hits: [PathHit] = []
+            hits.reserveCapacity(samples.count)
             for sample in samples {
                 let projected = view.projectPoint(GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm))
                 let dx = CGFloat(projected.x) - point.x
                 let dy = CGFloat(projected.y) - point.y
-                let distance = dx * dx + dy * dy
-                if best == nil || distance < best!.distance {
-                    best = (sample.date, distance)
-                }
+                hits.append(PathHit(date: sample.date, distance: Double(dx * dx + dy * dy)))
             }
-            return best?.date
+            return PathScrub.nearest(hits: hits, spans: spans)
         }
 
         private func nearestPin(to point: CGPoint, in view: SCNView, limit: CGFloat) -> Milestone? {

@@ -2,7 +2,7 @@ import Foundation
 
 /// A card is included only when its body is a verbatim Focus cell from NASA's
 /// Guide to the Artemis II Lunar Targeting Plan.
-struct ExhibitCard: Equatable, Sendable, Identifiable {
+struct ExhibitCard: Equatable, Hashable, Sendable, Identifiable {
     var id: String
     var headline: String
     var body: String

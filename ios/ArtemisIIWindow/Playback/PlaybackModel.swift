@@ -297,10 +297,17 @@ final class PlaybackModel: NSObject, ObservableObject {
     func seek(to date: Date) {
         guard let span = activeSpan else { return }
         utc = MissionClock.clamp(date, to: span)
-        ended = false
+        let atEnd = utc >= span.end
+        ended = atEnd
         holdUntil = nil
         rebuilding = true
         defer { rebuilding = false }
+        if atEnd {
+            playing = false
+            stopPlayer()
+            refreshNowPlaying(force: true)
+            return
+        }
         if let segment = segment(at: utc) {
             if currentFile == segment.file, let file = audioFile {
                 reschedule(file: file, at: utc.timeIntervalSince(segment.start))
@@ -403,6 +410,39 @@ final class PlaybackModel: NSObject, ObservableObject {
         scrubbing = false
         lastWall = nil
         seek(to: utc)
+    }
+
+    /// Path drag. Playback stays running unless the finger lands on the span end.
+    func beginPathScrub() {
+        beginScrub()
+    }
+
+    func scrubPath(to date: Date) {
+        guard let timeline else { return }
+        guard let span = spanContaining(date, timeline: timeline) else { return }
+        if !scrubbing {
+            beginScrub()
+        }
+        if activeSpan?.start != span.start || activeSpan?.end != span.end {
+            range = timeline.cabRun?.start == span.start ? .cab : .flyby
+            currentFile = nil
+            audioFile = nil
+        }
+        utc = MissionClock.clamp(date, to: span)
+    }
+
+    func endPathScrub() {
+        endScrub()
+    }
+
+    private func spanContaining(_ date: Date, timeline: Timeline) -> TimeSpan? {
+        if let cab = timeline.cabRun, date >= cab.start, date <= cab.end {
+            return cab
+        }
+        if date >= timeline.window.start, date <= timeline.window.end {
+            return timeline.window
+        }
+        return nil
     }
 
     private func engagePlayback() {
@@ -895,6 +935,8 @@ final class PlaybackModel: NSObject, ObservableObject {
             if let end = activeSpan?.end, utc >= end {
                 utc = end
                 pause(user: true)
+                utc = end
+                ended = true
             } else {
                 followSegment()
             }

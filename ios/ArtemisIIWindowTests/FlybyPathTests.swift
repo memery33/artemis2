@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import ArtemisIIWindow
 
@@ -147,5 +148,40 @@ final class FlybyPathTests: XCTestCase {
         }
         XCTAssertGreaterThan(MoonFrame.unit(latitude: 23.73, longitudeEast: -47.49).z, 0)
         XCTAssertLessThan(MoonFrame.unit(latitude: -19.87, longitudeEast: -94.67).z, 0)
+    }
+
+    func testLROColorMapLoadsFromTheBundle() throws {
+        let url = try XCTUnwrap(MoonMap.resourceURL())
+        let data = try Data(contentsOf: url)
+        XCTAssertGreaterThan(data.count, 100_000)
+        let image = try XCTUnwrap(MoonMap.image())
+        let pixels = try XCTUnwrap(image.cgImage)
+        XCTAssertEqual(pixels.width, 2048)
+        XCTAssertEqual(pixels.height, 1024)
+    }
+
+    func testPathDragStaysOnThePlayableSpans() throws {
+        let url = try XCTUnwrap(Bundle(for: FlybyPathTests.self).url(forResource: "timeline", withExtension: "json"))
+        let timeline = try Timeline(data: Data(contentsOf: url))
+        let cab = try XCTUnwrap(timeline.cabRun)
+        let spans = [
+            PathSpan(start: timeline.window.start, end: timeline.window.end),
+            PathSpan(start: cab.start, end: cab.end)
+        ]
+        let outside = try XCTUnwrap(samples.first { $0.date < timeline.window.start })
+        let inside = try XCTUnwrap(samples.first { $0.date >= timeline.window.start && $0.date <= timeline.window.end })
+        let chosen = PathScrub.nearest(
+            hits: [
+                PathHit(date: outside.date, distance: 1),
+                PathHit(date: inside.date, distance: 80),
+                PathHit(date: timeline.window.end, distance: 400)
+            ],
+            spans: spans
+        )
+        XCTAssertEqual(chosen, inside.date)
+        XCTAssertNotEqual(chosen, timeline.window.end)
+        XCTAssertTrue(PathScrub.contains(inside.date, spans: spans))
+        XCTAssertFalse(PathScrub.contains(outside.date, spans: spans))
+        XCTAssertNil(PathScrub.nearest(hits: [PathHit(date: outside.date, distance: 0)], spans: spans))
     }
 }

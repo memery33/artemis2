@@ -203,6 +203,33 @@ enum FlybyPath {
     }
 }
 
+/// Screen-space hit on the Orion path. Distance is in points, already measured by the view.
+struct PathHit: Equatable, Sendable {
+    var date: Date
+    var distance: Double
+}
+
+/// Playable clock spans. Dragging the path uses only these, never the dim context arc.
+struct PathSpan: Equatable, Sendable {
+    var start: Date
+    var end: Date
+}
+
+enum PathScrub {
+    static func contains(_ date: Date, spans: [PathSpan]) -> Bool {
+        spans.contains { date >= $0.start && date <= $0.end }
+    }
+
+    /// Nearest sample that falls inside a playable span.
+    /// A closer sample on the context arc is ignored, so the clock is not clamped to a span end.
+    static func nearest(hits: [PathHit], spans: [PathSpan]) -> Date? {
+        hits
+            .filter { contains($0.date, spans: spans) }
+            .min { $0.distance < $1.distance }?
+            .date
+    }
+}
+
 /// IAU names placed on the MEAN_ME globe. Coordinates are planetographic,
 /// east-positive, from the USGS Gazetteer of Planetary Nomenclature.
 struct LunarSite: Equatable, Sendable, Identifiable {

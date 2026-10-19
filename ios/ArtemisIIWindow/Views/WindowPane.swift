@@ -57,30 +57,48 @@ struct WindowPane: View {
     private func glass(pair: FramePair, mix: Double, progress: Double) -> some View {
         GeometryReader { geo in
             let pixels = max(geo.size.width, geo.size.height) * displayScale * 1.15
+            let fading = mix > 0.001 && mix < 0.999
+            let settled = (mix >= 0.999 ? pair.next : pair.current) ?? pair.current
             ZStack {
                 Color.black
-                if let frame = pair.current, let image = model.photo(frame, maxPixel: pixels) {
-                    placed(
-                        image,
-                        motion: motion(progress: progress, index: pair.index),
-                        size: geo.size
-                    )
-                    .opacity(1 - mix)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
-                    .accessibilityAddTraits(.isImage)
+                // Settled clocks show one photograph. Both layers only exist while the crossfade is moving.
+                ZStack {
+                    if fading {
+                        if let frame = pair.current, let image = model.photo(frame, maxPixel: pixels) {
+                            placed(
+                                image,
+                                motion: motion(progress: progress, index: pair.index),
+                                size: geo.size
+                            )
+                            .opacity(1 - mix)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                            .accessibilityAddTraits(.isImage)
+                        }
+                        if let frame = pair.next, let image = model.photo(frame, maxPixel: pixels) {
+                            placed(
+                                image,
+                                motion: motion(progress: 0, index: pair.index + 1),
+                                size: geo.size
+                            )
+                            .opacity(mix)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                            .accessibilityAddTraits(.isImage)
+                        }
+                    } else if let frame = settled, let image = model.photo(frame, maxPixel: pixels) {
+                        placed(
+                            image,
+                            motion: motion(progress: mix >= 0.999 ? 0 : progress, index: pair.index),
+                            size: geo.size
+                        )
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                        .accessibilityAddTraits(.isImage)
+                    }
                 }
-                if mix > 0, let frame = pair.next, let image = model.photo(frame, maxPixel: pixels) {
-                    placed(
-                        image,
-                        motion: motion(progress: 0, index: pair.index + 1),
-                        size: geo.size
-                    )
-                    .opacity(mix)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
-                    .accessibilityAddTraits(.isImage)
-                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
                 if pair.current == nil && mix == 0 {
                     Text(emptyCopy(pair))
                         .font(.footnote)
@@ -170,7 +188,6 @@ struct WindowPane: View {
             VStack(alignment: .leading, spacing: 6) {
                 LyricLines(focus: lyricFocus)
                 FrameCaption(side: side)
-                CreditLine()
                 StatusLines()
             }
             .foregroundStyle(.white)
@@ -405,17 +422,6 @@ struct ClockReadout: View {
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("mission-clock")
-    }
-}
-
-struct CreditLine: View {
-    @EnvironmentObject private var model: PlaybackModel
-
-    var body: some View {
-        Text(model.timeline?.attribution.credit ?? "Credit: NASA/Artemis II Crew")
-            .font(.caption2)
-            .foregroundStyle(.white.opacity(0.9))
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

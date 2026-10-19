@@ -37,7 +37,7 @@ struct GateView: View {
     @State private var about = false
 
     private var hero: Frame? {
-        model.timeline?.frames.first { $0.nasaID == "art002e016184" }
+        model.timeline?.frames.first { $0.nasaID == "art002e009951" }
     }
 
     var body: some View {
@@ -45,10 +45,17 @@ struct GateView: View {
             Color.black.ignoresSafeArea()
             VStack(spacing: 22) {
                 if let hero, let image = model.photo(hero, maxPixel: 900) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
+                    // art002e009951 is a bright limb. The black sky sits on the right,
+                    // so the square keeps the lit surface.
+                    Color.clear
                         .frame(width: 220, height: 220)
+                        .overlay(alignment: .leading) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 320, height: 220)
+                        }
+                        .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                         .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
                 }
@@ -222,28 +229,45 @@ struct LandscapeLayout: View {
 
     var body: some View {
         GeometryReader { geo in
-            let rail = min(156, max(128, geo.size.width * 0.18))
-            let inset: CGFloat = 6
-            // The rail already scrolls. A fixed height is what makes that
-            // scroll view clip, on a 375pt phone as well as a 402pt one.
-            let railHeight = max(44, geo.size.height - inset * 2)
-            HStack(alignment: .top, spacing: 8) {
-                Group {
-                    if model.immersed {
-                        WindowPane(glassChrome: true)
-                    } else {
-                        MoonGlobeView()
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                DockBar(placement: .rail)
-                    .frame(width: rail, height: railHeight)
+            if model.immersed {
+                cabin(in: geo.size)
+            } else {
+                globe(in: geo.size)
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 4)
-            .padding(.vertical, inset)
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
+    }
+
+    /// The Moon fills the width. The capsule sits under it, so the path cannot run through the controls.
+    private func globe(in size: CGSize) -> some View {
+        VStack(spacing: 0) {
+            ClockReadout()
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+            MoonGlobeView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 12)
+            CrewRow()
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+            DockBar()
+        }
+        .frame(width: size.width, height: size.height, alignment: .top)
+    }
+
+    private func cabin(in size: CGSize) -> some View {
+        let rail = min(220, max(168, size.width * 0.28))
+        let inset: CGFloat = 6
+        let railHeight = max(44, size.height - inset * 2)
+        return HStack(alignment: .top, spacing: 8) {
+            WindowPane(glassChrome: true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            DockBar(placement: .rail)
+                .frame(width: rail, height: railHeight)
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
+        .padding(.vertical, inset)
+        .frame(width: size.width, height: size.height, alignment: .top)
     }
 }
 
@@ -271,7 +295,6 @@ struct PhoneColumn: View {
             }
             CrewRow()
             FrameCaption(side: model.window)
-            CreditLine()
             StatusLines()
             CabinCard(height: 96)
             ExhibitCards()
@@ -295,7 +318,6 @@ struct FoldLayout: View {
                     WindowPane()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     FrameCaption(side: model.window)
-                    CreditLine()
                     StatusLines()
                 }
                 .padding(.trailing, 30)
