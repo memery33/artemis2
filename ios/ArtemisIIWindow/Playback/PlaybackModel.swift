@@ -274,7 +274,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         // A foreground pause keeps the activity and marks it paused. The span end dismisses it.
         // A pause while the scene is not foreground-active (lock screen, headphones, an interruption) dismisses it too.
-        let spanEnded = activeSpan?.end.map { utc >= $0 } ?? false
+        let spanEnded = activeSpan.map { utc >= $0.end } ?? false
         if !foregroundActive || spanEnded {
             FlybyLiveActivity.scheduleEndAllImmediately()
         }

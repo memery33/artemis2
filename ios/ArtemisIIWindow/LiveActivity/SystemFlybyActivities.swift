@@ -1,7 +1,10 @@
 import ActivityKit
 import Foundation
+import os
 
 extension FlybyActivityAttributes: ActivityAttributes {}
+
+private let liveActivityLog = Logger(subsystem: "com.memery33.artemis2window", category: "LiveActivity")
 
 /// The only type in the app that calls ActivityKit. Playback installs it outside the unit-test host. Tests never construct it.
 @MainActor
@@ -10,9 +13,10 @@ final class SystemFlybyActivities: FlybyActivityClient {
         Activity<FlybyActivityAttributes>.activities.map(\.id)
     }
 
-    /// Printed by the UI-test tearDown relaunch before those activities are ended.
+    /// Logged by the UI-test tearDown relaunch before those activities are ended.
     func logActivityCount() {
-        print("Activity.activities.count = \(Activity<FlybyActivityAttributes>.activities.count)")
+        let count = Activity<FlybyActivityAttributes>.activities.count
+        liveActivityLog.log("Activity.activities.count = \(count, privacy: .public)")
     }
 
     func end(identifiers: [String]) async {
