@@ -47,6 +47,10 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: NHYXW2AY53
         TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - target: ArtemisIIWindowWidget
+        embed: true
+        codeSign: true
       configs:
         Debug:
           ENABLE_TESTABILITY: YES
@@ -73,6 +77,27 @@ targets:
         - ArtemisIIWindowTests
         - ArtemisIIWindowUITests
       gatherCoverageData: false
+  ArtemisIIWindowWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: ArtemisIIWindowWidget
+      - path: ArtemisIIWindow/LiveActivity/FlybyActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_NAME: ArtemisIIWindowWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.memery33.artemis2window.widget
+        INFOPLIST_FILE: ArtemisIIWindowWidget/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CURRENT_PROJECT_VERSION: "6"
+        MARKETING_VERSION: "1.0"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: NHYXW2AY53
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
   ArtemisIIWindowTests:
     type: bundle.unit-test
     platform: iOS
@@ -113,6 +138,7 @@ schemes:
     build:
       targets:
         ArtemisIIWindow: all
+        ArtemisIIWindowWidget: all
         ArtemisIIWindowTests: [test]
         ArtemisIIWindowUITests: [test]
     run:
@@ -133,6 +159,7 @@ schemes:
     build:
       targets:
         ArtemisIIWindow: all
+        ArtemisIIWindowWidget: all
         ArtemisIIWindowTests: [test]
         ArtemisIIWindowUITests: [test]
     run:

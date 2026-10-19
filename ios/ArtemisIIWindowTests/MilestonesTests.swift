@@ -263,6 +263,20 @@ final class MilestonesTests: XCTestCase {
         XCTAssertEqual(model.trackID, member.track)
     }
 
+    func testLiveActivityCopyUsesTheSpanAndTheNextMilestone() throws {
+        XCTAssertEqual(FlybyActivityCopy.progress(elapsed: 0, duration: 100), 0)
+        XCTAssertEqual(FlybyActivityCopy.progress(elapsed: 25, duration: 100), 0.25)
+        XCTAssertEqual(FlybyActivityCopy.progress(elapsed: 140, duration: 100), 1)
+        XCTAssertEqual(FlybyActivityCopy.progress(elapsed: 10, duration: 0), 0)
+        let rows = MilestoneList.derive(timeline)
+        let first = rows[0].date
+        XCTAssertEqual(FlybyActivityCopy.nextLabel(after: first.addingTimeInterval(-1), milestones: rows), rows[0].label)
+        let last = try XCTUnwrap(rows.last)
+        XCTAssertEqual(FlybyActivityCopy.nextLabel(after: last.date, milestones: rows), "End of this span")
+        let clock = FlybyActivityCopy.clock(try ISO8601.parse("2026-04-06T19:33:01Z"))
+        XCTAssertEqual(clock, "19:33:01")
+    }
+
     func testPhotoAccessLabelOmitsTheLiveGap() throws {
         let frame = try XCTUnwrap(timeline.frames.first { $0.nasaID == "art002e041322" })
         let spoken = FrameSelection.photoAccessLabel(frame)

@@ -396,6 +396,8 @@ struct AboutView: View {
                         .font(.footnote)
                     Text("The globe uses the NASA SVS CGI Moon Kit 2025 LROC color map, file lroc_color_2k.jpg, 2048 by 1024, public domain. Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio, Lunar Reconnaissance Orbiter Camera, visualization by Ernie Wright. SVS 4720. The map is centered on 0° longitude and is an aesthetic rendering, not a photograph and not the flyby lighting.")
                         .font(.footnote)
+                    Text("Exhibit cards quote the Focus column of NASA’s Guide to the Artemis II Lunar Targeting Plan for Aristarchus Plateau, Reiner Gamma, and Orientale Basin. The pictures are the real frames already labeled with those targets.")
+                        .font(.footnote)
                     Text("Orion’s path is a JPL Horizons geometric state table: target Artemis II (spacecraft) -1024, center Moon (301) body center, MEAN_ME body equator, east-longitude positive, one-minute steps from 2026-04-06 18:00 UT through 2026-04-07 02:00 UT. Closest approach is the minimum of that table, not a typed-in time. Surface labels use the USGS Gazetteer of Planetary Nomenclature: Aristarchus, Reiner Gamma, and Mare Orientale.")
                         .font(.footnote)
                     if let licenses = model.timeline?.licenses {

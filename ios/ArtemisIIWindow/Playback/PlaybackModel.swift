@@ -1192,6 +1192,17 @@ final class PlaybackModel: NSObject, ObservableObject {
             info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        let duration = span.end.timeIntervalSince(span.start)
+        let milestones = timeline.map { MilestoneList.derive($0) } ?? []
+        let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID
+        FlybyLiveActivity.sync(
+            arrived: arrived,
+            playing: playing,
+            progress: FlybyActivityCopy.progress(elapsed: elapsed, duration: duration),
+            nextMilestone: FlybyActivityCopy.nextLabel(after: utc, milestones: milestones),
+            speaker: speaker,
+            clock: FlybyActivityCopy.clock(utc)
+        )
     }
 
     /// MediaPlayer calls the handler on its access queue. The image is already
