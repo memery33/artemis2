@@ -269,68 +269,10 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(pixels.height, 1024)
     }
 
-    func testSmallDragMovesAProportionallySmallAmountAndLandsOnARecording() {
+    func testSnapPullsASilentInstantOntoTheNearestRecording() {
         let start = Date(timeIntervalSince1970: 1_000)
         let end = start.addingTimeInterval(900)
         let flyby = PathSpan(start: start, end: end)
-        let straight = [
-            PathScreenSample(date: start, x: 0, y: 0),
-            PathScreenSample(date: end, x: 200, y: 0)
-        ]
-        let small = PathScrub.drag(
-            anchorDate: start,
-            translationX: 12,
-            translationY: 0,
-            fingerX: 12,
-            fingerY: 0,
-            current: (flyby, straight),
-            others: []
-        )
-        XCTAssertEqual(small?.span, flyby)
-        XCTAssertEqual(small?.date.timeIntervalSince(start) ?? -1, 54, accuracy: 2)
-        XCTAssertLessThan(small?.date.timeIntervalSince(start) ?? 999, 90)
-        XCTAssertNotEqual(small?.date, end)
-
-        // The end of the arc folds back next to the start. A short drag must not land on it.
-        let folded = [
-            PathScreenSample(date: start, x: 0, y: 0),
-            PathScreenSample(date: start.addingTimeInterval(450), x: 100, y: 0),
-            PathScreenSample(date: end, x: 6, y: 2)
-        ]
-        let foldedDrag = PathScrub.drag(
-            anchorDate: start,
-            translationX: 6,
-            translationY: 2,
-            fingerX: 6,
-            fingerY: 2,
-            current: (flyby, folded),
-            others: []
-        )
-        let foldedDelta = foldedDrag?.date.timeIntervalSince(start) ?? 999
-        XCTAssertGreaterThan(foldedDelta, 0)
-        XCTAssertLessThan(foldedDelta, 90)
-        XCTAssertNotEqual(foldedDrag?.date, end)
-
-        let cabStart = start.addingTimeInterval(10_000)
-        let cabEnd = cabStart.addingTimeInterval(500)
-        let cab = PathSpan(start: cabStart, end: cabEnd)
-        let cabSamples = [
-            PathScreenSample(date: cabStart, x: 0, y: 400),
-            PathScreenSample(date: cabEnd, x: 20, y: 400)
-        ]
-        let reached = PathScrub.drag(
-            anchorDate: start,
-            translationX: 10,
-            translationY: 400,
-            fingerX: 10,
-            fingerY: 400,
-            current: (flyby, straight),
-            others: [(cab, cabSamples)]
-        )
-        XCTAssertEqual(reached?.span, cab)
-        XCTAssertEqual(reached?.date.timeIntervalSince(cabStart) ?? -1, 250, accuracy: 2)
-        XCTAssertNotEqual(reached?.date, cabEnd)
-
         let gap = start.addingTimeInterval(860)
         let clip = PathSpan(start: start.addingTimeInterval(30), end: start.addingTimeInterval(400))
         let snapped = PathScrub.snap(gap, recordings: [clip], span: flyby)
@@ -342,85 +284,70 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertNil(PathScrub.snap(start, recordings: [], span: flyby))
     }
 
-    func testDraggingTheWholeBrightSegmentReachesTheSpanEnd() {
-        let start = Date(timeIntervalSince1970: 1_000)
-        let end = start.addingTimeInterval(900)
-        let flyby = PathSpan(start: start, end: end)
-        let short = [
-            PathScreenSample(date: start, x: 0, y: 0),
-            PathScreenSample(date: end, x: 80, y: 0)
-        ]
-        let arrived = PathScrub.drag(
-            anchorDate: start,
-            translationX: 80,
-            translationY: 0,
-            fingerX: 80,
-            fingerY: 0,
-            current: (flyby, short),
-            others: []
-        )
-        XCTAssertEqual(arrived?.date, end)
-        XCTAssertEqual(arrived?.span, flyby)
-
-        let partial = PathScrub.drag(
-            anchorDate: start,
-            translationX: 16,
-            translationY: 0,
-            fingerX: 16,
-            fingerY: 0,
-            current: (flyby, short),
-            others: []
-        )
-        XCTAssertEqual(partial?.date.timeIntervalSince(start) ?? -1, 180, accuracy: 2)
-        XCTAssertNotEqual(partial?.date, end)
-    }
-
-    /// The compressed bright arc is short on screen. Six percent of that arc is six percent of the span, under three minutes, and it does not raise the end.
-    func testSixPercentDragOnTheCompressedArcMovesLessThanThreeMinutes() {
+    /// The bright segment is only about 20pt wide. Horizontal travel uses the panel, not that arc.
+    /// 22pt along the path's on-screen motion stays under two minutes, and does not land on the span end.
+    func testTwentyTwoPointDragMovesUnderTwoMinutesAlongThePath() {
         let start = Date(timeIntervalSince1970: 1_000)
         let duration = 15.5 * 60.0
         let end = start.addingTimeInterval(duration)
-        let flyby = PathSpan(start: start, end: end)
-        let screen = 48.0
-        let arc = [
-            PathScreenSample(date: start, x: 0, y: 0),
-            PathScreenSample(date: end, x: screen, y: 0)
-        ]
+        let span = PathSpan(start: start, end: end)
+        let panel = 390.0
         let anchor = start.addingTimeInterval(duration * 0.30)
-        let fromX = screen * 0.30
-        let toX = screen * 0.36
-        let dragged = PathScrub.drag(
-            anchorDate: anchor,
-            translationX: toX - fromX,
-            translationY: 0,
-            fingerX: toX,
-            fingerY: 0,
-            current: (flyby, arc),
-            others: []
-        )
-        let moved = dragged?.date.timeIntervalSince(anchor) ?? 999
-        XCTAssertEqual(moved, duration * 0.06, accuracy: 1)
-        XCTAssertLessThan(abs(moved), 180)
-        XCTAssertNotEqual(dragged?.date, end)
-        XCTAssertEqual(dragged?.span, flyby)
-
-        // The visible polyline stops before the span end, so its last point is not the end card.
-        let cutoff = start.addingTimeInterval(duration * 0.40)
-        let partialArc = [
-            PathScreenSample(date: start, x: 0, y: 0),
-            PathScreenSample(date: cutoff, x: screen, y: 0)
+        let rightward = [
+            PathScreenSample(date: start, x: 0, y: 100),
+            PathScreenSample(date: end, x: 20, y: 100)
         ]
-        let atVisualEnd = PathScrub.drag(
-            anchorDate: start,
-            translationX: screen,
-            translationY: 0,
-            fingerX: screen,
-            fingerY: 0,
-            current: (flyby, partialArc),
-            others: []
+        let forward = PathScrub.drag(
+            anchorDate: anchor,
+            translationX: 22,
+            panelWidth: panel,
+            samples: rightward,
+            span: span
         )
-        XCTAssertNotEqual(atVisualEnd?.date, end)
-        XCTAssertLessThan(atVisualEnd?.date.timeIntervalSince(start) ?? 999, duration * 0.5)
+        let moved = forward?.date.timeIntervalSince(anchor) ?? 999
+        XCTAssertEqual(PathScrub.forwardSign(at: anchor, samples: rightward), 1)
+        XCTAssertGreaterThan(moved, 0)
+        XCTAssertLessThan(moved, 120)
+        XCTAssertEqual(moved, duration * 22 / panel, accuracy: 0.01)
+        XCTAssertNotEqual(forward?.date, end)
+        XCTAssertEqual(forward?.span, span)
+
+        let across = PathScrub.drag(
+            anchorDate: start,
+            translationX: panel,
+            panelWidth: panel,
+            samples: rightward,
+            span: span
+        )
+        XCTAssertEqual(across?.date, end)
+
+        let leftward = [
+            PathScreenSample(date: start, x: 20, y: 100),
+            PathScreenSample(date: end, x: 0, y: 100)
+        ]
+        let along = PathScrub.drag(
+            anchorDate: anchor,
+            translationX: -22,
+            panelWidth: panel,
+            samples: leftward,
+            span: span
+        )
+        let alongMoved = along?.date.timeIntervalSince(anchor) ?? -999
+        XCTAssertEqual(PathScrub.forwardSign(at: anchor, samples: leftward), -1)
+        XCTAssertGreaterThan(alongMoved, 0)
+        XCTAssertLessThan(alongMoved, 120)
+        XCTAssertNotEqual(along?.date, end)
+
+        let against = PathScrub.drag(
+            anchorDate: anchor,
+            translationX: 22,
+            panelWidth: panel,
+            samples: leftward,
+            span: span
+        )
+        let againstMoved = against?.date.timeIntervalSince(anchor) ?? 999
+        XCTAssertLessThan(againstMoved, 0)
+        XCTAssertGreaterThan(againstMoved, -120)
     }
 
     /// Horizons quantity 15 at 2026-04-06 19:40 UT, CENTER=500@-1024, prints SunSub-LON 306.562535° and SunSub-LAT 1.028083°.

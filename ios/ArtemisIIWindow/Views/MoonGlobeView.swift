@@ -64,6 +64,18 @@ struct MoonGlobeView: View {
                     )
                     SiteLabelOverlay(labels: labels)
                         .allowsHitTesting(false)
+                    if model.scrubbing {
+                        Text(ClockMath.utcText(model.utc))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.72), in: Capsule())
+                            .padding(.top, 10)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .allowsHitTesting(false)
+                            .accessibilityIdentifier("scrub-time")
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
@@ -214,6 +226,7 @@ private struct GlobeScene: UIViewRepresentable {
         view.allowsCameraControl = false
         view.isAccessibilityElement = false
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
+        pan.maximumNumberOfTouches = 1
         view.addGestureRecognizer(pan)
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
         view.addGestureRecognizer(tap)
@@ -738,21 +751,15 @@ extension GlobeScene {
             from anchor: (x: CGFloat, y: CGFloat, date: Date),
             in view: SCNView
         ) -> Date? {
-            let grouped = screenSamples(in: view)
             let current = currentSpan ?? spans.first
-            guard let current, let samples = grouped[current] else { return nil }
-            let others = spans.compactMap { span -> (span: PathSpan, samples: [PathScreenSample])? in
-                guard span != current, let rows = grouped[span] else { return nil }
-                return (span, rows)
-            }
+            guard let current else { return nil }
+            let samples = screenSamples(in: view)[current] ?? []
             return PathScrub.drag(
                 anchorDate: anchor.date,
                 translationX: point.x - anchor.x,
-                translationY: point.y - anchor.y,
-                fingerX: point.x,
-                fingerY: point.y,
-                current: (current, samples),
-                others: others
+                panelWidth: view.bounds.width,
+                samples: samples,
+                span: current
             )?.date
         }
 
