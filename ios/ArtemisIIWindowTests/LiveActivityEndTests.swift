@@ -244,7 +244,7 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
     }
 
-    /// A foreground pause keeps the activity and marks it paused. The span end dismisses it.
+    /// A mid-span pause keeps the activity and marks it paused. The span end and a seek to that end dismiss it.
     @MainActor
     func testShippingPauseKeepsTheActivityAndSpanEndStopsIt() async throws {
         let fake = FakeFlybyActivities(identifiers: ["live"])
@@ -253,10 +253,8 @@ final class LiveActivityEndTests: XCTestCase {
         let model = PlaybackModel()
         model.arrived = true
         model.postsLiveActivityWhileSkippingAudio = true
-        model.setSceneActive(true)
         let span = try XCTUnwrap(model.activeSpan)
         XCTAssertLessThan(model.utc, span.end)
-        XCTAssertTrue(model.foregroundActive)
 
         model.pause(user: true)
         await FlybyLiveActivity.finishQueuedWork()
@@ -265,26 +263,6 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertEqual(fake.identifiersStore, ["live"])
 
         model.utc = span.end
-        model.pause(user: true)
-        await FlybyLiveActivity.finishQueuedWork()
-        XCTAssertEqual(fake.ended, ["live"])
-        XCTAssertTrue(fake.identifiersStore.isEmpty)
-    }
-
-    /// A pause while the scene is not foreground-active dismisses the activity immediately.
-    @MainActor
-    func testBackgroundPauseEndsTheActivity() async throws {
-        let fake = FakeFlybyActivities(identifiers: ["live"])
-        let previous = FlybyLiveActivity.install(fake)
-        defer { FlybyLiveActivity.install(previous) }
-        let model = PlaybackModel()
-        model.arrived = true
-        model.postsLiveActivityWhileSkippingAudio = true
-        let span = try XCTUnwrap(model.activeSpan)
-        XCTAssertLessThan(model.utc, span.end)
-        model.setSceneActive(false)
-        XCTAssertFalse(model.foregroundActive)
-
         model.pause(user: true)
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertEqual(fake.ended, ["live"])

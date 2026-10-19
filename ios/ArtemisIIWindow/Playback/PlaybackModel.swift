@@ -98,8 +98,6 @@ final class PlaybackModel: NSObject, ObservableObject {
     private static let activityPushInterval: TimeInterval = 15
     /// Unit tests set this so the shipping activity policy runs without the audio graph or Now Playing.
     var postsLiveActivityWhileSkippingAudio = false
-    /// The scene is foreground-active. A pause while this is false (lock screen, headphones, an interruption) ends the Live Activity.
-    private(set) var foregroundActive = true
     /// Set with the scene. The background span-end path reads it when the unit-test host has no display link.
     private var displayClockPaused = false
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
@@ -272,10 +270,9 @@ final class PlaybackModel: NSObject, ObservableObject {
         if user {
             resumeAfterInterrupt = false
         }
-        // A foreground pause keeps the activity and marks it paused. The span end dismisses it.
-        // A pause while the scene is not foreground-active (lock screen, headphones, an interruption) dismisses it too.
-        let spanEnded = activeSpan.map { utc >= $0.end } ?? false
-        if !foregroundActive || spanEnded {
+        // A mid-span pause keeps the activity and marks it paused, including a pause from
+        // the lock screen, headphones, or an interruption. The span end dismisses it.
+        if let end = activeSpan?.end, utc >= end {
             FlybyLiveActivity.scheduleEndAllImmediately()
         }
         refreshNowPlaying(force: true)
@@ -626,7 +623,6 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func setSceneActive(_ active: Bool) {
-        foregroundActive = active
         displayClockPaused = !active
         if active {
             lifetime.displayLink?.isPaused = false
