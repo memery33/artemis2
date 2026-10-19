@@ -10,6 +10,11 @@ final class SystemFlybyActivities: FlybyActivityClient {
         Activity<FlybyActivityAttributes>.activities.map(\.id)
     }
 
+    /// Printed by the UI-test tearDown relaunch before those activities are ended.
+    func logActivityCount() {
+        print("Activity.activities.count = \(Activity<FlybyActivityAttributes>.activities.count)")
+    }
+
     func end(identifiers: [String]) async {
         let ending = Set(identifiers)
         for activity in Activity<FlybyActivityAttributes>.activities where ending.contains(activity.id) {

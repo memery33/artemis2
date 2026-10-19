@@ -17,6 +17,7 @@ enum FlybyUILaunch {
             app.terminate()
         }
         app.launchArguments = ["-ui-tests", "-endActivitiesAndExit"]
+        // The app logs Activity.activities.count, then ends those activities and exits.
         app.launch()
         let gone = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "state == %d", XCUIApplication.State.notRunning.rawValue),

@@ -147,11 +147,11 @@ enum FlybyLiveActivity {
         await scheduleEndAllImmediately().value
     }
 
-    /// `-endActivitiesAndExit` asks a UI-test relaunch to dismiss every Live Activity and then quit.
+    /// `-endActivitiesAndExit` together with `-ui-tests` asks a UI-test relaunch to dismiss every Live Activity and then quit.
     static func shouldEndActivitiesAndExit(
         arguments: [String] = ProcessInfo.processInfo.arguments
     ) -> Bool {
-        arguments.contains("-endActivitiesAndExit")
+        arguments.contains("-ui-tests") && arguments.contains("-endActivitiesAndExit")
     }
 
     /// Ends every Live Activity and waits until that end has finished.
@@ -164,6 +164,9 @@ enum FlybyLiveActivity {
             return
         }
         let system = systemClientFactory()
+        if let reporting = system as? SystemFlybyActivities {
+            reporting.logActivityCount()
+        }
         let ids = system.identifiers()
         await system.end(identifiers: ids)
         await finishQueuedWork()

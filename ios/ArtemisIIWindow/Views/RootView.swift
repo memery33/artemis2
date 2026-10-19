@@ -30,6 +30,7 @@ struct RootView: View {
         .onAppear {
             if scenePhase == .active {
                 RuntimeHost.noteSceneBecameActive()
+                model.setSceneActive(true)
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -350,6 +351,7 @@ struct PhoneColumn: View {
             FrameCaption(side: model.window)
             StatusLines()
             CabinCard(height: 96)
+            CompanionPane()
             ExhibitCards()
             TargetMap()
                 .frame(height: 180)

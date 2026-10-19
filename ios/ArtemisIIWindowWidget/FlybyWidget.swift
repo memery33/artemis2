@@ -57,7 +57,7 @@ struct FlybyLiveActivityWidget: Widget {
     }
 }
 
-/// Absolute mission UTC. Static text, replaced when playback pushes a new state on play, pause, seek, speaker change, or span end. A `Text(timerInterval:)` of minutes and seconds renders as `--` and does not advance.
+/// Absolute mission UTC. Static text, replaced when playback pushes a new state on play, pause, seek, speaker change, or span end, and at most every 15 seconds while playing. A forced push is not held for that 15-second cadence. A `Text(timerInterval:)` of minutes and seconds renders as `--` and does not advance.
 struct MissionClockText: View {
     var state: FlybyActivityAttributes.ContentState
     var font: Font

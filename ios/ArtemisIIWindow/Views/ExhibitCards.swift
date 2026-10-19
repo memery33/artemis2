@@ -19,6 +19,7 @@ struct ExhibitCards: View {
     /// accessibility element, which made the photo-credit query return the whole card.
     private func exhibitCard(_ card: ExhibitCard) -> some View {
         let frame = ExhibitLibrary.frame(for: card, frames: model.timeline?.frames ?? [])
+        let imageLoaded = frame.flatMap { model.photo($0, maxPixel: 720) } != nil
         return VStack(alignment: .leading, spacing: 8) {
             Button {
                 opened = card
@@ -26,18 +27,20 @@ struct ExhibitCards: View {
                 cardFace(card, frame: frame)
             }
             .buttonStyle(.plain)
-            CreditLine()
-                .accessibilityElement(children: .ignore)
-                .accessibilityIdentifier("photo-credit")
-                .accessibilityLabel("Credit: NASA/Artemis II Crew")
+            .accessibilityIdentifier("exhibit-\(card.id)")
+            .accessibilityHint("Opens the exhibit")
+            if imageLoaded {
+                CreditLine()
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityIdentifier("photo-credit")
+                    .accessibilityLabel("Credit: NASA/Artemis II Crew")
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("exhibit-\(card.id)")
-        .accessibilityHint("Opens the exhibit")
         .task(id: frame?.nasaID) {
             if let frame {
                 model.prefetch(frame, maxPixel: 720)

@@ -317,49 +317,63 @@ struct FrameCaption: View {
 struct CompanionPane: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.displayScale) private var displayScale
+    @State private var showsCredit = false
 
     private var side: WindowSide { model.window == .nikon ? .cab : .nikon }
 
     var body: some View {
         let pair = model.pair(for: side)
-        Button(action: { model.setWindow(side) }) {
-            VStack(alignment: .leading, spacing: 6) {
-                Color.black
-                    .aspectRatio(side == .cab ? 4.0 / 3.0 : 1.5, contentMode: .fit)
-                    .overlay {
-                        GeometryReader { geo in
-                            let pixels = max(geo.size.width, geo.size.height) * displayScale
-                            ZStack {
-                                if let frame = pair.current,
-                                   let image = model.photo(frame, maxPixel: pixels) {
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: geo.size.width, height: geo.size.height)
-                                        .clipped()
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: { model.setWindow(side) }) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Color.black
+                        .aspectRatio(side == .cab ? 4.0 / 3.0 : 1.5, contentMode: .fit)
+                        .overlay {
+                            GeometryReader { geo in
+                                let pixels = max(geo.size.width, geo.size.height) * displayScale
+                                let loaded = pair.current.flatMap { model.photo($0, maxPixel: pixels) } != nil
+                                ZStack {
+                                    if let frame = pair.current,
+                                       let image = model.photo(frame, maxPixel: pixels) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: geo.size.width, height: geo.size.height)
+                                            .clipped()
+                                    }
                                 }
-                            }
-                            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
-                                if let frame = pair.current {
-                                    model.prefetch(frame, maxPixel: pixels)
+                                .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
+                                    if let frame = pair.current {
+                                        model.prefetch(frame, maxPixel: pixels)
+                                    }
+                                    if let frame = pair.next {
+                                        model.prefetch(frame, maxPixel: pixels)
+                                    }
                                 }
-                                if let frame = pair.next {
-                                    model.prefetch(frame, maxPixel: pixels)
+                                .onChange(of: loaded, initial: true) { _, value in
+                                    showsCredit = value
                                 }
                             }
                         }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text(caption(pair))
-                    .font(pair.outsideSpan ? .headline : .caption2)
-                    .foregroundStyle(.white.opacity(pair.outsideSpan ? 1 : 0.8))
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    Text(caption(pair))
+                        .font(pair.outsideSpan ? .headline : .caption2)
+                        .foregroundStyle(.white.opacity(pair.outsideSpan ? 1 : 0.8))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(side == .cab ? "Show Window 3" : "Show Window 2")
+            if showsCredit {
                 CreditLine()
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityIdentifier("photo-credit")
+                    .accessibilityLabel("Credit: NASA/Artemis II Crew")
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(side == .cab ? "Show Window 3" : "Show Window 2")
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("other-window")
     }
 
     private func caption(_ pair: FramePair) -> String {

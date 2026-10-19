@@ -48,11 +48,18 @@ final class PhotoCreditUITests: XCTestCase {
         XCTAssertEqual(cabinCredit.label, "Credit: NASA/Artemis II Crew")
         reveal(cabin, using: column)
 
+        let other = element(named: "other-window", in: app)
+        XCTAssertTrue(other.waitForExistence(timeout: 8))
+        reveal(other, using: column)
+        let otherCredit = credit(in: other)
+        XCTAssertTrue(otherCredit.waitForExistence(timeout: 8))
+        XCTAssertEqual(otherCredit.label, "Credit: NASA/Artemis II Crew")
+
         let card = element(named: "exhibit-aristarchus-plateau", in: app)
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         reveal(card, using: column)
-        let cardCredit = credit(in: card)
-        XCTAssertTrue(cardCredit.waitForExistence(timeout: 5))
+        let cardCredit = creditBelow(card, in: app, timeout: 8)
+        XCTAssertTrue(cardCredit.exists)
         XCTAssertEqual(cardCredit.label, "Credit: NASA/Artemis II Crew")
         card.tap()
         let sheet = element(named: "exhibit-sheet", in: app)
@@ -78,6 +85,41 @@ final class PhotoCreditUITests: XCTestCase {
 
     private func credit(in root: XCUIElement) -> XCUIElement {
         root.descendants(matching: .any).matching(identifier: "photo-credit").firstMatch
+    }
+
+    /// The exhibit credit sits under the button, so it is not one of the button's descendants.
+    private func creditBelow(_ element: XCUIElement, in app: XCUIApplication, timeout: TimeInterval) -> XCUIElement {
+        let deadline = Date().addingTimeInterval(timeout)
+        var found = app.descendants(matching: .any)["photo-credit-missing"]
+        while Date() < deadline {
+            if let match = nearestCredit(below: element, in: app), match.exists {
+                return match
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        if let match = nearestCredit(below: element, in: app) {
+            found = match
+        }
+        return found
+    }
+
+    private func nearestCredit(below element: XCUIElement, in app: XCUIApplication) -> XCUIElement? {
+        let matches = app.descendants(matching: .any).matching(identifier: "photo-credit")
+        let frame = element.frame
+        var found: XCUIElement?
+        var bestGap = CGFloat.greatestFiniteMagnitude
+        for index in 0..<matches.count {
+            let candidate = matches.element(boundBy: index)
+            guard candidate.exists else { continue }
+            let credit = candidate.frame
+            let gap = credit.minY - frame.maxY
+            let aligned = abs(credit.minX - frame.minX) < 48
+            if aligned, gap >= -4, gap < 80, gap < bestGap {
+                bestGap = gap
+                found = candidate
+            }
+        }
+        return found
     }
 
     private func element(named identifier: String, in app: XCUIApplication) -> XCUIElement {

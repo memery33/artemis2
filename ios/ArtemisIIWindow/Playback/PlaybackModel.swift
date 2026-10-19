@@ -64,9 +64,11 @@ final class PlaybackModel: NSObject, ObservableObject {
     private lazy var player = AVAudioPlayerNode()
     private lazy var environment = AVAudioEnvironmentNode()
     private var audioFile: AVAudioFile?
-    private var currentFile: String?
+    /// The file the clock is following. Tests set this to finish a clip without the audio graph.
+    var currentFile: String?
     private var scheduledStart: TimeInterval = 0
-    private var holdSeconds: TimeInterval = 0
+    /// Sample offset inside `currentFile`. Tests advance it onto the span end.
+    var holdSeconds: TimeInterval = 0
     /// Silent wait before a future-scheduled file. The node counts it as play time.
     private var scheduledLead: TimeInterval = 0
     /// Host time when that future-scheduled file should become audible.
@@ -96,6 +98,10 @@ final class PlaybackModel: NSObject, ObservableObject {
     private static let activityPushInterval: TimeInterval = 15
     /// Unit tests set this so the shipping activity policy runs without the audio graph or Now Playing.
     var postsLiveActivityWhileSkippingAudio = false
+    /// The scene is foreground-active. A pause while this is false (lock screen, headphones, an interruption) ends the Live Activity.
+    private(set) var foregroundActive = true
+    /// Set with the scene. The background span-end path reads it when the unit-test host has no display link.
+    private var displayClockPaused = false
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private var unavailableFiles = Set<String>()
     nonisolated private let lifetime = PlaybackLifetime()
@@ -266,8 +272,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         if user {
             resumeAfterInterrupt = false
         }
-        // A mid-span pause keeps the activity and marks it paused. The span end dismisses it.
-        if let end = activeSpan?.end, utc >= end {
+        // A foreground pause keeps the activity and marks it paused. The span end dismisses it.
+        // A pause while the scene is not foreground-active (lock screen, headphones, an interruption) dismisses it too.
+        let spanEnded = activeSpan?.end.map { utc >= $0 } ?? false
+        if !foregroundActive || spanEnded {
             FlybyLiveActivity.scheduleEndAllImmediately()
         }
         refreshNowPlaying(force: true)
@@ -618,9 +626,11 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func setSceneActive(_ active: Bool) {
+        foregroundActive = active
+        displayClockPaused = !active
         if active {
             lifetime.displayLink?.isPaused = false
-            if holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
+            if !skipsAudio, holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
                 // Sample time, not host time, so a pause does not move the clock.
                 utc = segment.start.addingTimeInterval(renderedSeconds())
                 lastWall = nil
@@ -863,7 +873,7 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     /// The scheduled file reached its end. The display link is paused in the
     /// background, so the next real file has to be armed here.
-    private func segmentDidFinish() {
+    func segmentDidFinish() {
         guard playing, !rebuilding, !engineFailed else { return }
         // The armed file has ended. Clear the pre-roll mark so the next file can chain
         // even though the display link never ran to clear it.
@@ -887,11 +897,11 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// A span with nothing left to play pauses and sets the Now Playing rate to 0.
     private func chainForward(from time: Date) {
         guard playing, !engineFailed, !rebuilding, holdUntil == nil else { return }
-        if player.isPlaying, segment(at: time) != nil {
+        if !skipsAudio, player.isPlaying, segment(at: time) != nil {
             return
         }
         guard let next = upcomingSegment(after: time) else {
-            if lifetime.displayLink?.isPaused == true {
+            if displayClockPaused || lifetime.displayLink?.isPaused == true {
                 pause(user: false)
                 // The display link is not running, so it cannot advance `utc` onto the span end.
                 // Park there, end the Live Activity, and raise the end card before the scene returns.
@@ -908,7 +918,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if delay <= 0.05 {
             utc = max(time, next.start)
             loadSegment(next)
-        } else if lifetime.displayLink?.isPaused == true {
+        } else if displayClockPaused || lifetime.displayLink?.isPaused == true {
             scheduleAtRealStart(next, delay: delay)
         }
     }
@@ -1026,14 +1036,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
     }
 
-    private func tickOnMain(_ timestamp: CFTimeInterval) {
+    func tickOnMain(_ timestamp: CFTimeInterval) {
         guard !rebuilding, !scrubbing else { return }
         let now = timestamp
         let rawDelta = lastWall.map { max(0, now - $0) } ?? 0
         lastWall = now
 
         if playing {
-            if player.isPlaying, let segment = segmentForCurrentFile() {
+            if !skipsAudio, player.isPlaying, let segment = segmentForCurrentFile() {
                 let seconds = renderedSeconds()
                 if let armed = holdUntil, seconds <= 0, utc < armed {
                     utc = min(utc.addingTimeInterval(rawDelta), armed)
@@ -1060,6 +1070,7 @@ final class PlaybackModel: NSObject, ObservableObject {
                 pause(user: true)
                 utc = end
                 ended = true
+                FlybyLiveActivity.scheduleEndAllImmediately()
             } else {
                 followSegment()
             }

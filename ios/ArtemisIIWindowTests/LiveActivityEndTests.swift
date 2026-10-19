@@ -183,6 +183,7 @@ final class LiveActivityEndTests: XCTestCase {
     func testEndActivitiesAndExitArgumentIsRecognized() {
         XCTAssertTrue(FlybyLiveActivity.shouldEndActivitiesAndExit(arguments: ["-ui-tests", "-endActivitiesAndExit"]))
         XCTAssertFalse(FlybyLiveActivity.shouldEndActivitiesAndExit(arguments: ["-ui-tests"]))
+        XCTAssertFalse(FlybyLiveActivity.shouldEndActivitiesAndExit(arguments: ["-endActivitiesAndExit"]))
     }
 
     /// The exit relaunch ends through the ActivityKit client and does not leave that client installed.
@@ -243,7 +244,7 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
     }
 
-    /// A mid-span pause keeps the activity and marks it paused. The span end and a seek to that end dismiss it.
+    /// A foreground pause keeps the activity and marks it paused. The span end dismisses it.
     @MainActor
     func testShippingPauseKeepsTheActivityAndSpanEndStopsIt() async throws {
         let fake = FakeFlybyActivities(identifiers: ["live"])
@@ -252,8 +253,10 @@ final class LiveActivityEndTests: XCTestCase {
         let model = PlaybackModel()
         model.arrived = true
         model.postsLiveActivityWhileSkippingAudio = true
+        model.setSceneActive(true)
         let span = try XCTUnwrap(model.activeSpan)
         XCTAssertLessThan(model.utc, span.end)
+        XCTAssertTrue(model.foregroundActive)
 
         model.pause(user: true)
         await FlybyLiveActivity.finishQueuedWork()
@@ -266,6 +269,91 @@ final class LiveActivityEndTests: XCTestCase {
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertEqual(fake.ended, ["live"])
         XCTAssertTrue(fake.identifiersStore.isEmpty)
+    }
+
+    /// A pause while the scene is not foreground-active dismisses the activity immediately.
+    @MainActor
+    func testBackgroundPauseEndsTheActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        XCTAssertLessThan(model.utc, span.end)
+        model.setSceneActive(false)
+        XCTAssertFalse(model.foregroundActive)
+
+        model.pause(user: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+    }
+
+    /// A clip that finishes on the span end dismisses the activity.
+    @MainActor
+    func testClipFinishAtSpanEndEndsTheActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.setSceneActive(true)
+        let span = try XCTUnwrap(model.activeSpan)
+        let segment = try XCTUnwrap(model.timeline?.segments.first {
+            $0.track == model.trackID && $0.start >= span.start && $0.start < span.end
+        })
+        model.playing = true
+        model.currentFile = segment.file
+        model.holdSeconds = span.end.timeIntervalSince(segment.start) + 5
+        model.segmentDidFinish()
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+        XCTAssertTrue(model.ended)
+    }
+
+    /// The foreground clock reaching the span end dismisses the activity.
+    @MainActor
+    func testForegroundSpanEndEndsTheActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.setSceneActive(true)
+        let span = try XCTUnwrap(model.activeSpan)
+        model.playing = true
+        model.utc = span.end
+        model.tickOnMain(1)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+        XCTAssertTrue(model.ended)
+        XCTAssertEqual(model.utc, span.end)
+    }
+
+    /// Background playback with nothing left in the span dismisses the activity.
+    @MainActor
+    func testBackgroundSpanEndEndsTheActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        model.playing = true
+        model.utc = span.end.addingTimeInterval(5)
+        model.setSceneActive(false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+        XCTAssertTrue(model.ended)
+        XCTAssertEqual(model.utc, span.end)
     }
 
     @MainActor
