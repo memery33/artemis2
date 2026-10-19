@@ -604,6 +604,11 @@ final class PlaybackModel: NSObject, ObservableObject {
             if playing {
                 chainForward(from: utc)
             }
+            // The display link will not tick in the background. Refresh the timer anchor once;
+            // the widget keeps the mission clock moving from (utc, wall clock).
+            if playing {
+                refreshNowPlaying(force: true)
+            }
         }
     }
 
@@ -1312,7 +1317,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         let elapsed = max(0, utc.timeIntervalSince(span.start))
         let second = Int(elapsed.rounded(.down))
         let artID = artworkID()
-        if !force, second == lastInfoSecond, playing == lastInfoPlaying, artID == lastArtID {
+        // A dismissal can remove the activity without moving the clock. The same second
+        // still has to request a new one, or the lock screen stays blank until the next seek.
+        let activityMissing = playing && !FlybyLiveActivity.isRunning
+        if !force, second == lastInfoSecond, playing == lastInfoPlaying, artID == lastArtID, !activityMissing {
             return
         }
         lastInfoSecond = second
@@ -1333,6 +1341,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
         let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID
+        let remaining = max(1, span.end.timeIntervalSince(utc))
         FlybyLiveActivity.sync(
             arrived: arrived,
             playing: playing,
@@ -1340,7 +1349,9 @@ final class PlaybackModel: NSObject, ObservableObject {
             nextMilestone: FlybyActivityCopy.nextLabel(after: utc, milestones: milestones),
             speaker: speaker,
             clock: FlybyActivityCopy.clock(utc),
-            staleDate: span.end
+            utcStart: utc,
+            wallStart: Date(),
+            staleDate: Date().addingTimeInterval(remaining)
         )
     }
 

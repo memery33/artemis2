@@ -243,6 +243,7 @@ struct PhoneLayout: View {
 /// the same object as portrait, so rotation does not touch the clock.
 struct LandscapeLayout: View {
     @EnvironmentObject private var model: PlaybackModel
+    @State private var exhibits = false
 
     var body: some View {
         GeometryReader { geo in
@@ -250,6 +251,22 @@ struct LandscapeLayout: View {
                 cabin(in: geo.size)
             } else {
                 globe(in: geo.size)
+            }
+        }
+        .sheet(isPresented: $exhibits) {
+            NavigationStack {
+                ScrollView {
+                    ExhibitCards()
+                        .padding(16)
+                }
+                .background(Color.black)
+                .navigationTitle("Exhibits")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { exhibits = false }
+                    }
+                }
             }
         }
     }
@@ -263,9 +280,14 @@ struct LandscapeLayout: View {
             MoonGlobeView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
+            Button("Exhibits") { exhibits = true }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("exhibits-button")
             CrewRow()
                 .padding(.horizontal, 16)
-                .padding(.top, 4)
             DockBar()
         }
         .frame(width: size.width, height: size.height, alignment: .top)

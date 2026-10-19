@@ -263,6 +263,7 @@ final class MilestonesTests: XCTestCase {
         XCTAssertEqual(model.trackID, member.track)
     }
 
+    @MainActor
     func testLiveActivityCopyUsesTheSpanAndTheNextMilestone() throws {
         XCTAssertEqual(FlybyActivityCopy.progress(elapsed: 0, duration: 100), 0)
         XCTAssertEqual(FlybyActivityCopy.progress(elapsed: 25, duration: 100), 0.25)

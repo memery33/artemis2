@@ -22,16 +22,14 @@ struct FlybyLiveActivityWidget: Widget {
                 HStack {
                     Text(context.state.speaker)
                     Spacer()
-                    Text(context.state.clock)
+                    MissionClockText(state: context.state, font: .caption)
                 }
-                .font(.caption)
             }
             .padding(12)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(context.state.clock)
-                        .font(.caption.monospacedDigit())
+                    MissionClockText(state: context.state, font: .caption)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(context.state.speaker)
@@ -45,8 +43,7 @@ struct FlybyLiveActivityWidget: Widget {
                     }
                 }
             } compactLeading: {
-                Text(context.state.clock)
-                    .font(.caption2.monospacedDigit())
+                MissionClockText(state: context.state, font: .caption2)
             } compactTrailing: {
                 Text(context.state.speaker)
                     .font(.caption2)
@@ -55,5 +52,23 @@ struct FlybyLiveActivityWidget: Widget {
                     .font(.caption2)
             }
         }
+    }
+}
+
+/// While playback is running, the mission clock is a timer anchored at `(utcStart, wallStart)`.
+/// The widget process advances it. A paused activity shows the last `HH:mm:ss` string.
+struct MissionClockText: View {
+    var state: FlybyActivityAttributes.ContentState
+    var font: Font
+
+    var body: some View {
+        Group {
+            if state.playing {
+                Text(timerInterval: state.missionTimer, countsDown: false)
+            } else {
+                Text(state.clock)
+            }
+        }
+        .font(font.monospacedDigit())
     }
 }

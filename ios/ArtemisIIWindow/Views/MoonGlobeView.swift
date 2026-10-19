@@ -1,4 +1,3 @@
-import ImageIO
 import SceneKit
 import SwiftUI
 import UIKit
@@ -15,31 +14,6 @@ enum MoonMap {
     static func image(in bundle: Bundle = .main) -> UIImage? {
         guard let url = resourceURL(in: bundle) else { return nil }
         return UIImage(contentsOfFile: url.path)
-    }
-
-    /// Decodes off the main thread. The unit-test host, and any moment before the first scene is active, never starts this work.
-    static func load(completion: @escaping @MainActor (UIImage?) -> Void) {
-        guard RuntimeHost.mayDecodeImages else { return }
-        let url = resourceURL()
-        Task.detached(priority: .userInitiated) {
-            let owned = url.flatMap { decoded($0) }
-            await MainActor.run {
-                completion(owned.map { UIImage(cgImage: $0.image) })
-            }
-        }
-    }
-
-    private struct Decoded: @unchecked Sendable {
-        var image: CGImage
-    }
-
-    private static func decoded(_ url: URL) -> Decoded? {
-        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, options) else {
-            return nil
-        }
-        return Decoded(image: image)
     }
 }
 
@@ -151,17 +125,18 @@ struct MoonGlobeView: View {
     }
 
     private func approachLine(_ approach: ClosestApproach) -> String {
-        let utc = iso(approach.date)
+        let utc = Self.iso.string(from: approach.date)
         let altitude = String(format: "%.1f", approach.altitudeKm)
         let radius = String(format: "%.1f", approach.radiusKm)
         return "Closest approach \(Stamp.clock(utc)) UTC on \(utc.prefix(10)), \(altitude) km above the \(radius) km radius in the Horizons header."
     }
 
-    private func iso(_ date: Date) -> String {
+    @MainActor
+    private static let iso: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 }
 
 @MainActor
@@ -435,28 +410,38 @@ private struct GlobeScene: UIViewRepresentable {
         return scene
     }
 
-    /// Unnamed points. The seed is fixed so the field does not shimmer between launches.
+    /// One point-cloud draw. The seed is fixed so the field does not shimmer between launches.
     private func addStars(to scene: SCNScene) {
         var rng = SplitMix(state: 0x4F72696F6E)
-        let stars = SCNNode()
-        stars.name = "stars"
+        var points: [SCNVector3] = []
+        points.reserveCapacity(160)
         for _ in 0..<160 {
             let theta = Float(rng.next()) * 2 * .pi
             let z = Float(rng.next()) * 2 - 1
             let ring = (1 - z * z).squareRoot()
             let radius = Float(18 + rng.next() * 16)
-            let point = SCNVector3(ring * cos(theta) * radius, z * radius, ring * sin(theta) * radius)
-            let star = SCNSphere(radius: CGFloat(0.012 + rng.next() * 0.02))
-            let material = SCNMaterial()
-            material.lightingModel = .constant
-            let shade = CGFloat(0.75 + rng.next() * 0.25)
-            material.diffuse.contents = UIColor(white: shade, alpha: 1)
-            material.emission.contents = UIColor(white: shade, alpha: 1)
-            star.materials = [material]
-            let node = SCNNode(geometry: star)
-            node.position = point
-            stars.addChildNode(node)
+            points.append(SCNVector3(ring * cos(theta) * radius, z * radius, ring * sin(theta) * radius))
         }
+        let source = SCNGeometrySource(vertices: points)
+        let indices = (0..<points.count).map { Int32($0) }
+        let data = indices.withUnsafeBufferPointer { Data(buffer: $0) }
+        let element = SCNGeometryElement(
+            data: data,
+            primitiveType: .point,
+            primitiveCount: points.count,
+            bytesPerIndex: MemoryLayout<Int32>.size
+        )
+        element.pointSize = 2
+        element.minimumPointScreenSpaceRadius = 1
+        element.maximumPointScreenSpaceRadius = 2.5
+        let geometry = SCNGeometry(sources: [source], elements: [element])
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = UIColor.white
+        material.emission.contents = UIColor.white
+        geometry.materials = [material]
+        let stars = SCNNode(geometry: geometry)
+        stars.name = "stars"
         scene.rootNode.addChildNode(stars)
     }
 
@@ -606,14 +591,9 @@ extension GlobeScene {
             for site in LunarSites.marked {
                 let unit = MoonFrame.unit(latitude: site.latitude, longitudeEast: site.longitudeEast)
                 let placed = GlobeMapping.scene(unit, radiusKm: 1)
-                let facing = (
-                    placed.x * cameraPosition.x +
-                    placed.y * cameraPosition.y +
-                    placed.z * cameraPosition.z
-                ) / cameraLength
                 let projected = view.projectPoint(placed)
                 let anchor = CGPoint(x: CGFloat(projected.x), y: CGFloat(projected.y))
-                let visible = facing > 0.2 && projected.z < 1 && bounds.insetBy(dx: -36, dy: -18).contains(anchor)
+                let visible = facesCamera(placed, camera: cameraPosition) && projected.z < 1 && bounds.insetBy(dx: -36, dy: -18).contains(anchor)
                 var direction = CGVector(dx: anchor.x - CGFloat(center.x), dy: anchor.y - CGFloat(center.y))
                 let length = hypot(direction.dx, direction.dy)
                 if length < 1 {
@@ -705,16 +685,34 @@ extension GlobeScene {
         }
 
         private func screenSamples(in view: SCNView) -> [PathSpan: [PathScreenSample]] {
+            let camera = view.pointOfView?.presentation.worldPosition
             var grouped: [PathSpan: [PathScreenSample]] = [:]
             for span in spans {
                 var rows: [PathScreenSample] = []
                 for sample in samples where sample.date >= span.start && sample.date <= span.end {
-                    let projected = view.projectPoint(GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm))
+                    let position = GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm)
+                    let projected = view.projectPoint(position)
+                    if let camera, (projected.z >= 1 || !facesCamera(position, camera: camera)) {
+                        continue
+                    }
                     rows.append(PathScreenSample(date: sample.date, x: Double(projected.x), y: Double(projected.y)))
                 }
                 grouped[span] = rows
             }
             return grouped
+        }
+
+        /// Same hemisphere test as the site labels: the direction from the Moon center toward the sample, against the camera.
+        private func facesCamera(_ position: SCNVector3, camera: SCNVector3) -> Bool {
+            let cameraLength = (camera.x * camera.x + camera.y * camera.y + camera.z * camera.z).squareRoot()
+            let sampleLength = (position.x * position.x + position.y * position.y + position.z * position.z).squareRoot()
+            guard cameraLength > 0.001, sampleLength > 0.001 else { return false }
+            let facing = (
+                position.x * camera.x +
+                position.y * camera.y +
+                position.z * camera.z
+            ) / (cameraLength * sampleLength)
+            return facing > 0.2
         }
 
         private func nearestPin(to point: CGPoint, in view: SCNView, limit: CGFloat) -> Milestone? {
@@ -738,10 +736,15 @@ extension GlobeScene {
             in view: SCNView,
             limit: CGFloat
         ) -> Milestone? {
+            let camera = view.pointOfView?.presentation.worldPosition
             var best: (milestone: Milestone, distance: CGFloat)?
             for milestone in milestones {
                 guard let position = FlybyPath.position(at: milestone.date, samples: samples) else { continue }
-                let projected = view.projectPoint(GlobeMapping.scene(position, radiusKm: radiusKm))
+                let placed = GlobeMapping.scene(position, radiusKm: radiusKm)
+                let projected = view.projectPoint(placed)
+                if let camera, (projected.z >= 1 || !facesCamera(placed, camera: camera)) {
+                    continue
+                }
                 let dx = CGFloat(projected.x) - point.x
                 let dy = CGFloat(projected.y) - point.y
                 let distance = (dx * dx + dy * dy).squareRoot()

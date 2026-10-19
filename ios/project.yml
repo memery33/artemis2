@@ -155,6 +155,7 @@ schemes:
       config: Release
   # The begin-button crash is a Release isolation trap. Tests use
   # ReleaseTesting (Release plus testability). Archive and run stay Release.
+  # The unit-test target runs in full, not only the artwork isolation cases.
   ArtemisIIWindowRelease:
     build:
       targets:
@@ -172,9 +173,6 @@ schemes:
       config: ReleaseTesting
       targets:
         - ArtemisIIWindowUITests
-        - name: ArtemisIIWindowTests
-          selectedTests:
-            - ArtworkIsolationTests/testArtworkRequestHandlerRunsOffTheMainThread()
-            - ArtworkIsolationTests/testRemoteCommandHandlerRunsOffTheMainThread()
+        - ArtemisIIWindowTests
     archive:
       config: Release

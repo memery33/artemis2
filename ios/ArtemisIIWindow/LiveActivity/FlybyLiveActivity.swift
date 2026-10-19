@@ -11,36 +11,94 @@ enum FlybyActivityCopy {
         milestones.first { $0.date > date }?.label ?? "End of this span"
     }
 
-    static func clock(_ date: Date) -> String {
+    @MainActor
+    private static let clockFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    @MainActor
+    static func clock(_ date: Date) -> String {
+        clockFormatter.string(from: date)
+    }
+}
+
+/// The app talks to ActivityKit through this so a unit test can run the end path without a Live Activity.
+@MainActor
+protocol FlybyActivityClient: AnyObject {
+    func identifiers() -> [String]
+    func end(identifiers: [String]) async
+    func request(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async
+    func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async
+}
+
+@MainActor
+final class SystemFlybyActivities: FlybyActivityClient {
+    func identifiers() -> [String] {
+        Activity<FlybyActivityAttributes>.activities.map(\.id)
+    }
+
+    func end(identifiers: [String]) async {
+        let ending = Set(identifiers)
+        for activity in Activity<FlybyActivityAttributes>.activities where ending.contains(activity.id) {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    func request(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {
+        _ = try? Activity.request(
+            attributes: FlybyActivityAttributes(title: "Orion Window"),
+            content: ActivityContent(state: state, staleDate: staleDate),
+            pushType: nil
+        )
+    }
+
+    func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {
+        await Activity<FlybyActivityAttributes>.activities.first?.update(
+            ActivityContent(state: state, staleDate: staleDate)
+        )
     }
 }
 
 enum FlybyLiveActivity {
-    /// Ends and updates run one at a time, in the order they were scheduled.
-    /// Each one awaits the previous item, so `Activity.request` cannot start while `endAllImmediately` is still dismissing.
+    /// Ends and updates run one at a time. An end only dismisses the ids captured when it was scheduled.
     @MainActor
     private static var chain: Task<Void, Never>?
 
-    /// Ends every activity this process can still see, including one left up after a previous launch.
-    /// The activity lookup stays on the main actor. Callers that cannot wait use `scheduleEndAllImmediately()`, which is the same dismissal registered before it returns.
+    @MainActor
+    static var client: any FlybyActivityClient = SystemFlybyActivities()
+
+    @MainActor
+    static var isRunning: Bool {
+        !client.identifiers().isEmpty
+    }
+
+    /// Swaps the ActivityKit client. Returns the previous one so a test can restore it.
+    @MainActor
+    @discardableResult
+    static func install(_ replacement: any FlybyActivityClient) -> any FlybyActivityClient {
+        let previous = client
+        client = replacement
+        return previous
+    }
+
+    /// Ends every activity visible on this turn, including one left up after a previous launch.
+    /// The id list is taken before the first await, so an activity requested afterwards is left alone.
     @MainActor
     static func endAllImmediately() async {
         await scheduleEndAllImmediately().value
     }
 
-    /// Registers the dismissal on the chain before returning. `sync` runs only after this task finishes.
+    /// Registers the dismissal before returning. `sync` is queued behind it.
     @MainActor
     @discardableResult
     static func scheduleEndAllImmediately() -> Task<Void, Never> {
-        enqueue {
-            for activity in Activity<FlybyActivityAttributes>.activities {
-                await activity.end(nil, dismissalPolicy: .immediate)
-            }
+        let ids = client.identifiers()
+        return enqueue {
+            await client.end(identifiers: ids)
         }
     }
 
@@ -52,31 +110,30 @@ enum FlybyLiveActivity {
         nextMilestone: String,
         speaker: String,
         clock: String,
+        utcStart: Date,
+        wallStart: Date,
         staleDate: Date?
     ) {
         enqueue {
-            guard RuntimeHost.allowsPlaybackServices(), arrived, playing else {
-                for activity in Activity<FlybyActivityAttributes>.activities {
-                    await activity.end(nil, dismissalPolicy: .immediate)
-                }
-                return
-            }
             let state = FlybyActivityAttributes.ContentState(
                 progress: progress,
                 nextMilestone: nextMilestone,
                 speaker: speaker,
-                clock: clock
+                clock: clock,
+                playing: playing,
+                utcStart: utcStart,
+                wallStart: wallStart
             )
-            let content = ActivityContent(state: state, staleDate: staleDate)
-            if Activity<FlybyActivityAttributes>.activities.isEmpty {
-                _ = try? Activity.request(
-                    attributes: FlybyActivityAttributes(title: "Orion Window"),
-                    content: content,
-                    pushType: nil
-                )
+            guard RuntimeHost.allowsPlaybackServices(), arrived, playing else {
+                let ids = client.identifiers()
+                await client.end(identifiers: ids)
                 return
             }
-            await Activity<FlybyActivityAttributes>.activities.first?.update(content)
+            if client.identifiers().isEmpty {
+                await client.request(state, staleDate: staleDate)
+                return
+            }
+            await client.update(state, staleDate: staleDate)
         }
     }
 
