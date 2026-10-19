@@ -106,6 +106,7 @@ struct DockBar: View {
                     windowButton(.nikon, title: "2", label: "Window 2")
                     windowButton(.cab, title: "3", label: "Window 3")
                 }
+                CrewRow()
                 crewButton
                 if model.immersed {
                     Button("Back to the Moon") { model.surface() }

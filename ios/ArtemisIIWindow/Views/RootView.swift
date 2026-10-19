@@ -192,6 +192,7 @@ struct PhoneColumn: View {
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("dive-button")
             }
+            CrewRow()
             FrameCaption(side: model.window)
             CreditLine()
             StatusLines()
@@ -226,6 +227,12 @@ struct FoldLayout: View {
                     VStack(alignment: .leading, spacing: 12) {
                         MoonGlobeView()
                             .frame(height: 280)
+                        CrewRow()
+                        LyricLines(focus: LyricFocus.focus(
+                            at: model.utc,
+                            track: model.trackID,
+                            lines: model.timeline?.lines ?? []
+                        ))
                         CompanionPane()
                         CabinCard(height: 72)
                         LiveTranscript()

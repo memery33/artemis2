@@ -242,6 +242,27 @@ final class MilestonesTests: XCTestCase {
         XCTAssertEqual(model.utc.timeIntervalSince(pin.date), 0, accuracy: 1)
     }
 
+    func testLyricsShowTheWholeLineAndItsNeighbors() throws {
+        let track = "pcd3"
+        let rows = timeline.lines.filter { $0.track == track }.sorted { $0.date < $1.date }
+        let current = try XCTUnwrap(rows.dropFirst().first)
+        let focus = LyricFocus.focus(at: current.date.addingTimeInterval(0.5), track: track, lines: timeline.lines)
+        XCTAssertEqual(focus.current?.text, current.text)
+        XCTAssertEqual(focus.current?.speaker, current.speaker)
+        XCTAssertEqual(focus.previous?.date, rows[rows.firstIndex(of: current)! - 1].date)
+        XCTAssertGreaterThan(focus.upcoming?.date ?? .distantPast, current.date)
+        XCTAssertEqual(focus.current?.text.count, current.text.count)
+    }
+
+    @MainActor
+    func testFollowCrewSelectsThatTrack() throws {
+        let model = PlaybackModel()
+        let member = try XCTUnwrap(model.timeline?.crew.first { $0.id == "Hansen" })
+        model.follow(member)
+        XCTAssertEqual(model.crewID, "Hansen")
+        XCTAssertEqual(model.trackID, member.track)
+    }
+
     func testPhotoAccessLabelOmitsTheLiveGap() throws {
         let frame = try XCTUnwrap(timeline.frames.first { $0.nasaID == "art002e041322" })
         let spoken = FrameSelection.photoAccessLabel(frame)

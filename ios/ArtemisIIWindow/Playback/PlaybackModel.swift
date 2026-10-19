@@ -240,6 +240,13 @@ final class PlaybackModel: NSObject, ObservableObject {
         haptic.impactOccurred()
     }
 
+    func follow(_ member: CrewMember) {
+        crewID = member.id
+        guard member.track != trackID else { return }
+        trackID = member.track
+        reloadAtCurrentTime()
+    }
+
     func cycleCrew() {
         guard let members = timeline?.crew, !members.isEmpty else { return }
         let index = members.firstIndex { $0.id == crewID } ?? -1

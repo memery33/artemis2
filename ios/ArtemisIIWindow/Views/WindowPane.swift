@@ -131,24 +131,19 @@ struct WindowPane: View {
         .allowsHitTesting(false)
     }
 
+    private var lyricFocus: LyricFocus {
+        LyricFocus.focus(at: model.utc, track: model.trackID, lines: model.timeline?.lines ?? [])
+    }
+
     private var subtitle: some View {
         VStack {
             Spacer()
-            if let line = model.subtitleLine() {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(line.speaker)
-                        .font(.caption.weight(.semibold))
-                    Text(line.text)
-                        .font(.callout)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .foregroundStyle(.white)
+            LyricLines(focus: lyricFocus)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.black.opacity(0.55))
                 .padding(.horizontal, side == .nikon ? 18 : 6)
                 .padding(.bottom, side == .nikon ? 20 : 6)
-            }
         }
         .allowsHitTesting(false)
     }
@@ -163,15 +158,7 @@ struct WindowPane: View {
                 .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
             Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 6) {
-                if let line = model.subtitleLine() {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(line.speaker)
-                            .font(.caption.weight(.semibold))
-                        Text(line.text)
-                            .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                LyricLines(focus: lyricFocus)
                 FrameCaption(side: side)
                 CreditLine()
                 StatusLines()
