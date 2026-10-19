@@ -13,6 +13,7 @@ struct ExhibitCards: View {
                     cardBody(card, showsSource: false)
                 }
                 .buttonStyle(.plain)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("exhibit-\(card.id)")
                 .accessibilityHint("Opens the exhibit")
             }

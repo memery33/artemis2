@@ -5,7 +5,9 @@ struct ArtemisIIWindowApp: App {
     @StateObject private var model: PlaybackModel
 
     init() {
-        // The unit-test host must not construct an ActivityKit client. Playback installs one later, and only outside tests.
+        // End a Live Activity left up by a previous launch before the player exists.
+        // The unit-test host does not construct an ActivityKit client here.
+        FlybyLiveActivity.endLeftoversAtLaunch()
         _model = StateObject(wrappedValue: PlaybackModel())
     }
 

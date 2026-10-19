@@ -101,9 +101,17 @@ enum SolarEphemeris {
         let end = samples[high]
         let span = end.date.timeIntervalSince(start.date)
         let portion = span > 0 ? date.timeIntervalSince(start.date) / span : 0
-        let longitude = start.longitudeEast + (end.longitudeEast - start.longitudeEast) * portion
+        let longitude = start.longitudeEast + shortestTurn(from: start.longitudeEast, to: end.longitudeEast) * portion
         let latitude = start.latitude + (end.latitude - start.latitude) * portion
         return MoonFrame.unit(latitude: latitude, longitudeEast: longitude)
+    }
+
+    /// Signed shortest step from `start` to `end`, in degrees. A step across 0/360 does not travel the long way around.
+    static func shortestTurn(from start: Double, to end: Double) -> Double {
+        var delta = (end - start).truncatingRemainder(dividingBy: 360)
+        if delta > 180 { delta -= 360 }
+        if delta < -180 { delta += 360 }
+        return delta
     }
 }
 

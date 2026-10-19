@@ -25,18 +25,21 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(document.samples.last?.t, "2026-04-07T02:00:00Z")
     }
 
-    /// Sub-observer longitude in the IAU MOON_ME frame. Horizons prints 253.09°E
-    /// (−106.9°) at 19:40 UT and 179.49° at closest approach.
+    /// Sub-observer point in the IAU MOON_ME frame. Horizons prints 253.089630°E
+    /// (−106.91037°) and 1.60578°N at 19:40 UT, and 179.492308°E, −2.607641° at the minimum range.
     func testBodyFixedLongitudeMatchesTheSubObserverPoint() throws {
         let target = Self.utc("2026-04-06T19:40:00Z")
         let at1940 = try XCTUnwrap(samples.min {
             abs($0.date.timeIntervalSince(target)) < abs($1.date.timeIntervalSince(target))
         })
         XCTAssertEqual(at1940.date.timeIntervalSince(target), 0, accuracy: 1)
-        XCTAssertEqual(Self.longitudeEast(at1940), -106.9, accuracy: 1)
+        XCTAssertEqual(Self.longitudeEast(at1940), -106.91037, accuracy: 0.05)
+        XCTAssertEqual(Self.latitude(at1940), 1.60578, accuracy: 0.05)
         let approach = try XCTUnwrap(FlybyPath.closestApproach(samples, radiusKm: document.radiusKm))
-        let placed = try XCTUnwrap(FlybyPath.position(at: approach.date, samples: samples))
-        XCTAssertEqual(Self.degreesFrom180(Self.longitudeEast(x: placed.x, y: placed.y)), 0, accuracy: 1)
+        let lowest = try XCTUnwrap(samples.min { $0.rangeKm < $1.rangeKm })
+        XCTAssertEqual(approach.date.timeIntervalSince(lowest.date), 0, accuracy: 60)
+        XCTAssertEqual(Self.longitudeEast(lowest), 179.492308, accuracy: 0.05)
+        XCTAssertEqual(Self.latitude(lowest), -2.607641, accuracy: 0.05)
     }
 
     /// The SVS texture and the crater pins use one mapping. u for 47.4°W is the
@@ -123,10 +126,8 @@ final class FlybyPathTests: XCTestCase {
         atan2(y, x) * 180 / .pi
     }
 
-    /// 0 when `longitude` is on the 180° meridian, either sign.
-    private static func degreesFrom180(_ longitude: Double) -> Double {
-        let wrapped = abs(longitude).truncatingRemainder(dividingBy: 360)
-        return abs(180 - wrapped)
+    private static func latitude(_ sample: PathSample) -> Double {
+        atan2(sample.z, hypot(sample.x, sample.y)) * 180 / .pi
     }
 
     func testPathFractionRoundTripsToTheSameTime() {
@@ -372,5 +373,21 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(Double(length), 1, accuracy: 0.0001)
         XCTAssertGreaterThan(placed.x, Float(0))
         XCTAssertGreaterThan(placed.z, Float(0))
+    }
+
+    /// A step from 350° to 10° crosses 0°, so the midpoint is 0° rather than 180°.
+    func testSubSolarLongitudeTakesTheShortTurnAcrossZero() {
+        let start = Date(timeIntervalSince1970: 0)
+        let samples = [
+            SunSample(date: start, longitudeEast: 350, latitude: 1),
+            SunSample(date: start.addingTimeInterval(100), longitudeEast: 10, latitude: 3)
+        ]
+        XCTAssertEqual(SolarEphemeris.shortestTurn(from: 350, to: 10), 20, accuracy: 0.0001)
+        XCTAssertEqual(SolarEphemeris.shortestTurn(from: 10, to: 350), -20, accuracy: 0.0001)
+        let mid = SolarEphemeris.direction(at: start.addingTimeInterval(50), samples: samples)
+        let expected = MoonFrame.unit(latitude: 2, longitudeEast: 0)
+        XCTAssertEqual(mid?.x ?? -1, expected.x, accuracy: 1e-9)
+        XCTAssertEqual(mid?.y ?? -1, expected.y, accuracy: 1e-9)
+        XCTAssertEqual(mid?.z ?? -1, expected.z, accuracy: 1e-9)
     }
 }

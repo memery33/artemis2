@@ -94,6 +94,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var lastActivityEnded = false
     private var lastActivityWasMissing = false
     private static let activityPushInterval: TimeInterval = 15
+    /// Unit tests set this so the shipping activity policy runs without the audio graph or Now Playing.
+    var postsLiveActivityWhileSkippingAudio = false
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private var unavailableFiles = Set<String>()
     nonisolated private let lifetime = PlaybackLifetime()
@@ -223,52 +225,50 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// That clears the interruption resume flag so a later `.shouldResume`
     /// does not start the recording again.
     func pause(user: Bool) {
-        if skipsAudio {
-            playing = false
-            if user {
-                resumeAfterInterrupt = false
+        if !skipsAudio {
+            let nodeWasPlaying = player.isPlaying
+            let rendered = nodeWasPlaying ? renderedSeconds() : max(0, holdSeconds)
+            let wait = audibleHostSeconds.map {
+                PlaybackTiming.remainingWait(
+                    nowHostSeconds: AVAudioTime.seconds(forHostTime: mach_absolute_time()),
+                    audibleHostSeconds: $0
+                )
             }
-            FlybyLiveActivity.scheduleEndAllImmediately()
-            return
-        }
-        let nodeWasPlaying = player.isPlaying
-        let rendered = nodeWasPlaying ? renderedSeconds() : max(0, holdSeconds)
-        let wait = audibleHostSeconds.map {
-            PlaybackTiming.remainingWait(
-                nowHostSeconds: AVAudioTime.seconds(forHostTime: mach_absolute_time()),
-                audibleHostSeconds: $0
-            )
-        }
-        if nodeWasPlaying {
-            holdSeconds = rendered
-        }
-        player.pause()
-        audibleHostSeconds = nil
-        scheduledLead = 0
-        if let segment = segmentForCurrentFile() {
-            let paused = PlaybackTiming.clockAfterPause(
-                segmentStart: segment.start,
-                segmentEnd: segment.end,
-                renderedSeconds: rendered,
-                holdSeconds: holdSeconds,
-                holdUntil: holdUntil,
-                utc: utc,
-                remainingWait: wait,
-                nodeWasPlaying: nodeWasPlaying
-            )
-            utc = paused.utc
-            holdUntil = paused.holdUntil
-            holdSeconds = paused.holdSeconds
-            if paused.resetWallClock {
+            if nodeWasPlaying {
+                holdSeconds = rendered
+            }
+            player.pause()
+            audibleHostSeconds = nil
+            scheduledLead = 0
+            if let segment = segmentForCurrentFile() {
+                let paused = PlaybackTiming.clockAfterPause(
+                    segmentStart: segment.start,
+                    segmentEnd: segment.end,
+                    renderedSeconds: rendered,
+                    holdSeconds: holdSeconds,
+                    holdUntil: holdUntil,
+                    utc: utc,
+                    remainingWait: wait,
+                    nodeWasPlaying: nodeWasPlaying
+                )
+                utc = paused.utc
+                holdUntil = paused.holdUntil
+                holdSeconds = paused.holdSeconds
+                if paused.resetWallClock {
+                    lastWall = nil
+                }
+            } else if nodeWasPlaying, rendered > 0 {
+                holdUntil = nil
                 lastWall = nil
             }
-        } else if nodeWasPlaying, rendered > 0 {
-            holdUntil = nil
-            lastWall = nil
         }
         playing = false
         if user {
             resumeAfterInterrupt = false
+        }
+        // A mid-span pause keeps the activity and marks it paused. The span end dismisses it.
+        if let end = activeSpan?.end, utc >= end {
+            FlybyLiveActivity.scheduleEndAllImmediately()
         }
         refreshNowPlaying(force: true)
     }
@@ -357,6 +357,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if atEnd {
             playing = false
             stopPlayer()
+            FlybyLiveActivity.scheduleEndAllImmediately()
             refreshNowPlaying(force: true)
             return
         }
@@ -629,8 +630,8 @@ final class PlaybackModel: NSObject, ObservableObject {
             if playing {
                 chainForward(from: utc)
             }
-            // The display link will not tick in the background. Refresh the timer anchor once;
-            // the widget keeps the mission clock moving from (utc, wall clock).
+            // The display link will not tick in the background. Push the current UTC string once.
+            // The lock screen shows that static text and replaces it on the next playback event.
             if playing {
                 refreshNowPlaying(force: true)
             }
@@ -875,6 +876,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         utc = nextUTC
         if let spanEnd = activeSpan?.end, utc >= spanEnd {
             ended = true
+            // utc is already the span end, so pause dismisses the Live Activity.
             pause(user: true)
             return
         }
@@ -892,10 +894,11 @@ final class PlaybackModel: NSObject, ObservableObject {
             if lifetime.displayLink?.isPaused == true {
                 pause(user: false)
                 // The display link is not running, so it cannot advance `utc` onto the span end.
-                // Park there and raise the end card before the scene returns.
+                // Park there, end the Live Activity, and raise the end card before the scene returns.
                 if let end = activeSpan?.end {
                     utc = end
                     ended = true
+                    FlybyLiveActivity.scheduleEndAllImmediately()
                     refreshNowPlaying(force: true)
                 }
             }
@@ -1346,7 +1349,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func refreshNowPlaying(force: Bool) {
-        guard !skipsAudio else { return }
+        guard !skipsAudio || postsLiveActivityWhileSkippingAudio else { return }
         guard arrived, let span = activeSpan else { return }
         let elapsed = max(0, utc.timeIntervalSince(span.start))
         let second = Int(elapsed.rounded(.down))
@@ -1362,18 +1365,20 @@ final class PlaybackModel: NSObject, ObservableObject {
         lastInfoPlaying = playing
         lastArtID = artID
         lastActivityWasMissing = activityMissing
-        var info: [String: Any] = [
-            MPMediaItemPropertyTitle: span.label,
-            MPMediaItemPropertyArtist: "NASA/Artemis II Crew",
-            MPMediaItemPropertyAlbumTitle: "Artemis II",
-            MPMediaItemPropertyPlaybackDuration: span.end.timeIntervalSince(span.start),
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
-            MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
-        ]
-        if let image = artworkImage() {
-            info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
+        if !skipsAudio {
+            var info: [String: Any] = [
+                MPMediaItemPropertyTitle: span.label,
+                MPMediaItemPropertyArtist: "NASA/Artemis II Crew",
+                MPMediaItemPropertyAlbumTitle: "Artemis II",
+                MPMediaItemPropertyPlaybackDuration: span.end.timeIntervalSince(span.start),
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
+                MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
+            ]
+            if let image = artworkImage() {
+                info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
+            }
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
         let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID

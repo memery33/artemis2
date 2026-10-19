@@ -20,12 +20,16 @@ final class FakeFlybyActivities: FlybyActivityClient {
         identifiersStore.removeAll { drop.contains($0) }
     }
 
+    var updatedPlaying: [Bool] = []
+
     func request(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {
-        _ = (state, staleDate)
+        updatedPlaying.append(state.playing)
+        _ = staleDate
     }
 
     func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {
-        _ = (state, staleDate)
+        updatedPlaying.append(state.playing)
+        _ = staleDate
     }
 }
 
@@ -109,6 +113,60 @@ final class LiveActivityEndTests: XCTestCase {
         model.pause(user: true)
         await FlybyLiveActivity.endAllImmediately()
         XCTAssertTrue(FlybyLiveActivity.client is SilentFlybyActivities)
+        XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
+    }
+
+    /// Launch ends leftovers through the injected client. The test host never constructs ActivityKit.
+    @MainActor
+    func testLaunchEndsLeftoversWithoutConstructingActivityKit() async {
+        let fake = FakeFlybyActivities(identifiers: ["left-over"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        FlybyLiveActivity.endLeftoversAtLaunch()
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["left-over"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+        XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
+    }
+
+    /// A mid-span pause keeps the activity and marks it paused. The span end and a seek to that end dismiss it.
+    @MainActor
+    func testShippingPauseKeepsTheActivityAndSpanEndStopsIt() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        XCTAssertLessThan(model.utc, span.end)
+
+        model.pause(user: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.updatedPlaying, [false])
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+
+        model.utc = span.end
+        model.pause(user: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+    }
+
+    @MainActor
+    func testSeekToTheSpanEndEndsTheActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        model.seek(to: span.end)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
         XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
     }
 }

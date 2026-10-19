@@ -355,6 +355,7 @@ struct CompanionPane: View {
                     .foregroundStyle(.white.opacity(pair.outsideSpan ? 1 : 0.8))
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                CreditLine()
             }
         }
         .buttonStyle(.plain)

@@ -33,7 +33,8 @@ enum FlybyActivityCopy {
         clockFormatter.string(from: date)
     }
 
-    /// Lock-screen line. A minutes-and-seconds `Text(timerInterval:)` renders as `--` and does not advance, so this is the absolute UTC string.
+    /// Lock-screen line. This is static text. It changes when playback pushes a new state, not by counting on its own.
+    /// A minutes-and-seconds `Text(timerInterval:)` renders as `--` and does not advance.
     @MainActor
     static func lockScreenClock(_ date: Date) -> String {
         "at \(clock(date)) UTC"
@@ -81,7 +82,22 @@ enum FlybyLiveActivity {
         return previous
     }
 
-    /// Installs the ActivityKit client and ends anything a previous launch left up.
+    /// Ends whatever the current client can see. The unit-test host keeps the injected client and does not construct ActivityKit.
+    /// The shipping app installs the ActivityKit client first, so a leftover from the previous launch is included.
+    @MainActor
+    static func endLeftoversAtLaunch() {
+        guard !RuntimeHost.isUnitTestHost else {
+            scheduleEndAllImmediately()
+            return
+        }
+        guard RuntimeHost.allowsPlaybackServices() else { return }
+        if !(client is SystemFlybyActivities) {
+            client = SystemFlybyActivities()
+        }
+        scheduleEndAllImmediately()
+    }
+
+    /// Installs the ActivityKit client and ends anything still up.
     /// The unit-test host returns before that type is constructed.
     @MainActor
     static func useSystemClient() {
@@ -97,6 +113,12 @@ enum FlybyLiveActivity {
     @MainActor
     static func endAllImmediately() async {
         await scheduleEndAllImmediately().value
+    }
+
+    /// Waits until the end and update already queued on this turn have finished.
+    @MainActor
+    static func finishQueuedWork() async {
+        await chain?.value
     }
 
     /// Registers the dismissal before returning. `sync` is queued behind it.
@@ -128,7 +150,7 @@ enum FlybyLiveActivity {
                 clock: clock,
                 playing: playing
             )
-            guard RuntimeHost.allowsPlaybackServices(), arrived else {
+            guard arrived else {
                 let ids = client.identifiers()
                 await client.end(identifiers: ids)
                 return

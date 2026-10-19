@@ -6,6 +6,7 @@ https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg
 
 Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio.
 The map uses Lunar Reconnaissance Orbiter Camera data assembled by Arizona State University, with polar regions filled from the Lunar Orbiter Laser Altimeter.
+Science: Noah Petro (NASA/GSFC).
 Visualization: Ernie Wright.
 
 NASA media are in the public domain unless a page says otherwise. SVS 4720 describes this map as optimized for aesthetics, not science. It is not a photograph of the flyby.
