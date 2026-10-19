@@ -274,6 +274,33 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertTrue(fake.identifiersStore.isEmpty)
     }
 
+    /// Pausing in the app and then locking the screen is the scene-phase background path.
+    /// RootView only calls setSceneActive(false). That must keep the activity and push playing = false.
+    @MainActor
+    func testBackgroundingWhilePausedKeepsTheActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        XCTAssertLessThan(model.utc, span.end)
+
+        model.pause(user: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertFalse(model.playing)
+
+        model.setSceneActive(false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+        XCTAssertEqual(fake.updatedPlaying.last, false)
+        XCTAssertFalse(model.ended)
+        XCTAssertLessThan(model.utc, span.end)
+    }
+
     /// A clip that finishes on the span end dismisses the activity.
     @MainActor
     func testClipFinishAtSpanEndEndsTheActivity() async throws {
@@ -331,7 +358,8 @@ final class LiveActivityEndTests: XCTestCase {
         model.postsLiveActivityWhileSkippingAudio = true
         let span = try XCTUnwrap(model.activeSpan)
         model.playing = true
-        // Thirty seconds before the end, so this pause is still mid-span. The background path parks on the end and dismisses the activity.
+        // Thirty seconds before the end, so pause itself is still mid-span.
+        // With nothing left to play, chainForward parks on the span end and dismisses the activity.
         model.utc = span.end.addingTimeInterval(-30)
         model.setSceneActive(false)
         await FlybyLiveActivity.finishQueuedWork()

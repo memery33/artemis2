@@ -634,11 +634,10 @@ final class PlaybackModel: NSObject, ObservableObject {
             if playing {
                 chainForward(from: utc)
             }
-            // The display link will not tick in the background. Push the current UTC string once.
-            // The lock screen shows that static text and replaces it on the next playback event.
-            if playing {
-                refreshNowPlaying(force: true)
-            }
+            // The display link will not tick in the background. Push the current state
+            // once, including a pause, so the lock screen shows "Paused" before suspension.
+            // Backgrounding itself does not end the activity.
+            refreshNowPlaying(force: true)
         }
     }
 
