@@ -8,4 +8,23 @@ enum FlybyUILaunch {
         app.launchArguments = ["-ui-tests"] + extraArguments
         return app
     }
+
+    /// Stops the app, then relaunches it so it ends every Live Activity and quits.
+    /// A playback UI test can leave the widget extension running; the next unit-test process then hangs.
+    static func endActivities() {
+        let app = XCUIApplication()
+        if app.state == .runningForeground || app.state == .runningBackground {
+            app.terminate()
+        }
+        app.launchArguments = ["-ui-tests", "-endActivitiesAndExit"]
+        app.launch()
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "state == %d", XCUIApplication.State.notRunning.rawValue),
+            object: app
+        )
+        _ = XCTWaiter.wait(for: [gone], timeout: 15)
+        if app.state != .notRunning {
+            app.terminate()
+        }
+    }
 }

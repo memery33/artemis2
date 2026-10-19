@@ -13,6 +13,7 @@ final class PlaybackTransportUITests: XCTestCase {
     nonisolated override func tearDown() {
         MainActor.assumeIsolated {
             XCUIDevice.shared.orientation = .portrait
+            FlybyUILaunch.endActivities()
         }
         super.tearDown()
     }

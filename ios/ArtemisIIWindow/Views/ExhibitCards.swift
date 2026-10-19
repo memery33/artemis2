@@ -7,15 +7,7 @@ struct ExhibitCards: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(ExhibitLibrary.cards) { card in
-                Button {
-                    opened = card
-                } label: {
-                    cardBody(card, showsSource: false)
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("exhibit-\(card.id)")
-                .accessibilityHint("Opens the exhibit")
+                exhibitCard(card)
             }
         }
         .sheet(item: $opened) { card in
@@ -23,14 +15,43 @@ struct ExhibitCards: View {
         }
     }
 
-    private func cardBody(_ card: ExhibitCard, showsSource: Bool) -> some View {
+    /// The credit sits outside the button. A button combines its label into one
+    /// accessibility element, which made the photo-credit query return the whole card.
+    private func exhibitCard(_ card: ExhibitCard) -> some View {
         let frame = ExhibitLibrary.frame(for: card, frames: model.timeline?.frames ?? [])
         return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                opened = card
+            } label: {
+                cardFace(card, frame: frame)
+            }
+            .buttonStyle(.plain)
+            CreditLine()
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier("photo-credit")
+                .accessibilityLabel("Credit: NASA/Artemis II Crew")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("exhibit-\(card.id)")
+        .accessibilityHint("Opens the exhibit")
+        .task(id: frame?.nasaID) {
+            if let frame {
+                model.prefetch(frame, maxPixel: 720)
+            }
+        }
+    }
+
+    private func cardFace(_ card: ExhibitCard, frame: Frame?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             if let frame, let image = model.photo(frame, maxPixel: 720) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(height: showsSource ? 220 : 140)
+                    .frame(height: 140)
                     .frame(maxWidth: .infinity)
                     .clipped()
                     .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
@@ -42,28 +63,6 @@ struct ExhibitCards: View {
                 .font(.body)
                 .foregroundStyle(.white.opacity(0.92))
                 .fixedSize(horizontal: false, vertical: true)
-            if showsSource {
-                Text(card.source)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
-                if let frame {
-                    Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            CreditLine()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .task(id: frame?.nasaID) {
-            if let frame {
-                model.prefetch(frame, maxPixel: 720)
-            }
         }
     }
 }

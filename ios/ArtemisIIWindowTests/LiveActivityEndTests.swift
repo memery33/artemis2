@@ -180,6 +180,56 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
     }
 
+    func testEndActivitiesAndExitArgumentIsRecognized() {
+        XCTAssertTrue(FlybyLiveActivity.shouldEndActivitiesAndExit(arguments: ["-ui-tests", "-endActivitiesAndExit"]))
+        XCTAssertFalse(FlybyLiveActivity.shouldEndActivitiesAndExit(arguments: ["-ui-tests"]))
+    }
+
+    /// The exit relaunch ends through the ActivityKit client and does not leave that client installed.
+    @MainActor
+    func testEndActivitiesAndExitEndsThroughTheSystemClient() async {
+        let fake = FakeFlybyActivities(identifiers: ["left-over"])
+        var built = 0
+        let previousFactory = FlybyLiveActivity.systemClientFactory
+        let previous = FlybyLiveActivity.install(SilentFlybyActivities())
+        defer {
+            FlybyLiveActivity.systemClientFactory = previousFactory
+            FlybyLiveActivity.install(previous)
+        }
+        FlybyLiveActivity.systemClientFactory = {
+            built += 1
+            return fake
+        }
+        await FlybyLiveActivity.endAllForExit(unitTestHost: false)
+        XCTAssertEqual(built, 1)
+        XCTAssertEqual(fake.ended, ["left-over"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+        XCTAssertTrue(FlybyLiveActivity.client is SilentFlybyActivities)
+        XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
+    }
+
+    /// The unit-test host ends the injected client and does not construct ActivityKit.
+    @MainActor
+    func testEndActivitiesAndExitOnTheUnitTestHostDoesNotBuildActivityKit() async {
+        let fake = FakeFlybyActivities(identifiers: ["left-over"])
+        let previous = FlybyLiveActivity.install(fake)
+        var built = false
+        let previousFactory = FlybyLiveActivity.systemClientFactory
+        defer {
+            FlybyLiveActivity.systemClientFactory = previousFactory
+            FlybyLiveActivity.install(previous)
+        }
+        FlybyLiveActivity.systemClientFactory = {
+            built = true
+            return FakeFlybyActivities(identifiers: [])
+        }
+        await FlybyLiveActivity.endAllForExit(unitTestHost: true)
+        XCTAssertFalse(built)
+        XCTAssertEqual(fake.ended, ["left-over"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+        XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
+    }
+
     /// Launch ends leftovers through the injected client. The test host never constructs ActivityKit.
     @MainActor
     func testLaunchEndsLeftoversWithoutConstructingActivityKit() async {

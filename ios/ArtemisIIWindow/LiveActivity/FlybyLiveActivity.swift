@@ -147,6 +147,28 @@ enum FlybyLiveActivity {
         await scheduleEndAllImmediately().value
     }
 
+    /// `-endActivitiesAndExit` asks a UI-test relaunch to dismiss every Live Activity and then quit.
+    static func shouldEndActivitiesAndExit(
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> Bool {
+        arguments.contains("-endActivitiesAndExit")
+    }
+
+    /// Ends every Live Activity and waits until that end has finished.
+    /// UI tests (`-ui-tests`) are not the unit-test host, so this uses the ActivityKit client there.
+    /// The unit-test host ends only the injected client and does not construct ActivityKit.
+    @MainActor
+    static func endAllForExit(unitTestHost: Bool = RuntimeHost.isUnitTestHost) async {
+        if unitTestHost {
+            await endAllImmediately()
+            return
+        }
+        let system = systemClientFactory()
+        let ids = system.identifiers()
+        await system.end(identifiers: ids)
+        await finishQueuedWork()
+    }
+
     /// Waits until the end and update already queued on this turn have finished.
     @MainActor
     static func finishQueuedWork() async {

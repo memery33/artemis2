@@ -4,6 +4,13 @@ import XCTest
 /// 19:33:15–19:33:18 UTC where the plateau zoom line is current.
 @MainActor
 final class SubtitleFrameUITests: XCTestCase {
+    nonisolated override func tearDown() {
+        MainActor.assumeIsolated {
+            FlybyUILaunch.endActivities()
+        }
+        super.tearDown()
+    }
+
     func testAtMostOneSubtitleOccupiesAFrame() {
         let app = FlybyUILaunch.application()
         app.launch()

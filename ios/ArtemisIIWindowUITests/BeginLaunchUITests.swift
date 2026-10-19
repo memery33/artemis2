@@ -4,6 +4,13 @@ import XCTest
 /// isolation check inside the Now Playing artwork handler.
 @MainActor
 final class BeginLaunchUITests: XCTestCase {
+    nonisolated override func tearDown() {
+        MainActor.assumeIsolated {
+            FlybyUILaunch.endActivities()
+        }
+        super.tearDown()
+    }
+
     func testTapToBeginStaysRunning() {
         let app = FlybyUILaunch.application()
         app.launch()
