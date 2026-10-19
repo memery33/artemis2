@@ -126,6 +126,7 @@ struct DockBar: View {
                 rangeButton
                 aboutButton
                 CabinCard(height: 72)
+                ExhibitCards()
                 MoonGlobeView()
                     .frame(height: 168)
                 TargetMap()

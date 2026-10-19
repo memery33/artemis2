@@ -198,6 +198,7 @@ struct PhoneColumn: View {
             CreditLine()
             StatusLines()
             CabinCard(height: 96)
+            ExhibitCards()
             TargetMap()
                 .frame(height: 180)
         }
@@ -234,6 +235,7 @@ struct FoldLayout: View {
                             track: model.trackID,
                             lines: model.timeline?.lines ?? []
                         ))
+                        ExhibitCards()
                         CompanionPane()
                         CabinCard(height: 72)
                         LiveTranscript()

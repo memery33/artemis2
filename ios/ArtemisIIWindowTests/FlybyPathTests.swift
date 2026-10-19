@@ -106,6 +106,31 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertGreaterThan(abs(gentle.frameX), 0)
     }
 
+    func testExhibitCardsQuoteTheTargetingPlan() throws {
+        let url = try XCTUnwrap(Bundle(for: FlybyPathTests.self).url(forResource: "timeline", withExtension: "json"))
+        let timeline = try Timeline(data: Data(contentsOf: url))
+        XCTAssertEqual(ExhibitLibrary.cards.map(\.headline), [
+            "Aristarchus Plateau", "Reiner Gamma", "Orientale Basin"
+        ])
+        XCTAssertEqual(
+            ExhibitLibrary.cards[0].body,
+            "Plateau known for its volcanic diversity and the bright Aristarchus crater, looking for color, albedo, and texture variations across the plateau and surrounding mare."
+        )
+        XCTAssertEqual(
+            ExhibitLibrary.cards[1].body,
+            "Set of bright lunar swirls near highland-mare boundary. Future CLPS landing site."
+        )
+        XCTAssertEqual(
+            ExhibitLibrary.cards[2].body,
+            "Youngest large basin on the Moon with dark impact melt interior, bright rings, and prominent ejecta with secondary crater chains."
+        )
+        for card in ExhibitLibrary.cards {
+            let frame = try XCTUnwrap(ExhibitLibrary.frame(for: card, frames: timeline.frames))
+            XCTAssertEqual(frame.targetID, card.targetID)
+            XCTAssertFalse(frame.nasaID.isEmpty)
+        }
+    }
+
     func testGazetteerSitesSitOnTheUnitSphere() {
         XCTAssertEqual(LunarSites.marked.map(\.label), ["Aristarchus", "Reiner Gamma", "Orientale"])
         XCTAssertEqual(LunarSites.marked.map(\.feature), ["Aristarchus", "Reiner Gamma", "Mare Orientale"])
