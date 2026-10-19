@@ -49,19 +49,26 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var range: MissionRange = .flyby
     @Published var spatial = false
     @Published var arrived = false
+    /// The cabin window is in front. The Moon stays one step back.
+    @Published var immersed = false
+    /// Set when a playable span reaches its own end. A pause in the middle does not set it.
+    @Published var ended = false
     @Published var engineFailed = false
     /// Phone and landscape read the 720 sibling. The open fold reads the shipped frame.
     @Published var phoneImages = true
     /// Bumped when a prefetched frame lands in the cache. Views read this and stay cache-only.
     @Published private(set) var frameCacheEpoch = 0
 
-    private var engine = AVAudioEngine()
-    private var player = AVAudioPlayerNode()
-    private var environment = AVAudioEnvironmentNode()
+    /// Created on first use. The unit-test host never reads these, so it never builds an audio graph.
+    private lazy var engine = AVAudioEngine()
+    private lazy var player = AVAudioPlayerNode()
+    private lazy var environment = AVAudioEnvironmentNode()
     private var audioFile: AVAudioFile?
-    private var currentFile: String?
+    /// The file the clock is following. Tests set this to finish a clip without the audio graph.
+    var currentFile: String?
     private var scheduledStart: TimeInterval = 0
-    private var holdSeconds: TimeInterval = 0
+    /// Sample offset inside `currentFile`. Tests advance it onto the span end.
+    var holdSeconds: TimeInterval = 0
     /// Silent wait before a future-scheduled file. The node counts it as play time.
     private var scheduledLead: TimeInterval = 0
     /// Host time when that future-scheduled file should become audible.
@@ -81,6 +88,18 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var lastInfoSecond = Int.min
     private var lastInfoPlaying = false
     private var lastArtID = ""
+    /// Seek and crew or span switches. Consumed by the next activity push.
+    private var activityEvent = false
+    private var lastActivityPush = Date.distantPast
+    private var lastActivitySpeaker = ""
+    private var lastActivityPlaying: Bool?
+    private var lastActivityEnded = false
+    private var lastActivityWasMissing = false
+    private static let activityPushInterval: TimeInterval = 15
+    /// Unit tests set this so the shipping activity policy runs without the audio graph or Now Playing.
+    var postsLiveActivityWhileSkippingAudio = false
+    /// Set with the scene. The background span-end path reads it when the unit-test host has no display link.
+    private var displayClockPaused = false
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private var unavailableFiles = Set<String>()
     nonisolated private let lifetime = PlaybackLifetime()
@@ -89,12 +108,13 @@ final class PlaybackModel: NSObject, ObservableObject {
         super.init()
         spatial = UserDefaults.standard.bool(forKey: Self.spatialDefaultsKey)
         loadTimeline()
+        MediaStore.observeMemoryWarning()
+        guard !RuntimeHost.isUnitTestHost else { return }
         attachGraph()
         configureEnvironment()
         engine.connect(player, to: engine.mainMixerNode, format: nil)
         observeNotifications()
         observeEngineConfiguration()
-        MediaStore.observeMemoryWarning()
     }
 
     deinit {
@@ -128,6 +148,22 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// so other audio is left alone until the viewer starts.
     func begin() {
         guard !arrived, timeline != nil else { return }
+        if Self.opensAtSpanEnd(ProcessInfo.processInfo.arguments), let end = activeSpan?.end {
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                arrived = true
+                utc = end
+                ended = true
+                playing = false
+            }
+            return
+        }
+        guard !RuntimeHost.isUnitTestHost else {
+            arrived = true
+            return
+        }
+        FlybyLiveActivity.useSystemClient()
         do {
             try activateSpokenSession()
         } catch {
@@ -141,6 +177,12 @@ final class PlaybackModel: NSObject, ObservableObject {
         play()
     }
 
+    /// UI tests pass `-seekToEnd` so the end card can be reached without dragging the path.
+    /// Playing from that instant would rewind to the span start.
+    nonisolated static func opensAtSpanEnd(_ arguments: [String]) -> Bool {
+        arguments.contains("-seekToEnd")
+    }
+
     /// `fromHold` reschedules the real file at the offset saved across an interruption.
     func play(fromHold: Bool = false) {
         guard timeline != nil else { return }
@@ -152,6 +194,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         playing = true
         resumeAfterInterrupt = false
+        guard !RuntimeHost.isUnitTestHost else { return }
         guard !engineFailed else {
             refreshNowPlaying(force: true)
             return
@@ -169,7 +212,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         do {
             try activateSpokenSession()
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
         } catch {
             failEngine()
@@ -186,44 +229,51 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// That clears the interruption resume flag so a later `.shouldResume`
     /// does not start the recording again.
     func pause(user: Bool) {
-        let nodeWasPlaying = player.isPlaying
-        let rendered = nodeWasPlaying ? renderedSeconds() : max(0, holdSeconds)
-        let wait = audibleHostSeconds.map {
-            PlaybackTiming.remainingWait(
-                nowHostSeconds: AVAudioTime.seconds(forHostTime: mach_absolute_time()),
-                audibleHostSeconds: $0
-            )
-        }
-        if nodeWasPlaying {
-            holdSeconds = rendered
-        }
-        player.pause()
-        audibleHostSeconds = nil
-        scheduledLead = 0
-        if let segment = segmentForCurrentFile() {
-            let paused = PlaybackTiming.clockAfterPause(
-                segmentStart: segment.start,
-                segmentEnd: segment.end,
-                renderedSeconds: rendered,
-                holdSeconds: holdSeconds,
-                holdUntil: holdUntil,
-                utc: utc,
-                remainingWait: wait,
-                nodeWasPlaying: nodeWasPlaying
-            )
-            utc = paused.utc
-            holdUntil = paused.holdUntil
-            holdSeconds = paused.holdSeconds
-            if paused.resetWallClock {
+        if !skipsAudio {
+            let nodeWasPlaying = player.isPlaying
+            let rendered = nodeWasPlaying ? renderedSeconds() : max(0, holdSeconds)
+            let wait = audibleHostSeconds.map {
+                PlaybackTiming.remainingWait(
+                    nowHostSeconds: AVAudioTime.seconds(forHostTime: mach_absolute_time()),
+                    audibleHostSeconds: $0
+                )
+            }
+            if nodeWasPlaying {
+                holdSeconds = rendered
+            }
+            player.pause()
+            audibleHostSeconds = nil
+            scheduledLead = 0
+            if let segment = segmentForCurrentFile() {
+                let paused = PlaybackTiming.clockAfterPause(
+                    segmentStart: segment.start,
+                    segmentEnd: segment.end,
+                    renderedSeconds: rendered,
+                    holdSeconds: holdSeconds,
+                    holdUntil: holdUntil,
+                    utc: utc,
+                    remainingWait: wait,
+                    nodeWasPlaying: nodeWasPlaying
+                )
+                utc = paused.utc
+                holdUntil = paused.holdUntil
+                holdSeconds = paused.holdSeconds
+                if paused.resetWallClock {
+                    lastWall = nil
+                }
+            } else if nodeWasPlaying, rendered > 0 {
+                holdUntil = nil
                 lastWall = nil
             }
-        } else if nodeWasPlaying, rendered > 0 {
-            holdUntil = nil
-            lastWall = nil
         }
         playing = false
         if user {
             resumeAfterInterrupt = false
+        }
+        // A mid-span pause keeps the activity and marks it paused, including a pause from
+        // the lock screen, headphones, or an interruption. The span end dismisses it.
+        if let end = activeSpan?.end, utc >= end {
+            FlybyLiveActivity.scheduleEndAllImmediately()
         }
         refreshNowPlaying(force: true)
     }
@@ -236,6 +286,13 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard window != side else { return }
         window = side
         haptic.impactOccurred()
+    }
+
+    func follow(_ member: CrewMember) {
+        crewID = member.id
+        guard member.track != trackID else { return }
+        trackID = member.track
+        reloadAtCurrentTime()
     }
 
     func cycleCrew() {
@@ -263,6 +320,28 @@ final class PlaybackModel: NSObject, ObservableObject {
         reloadAtCurrentTime()
     }
 
+    /// Opens the cabin on the current clock, or on a milestone pin.
+    /// Entering the cabin does not jump to the span end or raise the end card.
+    func dive(to milestone: Milestone? = nil) {
+        let selected = milestone?.jumpDate ?? milestone?.date ?? utc
+        if let milestone {
+            jump(to: milestone, markEnd: false)
+        }
+        if let timeline, let span = spanContaining(selected, timeline: timeline),
+           selected >= span.start, selected < span.end, utc != selected {
+            // A pin cue can clamp onto the span end. The cabin opens on the moment that was chosen.
+            seek(to: selected, markEnd: false)
+        }
+        if let span = activeSpan, utc < span.end {
+            ended = false
+        }
+        immersed = true
+    }
+
+    func surface() {
+        immersed = false
+    }
+
     func showFlyby() {
         range = .flyby
         utc = timeline?.window.start ?? utc
@@ -271,12 +350,22 @@ final class PlaybackModel: NSObject, ObservableObject {
         reloadAtCurrentTime()
     }
 
-    func seek(to date: Date) {
+    func seek(to date: Date, markEnd: Bool = true) {
         guard let span = activeSpan else { return }
+        activityEvent = true
         utc = MissionClock.clamp(date, to: span)
+        let atEnd = markEnd && utc >= span.end
+        ended = atEnd
         holdUntil = nil
         rebuilding = true
         defer { rebuilding = false }
+        if atEnd {
+            playing = false
+            stopPlayer()
+            FlybyLiveActivity.scheduleEndAllImmediately()
+            refreshNowPlaying(force: true)
+            return
+        }
         if let segment = segment(at: utc) {
             if currentFile == segment.file, let file = audioFile {
                 reschedule(file: file, at: utc.timeIntervalSince(segment.start))
@@ -294,10 +383,11 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func restartPlayerIfNeeded() {
+        guard !skipsAudio else { return }
         guard playing, !engineFailed, audioFile != nil else { return }
         do {
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
             if !player.isPlaying {
                 player.play()
@@ -329,7 +419,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     /// Moves the clock, the crew track, the window, and the recording together.
-    func jump(to milestone: Milestone) {
+    func jump(to milestone: Milestone, markEnd: Bool = true) {
         guard let timeline else { return }
         let cue = MilestoneSeek.cue(
             for: milestone,
@@ -358,8 +448,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         playing = true
         holdUntil = nil
         scrubbing = false
-        seek(to: cue.date)
-        engagePlayback()
+        seek(to: cue.date, markEnd: markEnd)
+        if !ended {
+            engagePlayback()
+        }
     }
 
     func beginScrub() {
@@ -381,12 +473,90 @@ final class PlaybackModel: NSObject, ObservableObject {
         seek(to: utc)
     }
 
+    /// Path drag. Playback stays running unless the finger lands on the span end.
+    func beginPathScrub() {
+        beginScrub()
+    }
+
+    func scrubPath(to date: Date) {
+        guard let timeline else { return }
+        guard let span = spanContaining(date, timeline: timeline) else { return }
+        if !scrubbing {
+            beginScrub()
+        }
+        if activeSpan?.start != span.start || activeSpan?.end != span.end {
+            range = timeline.cabRun?.start == span.start ? .cab : .flyby
+            currentFile = nil
+            audioFile = nil
+        }
+        utc = MissionClock.clamp(date, to: span)
+    }
+
+    /// A time inside a real recording in this span. Silent gaps are not a place to land.
+    private func recordedDate(near date: Date, in span: TimeSpan, timeline: Timeline) -> Date? {
+        let clips = timeline.segments.filter { segment in
+            segment.end > span.start && segment.start < span.end
+        }
+        guard !clips.isEmpty else { return nil }
+        let preferred = clips.filter { $0.track == trackID }
+        let pool = preferred.isEmpty ? clips : preferred
+        if pool.contains(where: { date >= $0.start && date < $0.end }) {
+            return date
+        }
+        var best: (date: Date, distance: TimeInterval)?
+        for clip in pool {
+            let start = max(clip.start, span.start)
+            let end = min(clip.end, span.end)
+            guard end > start else { continue }
+            let landed = min(max(date, start), end.addingTimeInterval(-0.05))
+            let distance = abs(landed.timeIntervalSince(date))
+            if best == nil || distance < best!.distance {
+                best = (landed, distance)
+            }
+        }
+        return best?.date
+    }
+
+    func endPathScrub() {
+        guard scrubbing else { return }
+        if let span = activeSpan, utc >= span.end {
+            utc = span.end
+            endScrub()
+            return
+        }
+        if let timeline, let span = activeSpan, let landed = recordedDate(near: utc, in: span, timeline: timeline) {
+            if segment(at: landed) == nil,
+               let track = timeline.segments.first(where: { landed >= $0.start && landed < $0.end })?.track,
+               track != trackID {
+                trackID = track
+                if let member = timeline.crew.first(where: { $0.track == track }) {
+                    crewID = member.id
+                }
+                currentFile = nil
+                audioFile = nil
+            }
+            utc = landed
+        }
+        endScrub()
+    }
+
+    private func spanContaining(_ date: Date, timeline: Timeline) -> TimeSpan? {
+        if let cab = timeline.cabRun, date >= cab.start, date <= cab.end {
+            return cab
+        }
+        if date >= timeline.window.start, date <= timeline.window.end {
+            return timeline.window
+        }
+        return nil
+    }
+
     private func engagePlayback() {
+        guard !skipsAudio else { return }
         guard playing, !engineFailed else { return }
         do {
             try activateSpokenSession()
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
             if let segment = segment(at: utc), currentFile == segment.file, audioFile != nil, !player.isPlaying {
                 player.play()
@@ -445,7 +615,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         connectGraph(format: file.processingFormat)
         reschedule(file: file, at: seconds)
         do {
-            try engine.start()
+            try startEngine()
             if wasPlaying { player.play() }
         } catch {
             failEngine()
@@ -453,9 +623,10 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func setSceneActive(_ active: Bool) {
+        displayClockPaused = !active
         if active {
             lifetime.displayLink?.isPaused = false
-            if holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
+            if !skipsAudio, holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
                 // Sample time, not host time, so a pause does not move the clock.
                 utc = segment.start.addingTimeInterval(renderedSeconds())
                 lastWall = nil
@@ -464,6 +635,11 @@ final class PlaybackModel: NSObject, ObservableObject {
             lifetime.displayLink?.isPaused = true
             if playing {
                 chainForward(from: utc)
+            }
+            // The display link will not tick in the background. Push the current UTC string once.
+            // The lock screen shows that static text and replaces it on the next playback event.
+            if playing {
+                refreshNowPlaying(force: true)
             }
         }
     }
@@ -542,6 +718,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         holdUntil = nil
         engineFailed = true
         stopPlayer()
+        FlybyLiveActivity.scheduleEndAllImmediately()
         refreshNowPlaying(force: true)
     }
 
@@ -551,6 +728,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         scheduleGeneration += 1
         scheduledLead = 0
         audibleHostSeconds = nil
+        guard !skipsAudio else { return }
         player.stop()
     }
 
@@ -573,10 +751,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         holdUntil = nil
         stopPlayer()
         if playing { followSegment() }
+        activityEvent = true
         refreshNowPlaying(force: true)
     }
 
+    private var skipsAudio: Bool { RuntimeHost.isUnitTestHost }
+
     private func followSegment() {
+        guard !skipsAudio else { return }
         guard playing, !engineFailed, holdUntil == nil else { return }
         guard let segment = segment(at: utc) else {
             if player.isPlaying {
@@ -591,6 +773,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func loadSegment(_ segment: Segment) {
+        guard !skipsAudio else { return }
         if unavailableFiles.contains(segment.file) {
             currentFile = segment.file
             audioFile = nil
@@ -625,7 +808,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             connectGraph(format: file.processingFormat)
             if restart {
                 do {
-                    try engine.start()
+                    try startEngine()
                 } catch {
                     failEngine()
                     return
@@ -636,7 +819,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard playing else { return }
         do {
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
             player.play()
         } catch {
@@ -645,6 +828,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func reschedule(file: AVAudioFile, at seconds: TimeInterval, when: AVAudioTime? = nil, lead: TimeInterval = 0) {
+        guard !skipsAudio else { return }
         stopPlayer()
         let generation = scheduleGeneration
         if let when, when.isHostTimeValid {
@@ -685,7 +869,7 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     /// The scheduled file reached its end. The display link is paused in the
     /// background, so the next real file has to be armed here.
-    private func segmentDidFinish() {
+    func segmentDidFinish() {
         guard playing, !rebuilding, !engineFailed else { return }
         // The armed file has ended. Clear the pre-roll mark so the next file can chain
         // even though the display link never ran to clear it.
@@ -697,6 +881,8 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         utc = nextUTC
         if let spanEnd = activeSpan?.end, utc >= spanEnd {
+            ended = true
+            // utc is already the span end, so pause dismisses the Live Activity.
             pause(user: true)
             return
         }
@@ -707,12 +893,20 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// A span with nothing left to play pauses and sets the Now Playing rate to 0.
     private func chainForward(from time: Date) {
         guard playing, !engineFailed, !rebuilding, holdUntil == nil else { return }
-        if player.isPlaying, segment(at: time) != nil {
+        if !skipsAudio, player.isPlaying, segment(at: time) != nil {
             return
         }
         guard let next = upcomingSegment(after: time) else {
-            if lifetime.displayLink?.isPaused == true {
+            if displayClockPaused || lifetime.displayLink?.isPaused == true {
                 pause(user: false)
+                // The display link is not running, so it cannot advance `utc` onto the span end.
+                // Park there, end the Live Activity, and raise the end card before the scene returns.
+                if let end = activeSpan?.end {
+                    utc = end
+                    ended = true
+                    FlybyLiveActivity.scheduleEndAllImmediately()
+                    refreshNowPlaying(force: true)
+                }
             }
             return
         }
@@ -720,7 +914,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if delay <= 0.05 {
             utc = max(time, next.start)
             loadSegment(next)
-        } else if lifetime.displayLink?.isPaused == true {
+        } else if displayClockPaused || lifetime.displayLink?.isPaused == true {
             scheduleAtRealStart(next, delay: delay)
         }
     }
@@ -768,7 +962,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             connectGraph(format: file.processingFormat)
             if restart {
                 do {
-                    try engine.start()
+                    try startEngine()
                 } catch {
                     failEngine()
                     return
@@ -779,7 +973,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         holdUntil = segment.start
         do {
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
             if playing {
                 player.play()
@@ -838,14 +1032,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
     }
 
-    private func tickOnMain(_ timestamp: CFTimeInterval) {
+    func tickOnMain(_ timestamp: CFTimeInterval) {
         guard !rebuilding, !scrubbing else { return }
         let now = timestamp
         let rawDelta = lastWall.map { max(0, now - $0) } ?? 0
         lastWall = now
 
         if playing {
-            if player.isPlaying, let segment = segmentForCurrentFile() {
+            if !skipsAudio, player.isPlaying, let segment = segmentForCurrentFile() {
                 let seconds = renderedSeconds()
                 if let armed = holdUntil, seconds <= 0, utc < armed {
                     utc = min(utc.addingTimeInterval(rawDelta), armed)
@@ -870,6 +1064,9 @@ final class PlaybackModel: NSObject, ObservableObject {
             if let end = activeSpan?.end, utc >= end {
                 utc = end
                 pause(user: true)
+                utc = end
+                ended = true
+                FlybyLiveActivity.scheduleEndAllImmediately()
             } else {
                 followSegment()
             }
@@ -883,9 +1080,18 @@ final class PlaybackModel: NSObject, ObservableObject {
     // MARK: - Session
 
     private func activateSpokenSession() throws {
+        guard RuntimeHost.allowsPlaybackServices() else { return }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio, policy: .longFormAudio, options: [])
         try session.setActive(true)
+    }
+
+    /// Starting the engine activates the shared audio session. Tests that have not opted in never reach that.
+    private func startEngine() throws {
+        guard RuntimeHost.allowsPlaybackServices() else { return }
+        if !engine.isRunning {
+            try engine.start()
+        }
     }
 
     // The session posts these on an arbitrary queue. The selectors stay
@@ -979,7 +1185,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             connectGraph(format: file.processingFormat)
             reschedule(file: file, at: position)
             do {
-                try engine.start()
+                try startEngine()
                 if wasPlaying {
                     player.play()
                 }
@@ -1025,6 +1231,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func rebuildEngine() {
+        guard !skipsAudio else { return }
         rebuilding = true
         defer { rebuilding = false }
         stopPlayer()
@@ -1149,28 +1356,62 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func refreshNowPlaying(force: Bool) {
+        guard !skipsAudio || postsLiveActivityWhileSkippingAudio else { return }
         guard arrived, let span = activeSpan else { return }
         let elapsed = max(0, utc.timeIntervalSince(span.start))
         let second = Int(elapsed.rounded(.down))
         let artID = artworkID()
-        if !force, second == lastInfoSecond, playing == lastInfoPlaying, artID == lastArtID {
+        // A dismissal can remove the activity without moving the clock. Notice it once,
+        // then let the 15s cadence retry, so a failed request does not push every frame.
+        let activityMissing = playing && !FlybyLiveActivity.isRunning
+        let becameMissing = activityMissing && !lastActivityWasMissing
+        if !force, second == lastInfoSecond, playing == lastInfoPlaying, artID == lastArtID, !becameMissing {
             return
         }
         lastInfoSecond = second
         lastInfoPlaying = playing
         lastArtID = artID
-        var info: [String: Any] = [
-            MPMediaItemPropertyTitle: span.label,
-            MPMediaItemPropertyArtist: "NASA/Artemis II Crew",
-            MPMediaItemPropertyAlbumTitle: "Artemis II",
-            MPMediaItemPropertyPlaybackDuration: span.end.timeIntervalSince(span.start),
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
-            MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
-        ]
-        if let image = artworkImage() {
-            info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
+        lastActivityWasMissing = activityMissing
+        if !skipsAudio {
+            var info: [String: Any] = [
+                MPMediaItemPropertyTitle: span.label,
+                MPMediaItemPropertyArtist: "NASA/Artemis II Crew",
+                MPMediaItemPropertyAlbumTitle: "Artemis II",
+                MPMediaItemPropertyPlaybackDuration: span.end.timeIntervalSince(span.start),
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
+                MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
+            ]
+            if let image = artworkImage() {
+                info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
+            }
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        let duration = span.end.timeIntervalSince(span.start)
+        let milestones = timeline.map { MilestoneList.derive($0) } ?? []
+        let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID
+        let spanEnded = utc >= span.end
+        let requested = activityEvent
+        activityEvent = false
+        let playbackChanged = lastActivityPlaying != playing
+        let speakerChanged = speaker != lastActivitySpeaker
+        let endedChanged = spanEnded != lastActivityEnded
+        let due = playing && Date().timeIntervalSince(lastActivityPush) >= Self.activityPushInterval
+        // Background, pause, seek, and span end pass force and are not held for the 15s cadence.
+        guard force || requested || becameMissing || playbackChanged || speakerChanged || endedChanged || due else { return }
+        lastActivityPush = Date()
+        lastActivitySpeaker = speaker
+        lastActivityPlaying = playing
+        lastActivityEnded = spanEnded
+        let rate = playing ? 1.0 : 0.0
+        FlybyLiveActivity.sync(
+            arrived: arrived,
+            playing: playing,
+            progress: FlybyActivityCopy.progress(elapsed: elapsed, duration: duration),
+            nextMilestone: FlybyActivityCopy.nextLabel(after: utc, milestones: milestones),
+            speaker: speaker,
+            clock: FlybyActivityCopy.lockScreenClock(utc),
+            staleDate: FlybyActivityCopy.staleDate(playing: playing, utc: utc, spanEnd: span.end, rate: rate)
+        )
     }
 
     /// MediaPlayer calls the handler on its access queue. The image is already
@@ -1277,6 +1518,7 @@ enum MediaStore {
             failed.insert(name)
             return
         }
+        guard RuntimeHost.mayDecodeImages else { return }
         inflight.insert(name)
         waiters[name] = ready
         let pixels = CGFloat(pixelBucket(maxPixel))

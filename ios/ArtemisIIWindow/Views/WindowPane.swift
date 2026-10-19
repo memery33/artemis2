@@ -4,8 +4,9 @@ struct WindowPane: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
+    @StateObject private var cabinMotion = CabinMotion()
     @State private var turn: Double = 0
-    /// Landscape draws the clocks, quote, and credit on the glass.
+    /// Landscape draws the clocks, quote, and CreditLine on the glass.
     var glassChrome: Bool = false
 
     private var side: WindowSide { model.window }
@@ -27,6 +28,11 @@ struct WindowPane: View {
             )
             .offset(x: reduceMotion ? 0 : turn * 28)
             .gesture(swipe)
+            .onAppear { cabinMotion.update(reduceMotion: reduceMotion) }
+            .onChange(of: reduceMotion) { _, reduced in
+                cabinMotion.update(reduceMotion: reduced)
+            }
+            .onDisappear { cabinMotion.stop() }
             .onChange(of: model.window) { _, newSide in
                 guard !reduceMotion else { return }
                 turn = newSide == .cab ? 1 : -1
@@ -51,36 +57,59 @@ struct WindowPane: View {
     private func glass(pair: FramePair, mix: Double, progress: Double) -> some View {
         GeometryReader { geo in
             let pixels = max(geo.size.width, geo.size.height) * displayScale * 1.15
+            let fading = mix > 0.001 && mix < 0.999
+            let settled = (mix >= 0.999 ? pair.next : pair.current) ?? pair.current
             ZStack {
                 Color.black
-                if let frame = pair.current, let image = model.photo(frame, maxPixel: pixels) {
-                    placed(
-                        image,
-                        motion: motion(progress: progress, index: pair.index),
-                        size: geo.size
-                    )
-                    .opacity(1 - mix)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
-                    .accessibilityAddTraits(.isImage)
+                // Settled clocks show one photograph. Both layers only exist while the crossfade is moving.
+                ZStack {
+                    if fading {
+                        if let frame = pair.current, let image = model.photo(frame, maxPixel: pixels) {
+                            placed(
+                                image,
+                                motion: motion(progress: progress, index: pair.index),
+                                size: geo.size
+                            )
+                            .opacity(1 - mix)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                            .accessibilityAddTraits(.isImage)
+                        }
+                        if let frame = pair.next, let image = model.photo(frame, maxPixel: pixels) {
+                            placed(
+                                image,
+                                motion: motion(progress: 0, index: pair.index + 1),
+                                size: geo.size
+                            )
+                            .opacity(mix)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                            .accessibilityAddTraits(.isImage)
+                        }
+                    } else if let frame = settled, let image = model.photo(frame, maxPixel: pixels) {
+                        placed(
+                            image,
+                            motion: motion(progress: mix >= 0.999 ? 0 : progress, index: pair.index),
+                            size: geo.size
+                        )
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                        .accessibilityAddTraits(.isImage)
+                    }
                 }
-                if mix > 0, let frame = pair.next, let image = model.photo(frame, maxPixel: pixels) {
-                    placed(
-                        image,
-                        motion: motion(progress: 0, index: pair.index + 1),
-                        size: geo.size
-                    )
-                    .opacity(mix)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
-                    .accessibilityAddTraits(.isImage)
-                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
                 if pair.current == nil && mix == 0 {
                     Text(emptyCopy(pair))
                         .font(.footnote)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white.opacity(0.85))
+                        .contentTransition(.identity)
                         .padding(24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .padding(.bottom, 88)
+                        .id(side)
+                        .transition(.identity)
                 }
                 if pair.outsideSpan, let frame = pair.current {
                     VStack {
@@ -106,6 +135,10 @@ struct WindowPane: View {
                 }
                 if side == .nikon {
                     bezel
+                        .offset(
+                            x: CGFloat(cabinMotion.shift.frameX),
+                            y: CGFloat(cabinMotion.shift.frameY)
+                        )
                 }
             }
             .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
@@ -131,29 +164,24 @@ struct WindowPane: View {
         .allowsHitTesting(false)
     }
 
+    private var lyricFocus: LyricFocus {
+        LyricFocus.focus(at: model.utc, track: model.trackID, lines: model.timeline?.lines ?? [])
+    }
+
     private var subtitle: some View {
         VStack {
             Spacer()
-            if let line = model.subtitleLine() {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(line.speaker)
-                        .font(.caption.weight(.semibold))
-                    Text(line.text)
-                        .font(.callout)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .foregroundStyle(.white)
+            LyricLines(focus: lyricFocus)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.black.opacity(0.55))
+                .background(Color.black)
                 .padding(.horizontal, side == .nikon ? 18 : 6)
                 .padding(.bottom, side == .nikon ? 20 : 6)
-            }
         }
         .allowsHitTesting(false)
     }
 
-    /// Clocks, the whole quote, and the credit sit on the pane. Padding keeps
+    /// Clocks, the quote, and CreditLine sit on the pane. Padding keeps
     /// them inside the bezel and clear of the rounded corners.
     private var landscapeChrome: some View {
         VStack(spacing: 0) {
@@ -163,23 +191,14 @@ struct WindowPane: View {
                 .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
             Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 6) {
-                if let line = model.subtitleLine() {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(line.speaker)
-                            .font(.caption.weight(.semibold))
-                        Text(line.text)
-                            .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                LyricLines(focus: lyricFocus)
                 FrameCaption(side: side)
-                CreditLine()
                 StatusLines()
             }
             .foregroundStyle(.white)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.black.opacity(0.55))
+            .background(Color.black)
             .padding(.horizontal, side == .nikon ? 18 : 6)
             .padding(.bottom, side == .nikon ? 22 : 8)
         }
@@ -223,9 +242,23 @@ struct WindowPane: View {
             .scaledToFill()
             .frame(width: size.width, height: size.height)
             .scaleEffect(motion.scale)
-            .offset(x: size.width * motion.x / 100, y: size.height * motion.y / 100)
+            .offset(
+                x: size.width * motion.x / 100 + CGFloat(cabinMotion.shift.photoX),
+                y: size.height * motion.y / 100 + CGFloat(cabinMotion.shift.photoY)
+            )
             .frame(width: size.width, height: size.height)
             .clipped()
+    }
+}
+
+/// Small credit kept on every photograph. The words stay fully visible.
+struct CreditLine: View {
+    var body: some View {
+        Text("Credit: NASA/Artemis II Crew")
+            .font(.caption2)
+            .foregroundStyle(.white.opacity(0.82))
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("photo-credit")
     }
 }
 
@@ -237,7 +270,7 @@ struct FrameCaption: View {
         let pair = model.pair(for: side)
         VStack(alignment: .leading, spacing: 4) {
             if let frame = dominant(pair) {
-                Text(frame.credit)
+                Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.85))
                 if side == .cab, pair.outsideSpan {
@@ -256,8 +289,11 @@ struct FrameCaption: View {
                         .accessibilityLabel(note.spoken)
                 }
             }
+            CreditLine()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("window-caption")
     }
 
     private func dominant(_ pair: FramePair) -> Frame? {
@@ -281,48 +317,63 @@ struct FrameCaption: View {
 struct CompanionPane: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.displayScale) private var displayScale
+    @State private var showsCredit = false
 
     private var side: WindowSide { model.window == .nikon ? .cab : .nikon }
 
     var body: some View {
         let pair = model.pair(for: side)
-        Button(action: { model.setWindow(side) }) {
-            VStack(alignment: .leading, spacing: 6) {
-                Color.black
-                    .aspectRatio(side == .cab ? 4.0 / 3.0 : 1.5, contentMode: .fit)
-                    .overlay {
-                        GeometryReader { geo in
-                            let pixels = max(geo.size.width, geo.size.height) * displayScale
-                            ZStack {
-                                if let frame = pair.current,
-                                   let image = model.photo(frame, maxPixel: pixels) {
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: geo.size.width, height: geo.size.height)
-                                        .clipped()
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: { model.setWindow(side) }) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Color.black
+                        .aspectRatio(side == .cab ? 4.0 / 3.0 : 1.5, contentMode: .fit)
+                        .overlay {
+                            GeometryReader { geo in
+                                let pixels = max(geo.size.width, geo.size.height) * displayScale
+                                let loaded = pair.current.flatMap { model.photo($0, maxPixel: pixels) } != nil
+                                ZStack {
+                                    if let frame = pair.current,
+                                       let image = model.photo(frame, maxPixel: pixels) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: geo.size.width, height: geo.size.height)
+                                            .clipped()
+                                    }
                                 }
-                            }
-                            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
-                                if let frame = pair.current {
-                                    model.prefetch(frame, maxPixel: pixels)
+                                .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
+                                    if let frame = pair.current {
+                                        model.prefetch(frame, maxPixel: pixels)
+                                    }
+                                    if let frame = pair.next {
+                                        model.prefetch(frame, maxPixel: pixels)
+                                    }
                                 }
-                                if let frame = pair.next {
-                                    model.prefetch(frame, maxPixel: pixels)
+                                .onChange(of: loaded, initial: true) { _, value in
+                                    showsCredit = value
                                 }
                             }
                         }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text(caption(pair))
-                    .font(pair.outsideSpan ? .headline : .caption2)
-                    .foregroundStyle(.white.opacity(pair.outsideSpan ? 1 : 0.8))
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    Text(caption(pair))
+                        .font(pair.outsideSpan ? .headline : .caption2)
+                        .foregroundStyle(.white.opacity(pair.outsideSpan ? 1 : 0.8))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(side == .cab ? "Show Window 3" : "Show Window 2")
+            if showsCredit {
+                CreditLine()
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityIdentifier("photo-credit")
+                    .accessibilityLabel("Credit: NASA/Artemis II Crew")
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(side == .cab ? "Show Window 3" : "Show Window 2")
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("other-window")
     }
 
     private func caption(_ pair: FramePair) -> String {
@@ -356,35 +407,40 @@ struct CabinCard: View {
         if let frames = model.timeline?.frames,
            let card = FrameSelection.cabinCard(at: model.utc, frames: frames) {
             VStack(alignment: .leading, spacing: 4) {
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(height: height)
-                    .overlay {
-                        GeometryReader { geo in
-                            let pixels = max(geo.size.width, geo.size.height) * displayScale
-                            ZStack {
-                                if let image = model.photo(card, maxPixel: pixels) {
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: geo.size.width, height: geo.size.height)
+                VStack(alignment: .leading, spacing: 4) {
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: height)
+                        .overlay {
+                            GeometryReader { geo in
+                                let pixels = max(geo.size.width, geo.size.height) * displayScale
+                                ZStack {
+                                    if let image = model.photo(card, maxPixel: pixels) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: geo.size.width, height: geo.size.height)
+                                    }
+                                }
+                                .task(id: "\(model.frameCacheEpoch)|\(model.phoneImages)|\(card.file)@\(MediaStore.pixelBucket(pixels))") {
+                                    model.prefetch(card, maxPixel: pixels)
                                 }
                             }
-                            .task(id: "\(model.frameCacheEpoch)|\(model.phoneImages)|\(card.file)@\(MediaStore.pixelBucket(pixels))") {
-                                model.prefetch(card, maxPixel: pixels)
-                            }
                         }
-                    }
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text("Cabin · \(card.nasaID) · \(Stamp.clock(card.utc)) UTC")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.8))
-                Text("Not shown through the glass.")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    Text("Cabin · \(card.nasaID) · \(Stamp.clock(card.utc)) UTC")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.8))
+                    Text("Not shown through the glass.")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .accessibilityElement(children: .combine)
+                CreditLine()
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("cabin-card")
         }
     }
 }
@@ -405,17 +461,6 @@ struct ClockReadout: View {
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("mission-clock")
-    }
-}
-
-struct CreditLine: View {
-    @EnvironmentObject private var model: PlaybackModel
-
-    var body: some View {
-        Text(model.timeline?.attribution.credit ?? "Credit: NASA/Artemis II Crew")
-            .font(.caption2)
-            .foregroundStyle(.white.opacity(0.9))
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -506,7 +551,7 @@ struct TargetMap: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.white.opacity(0.04))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text("Named targets. Not a window boresight. Hertzsprung is not plotted.")
+            Text("Lunar Targeting Plan aim points (PDS target list), not gazetteer centers. Not a window boresight. Hertzsprung is not plotted.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)
@@ -515,7 +560,7 @@ struct TargetMap: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("geographic-targets")
-        .accessibilityLabel("Geographic targets from the flyby. Hertzsprung is not plotted.")
+        .accessibilityLabel("Lunar Targeting Plan aim points (PDS target list), not gazetteer centers. Not a window boresight. Hertzsprung is not plotted.")
     }
 }
 

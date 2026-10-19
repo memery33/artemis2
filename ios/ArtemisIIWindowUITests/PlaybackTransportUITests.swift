@@ -13,14 +13,15 @@ final class PlaybackTransportUITests: XCTestCase {
     nonisolated override func tearDown() {
         MainActor.assumeIsolated {
             XCUIDevice.shared.orientation = .portrait
+            FlybyUILaunch.endActivities()
         }
         super.tearDown()
     }
 
     func testPlayPauseStopsAndResumesTheClock() throws {
-        let app = XCUIApplication()
+        let app = FlybyUILaunch.application()
         app.launch()
-        let begin = app.buttons["Tap to begin"]
+        let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
         begin.tap()
 

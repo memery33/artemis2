@@ -16,6 +16,8 @@ xcodebuild -project ArtemisIIWindow.xcodeproj -scheme ArtemisIIWindow -configura
 xcodebuild -exportArchive -archivePath "$PWD/build/ArtemisIIWindow.xcarchive" -exportPath "$PWD/build/export" -exportOptionsPlist ExportOptions.plist
 ```
 
+UI tests call `FlybyUILaunch.endActivities()` from tearDown. That terminates Orion Window and relaunches it with `-ui-tests -endActivitiesAndExit`. Both arguments are required. The launch logs `Activity.activities.count`, ends every Live Activity, waits until those ends finish, and exits, so the widget extension is not still running when the next unit-test process starts. If a unit-test run still hangs and an Orion Window widget-extension process from an earlier session is alive, delete Orion Window from the simulator and run the tests again.
+
 Signing is automatic for team `NHYXW2AY53`. If the simulator is not named “iPhone 17”, pick another iPhone simulator. Export uses `app-store-connect` / `upload`, so the archive is sent to App Store Connect. The Apple ID that uploads has to be signed in, and the App Store Connect record for `com.memery33.artemis2window` has to exist. `ITSAppUsesNonExemptEncryption` is false.
 
 ## Playback

@@ -22,6 +22,11 @@ SOFTWARE.
 
 The Artemis II photographs, audio, and transcripts shipped under demo/data
 are NASA works. They are not covered by the MIT license above. Use them under
-the NASA Images and Media Usage Guidelines. Credit "NASA ID …, Credit:
-NASA/Artemis II Crew". This project is not a NASA product and is not endorsed
-by NASA.
+the NASA Images and Media Usage Guidelines. Credit "NASA ID …,
+Credit: NASA/Artemis II Crew".
+
+The SVS LRO color map and the Horizons tables shipped under
+ios/ArtemisIIWindow/Resources are NASA works and are not covered by the MIT
+license above. Credit the map to NASA/GSFC SVS, LROC, Arizona State University,
+Noah Petro (NASA/GSFC), and Ernie Wright. Credit the tables to NASA/JPL
+Horizons. This project is not a NASA product and is not endorsed by NASA.

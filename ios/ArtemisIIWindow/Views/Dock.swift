@@ -1,16 +1,10 @@
 import SwiftUI
 
-enum DockPlacement {
-    case bottom
-    case rail
-}
-
 struct DockBar: View {
     @EnvironmentObject private var model: PlaybackModel
     @State private var about = false
     @State private var transcript = false
     @State private var moments = false
-    var placement: DockPlacement = .bottom
 
     var body: some View {
         controls
@@ -21,239 +15,122 @@ struct DockBar: View {
 
     @ViewBuilder
     private var controls: some View {
-        switch placement {
-        case .bottom:
-            bottomControls
-        case .rail:
-            railControls
-        }
+        capsuleControls
     }
 
-    private var bottomControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            timelineControls
-            Toggle(isOn: Binding(
-                get: { model.spatial },
-                set: { model.setSpatial($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Spatial")
-                    Text("Moves the real recording toward this window. Nothing is added.")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .accessibilityIdentifier("spatial-note")
-                }
+    /// The same capsule on the Moon and in the cabin. Spatial, lines, and the spans are in the menu.
+    private var capsuleControls: some View {
+        HStack(spacing: 2) {
+            capsuleSkip(
+                system: "gobackward.15",
+                label: "Skip back 15 seconds",
+                identifier: "skip-back"
+            ) {
+                model.skip(by: -PlaybackModel.skipInterval)
             }
-            .toggleStyle(.switch)
-            .tint(.white)
-            .font(.subheadline)
-            .foregroundStyle(.white)
-            .accessibilityIdentifier("spatial-toggle")
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    windowButton(.nikon, title: "2", label: "Window 2")
-                    windowButton(.cab, title: "3", label: "Window 3")
-                    crewButton
-                    linesButton
-                    momentsButton
-                    rangeButton
-                    aboutButton
-                }
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        windowButton(.nikon, title: "2", label: "Window 2")
-                        windowButton(.cab, title: "3", label: "Window 3")
-                        crewButton
-                    }
-                    HStack(spacing: 8) {
-                        linesButton
-                        momentsButton
-                        rangeButton
-                        aboutButton
-                    }
-                }
+            capsulePlay
+            capsuleSkip(
+                system: "goforward.15",
+                label: "Skip forward 15 seconds",
+                identifier: "skip-forward"
+            ) {
+                model.skip(by: PlaybackModel.skipInterval)
             }
+            capsuleText("Moments", label: "Moments", identifier: "moments-button") { moments = true }
+            capsuleText("Info", label: "Info and Credits", identifier: "info-button") { about = true }
+            moreMenu
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
         .background {
-            Color.black
-                .ignoresSafeArea(edges: .bottom)
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("transport-capsule")
     }
 
-    private var railControls: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                timelineControls
-                Toggle(isOn: Binding(
-                    get: { model.spatial },
-                    set: { model.setSpatial($0) }
-                )) {
-                    Text("Spatial")
-                }
-                .accessibilityHint("Moves the real recording toward this window. Nothing is added.")
-                .accessibilityIdentifier("spatial-toggle")
-                .toggleStyle(.switch)
-                .tint(.white)
-                .font(.subheadline)
-                .foregroundStyle(.white)
-
-                HStack(spacing: 8) {
-                    windowButton(.nikon, title: "2", label: "Window 2")
-                    windowButton(.cab, title: "3", label: "Window 3")
-                }
-                crewButton
-                linesButton
-                momentsButton
-                rangeButton
-                aboutButton
-                CabinCard(height: 72)
-                TargetMap()
-                    .frame(height: 120)
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .accessibilityIdentifier("landscape-rail")
-    }
-
-    /// Scrubber with the play control beside it. Skip uses the lock-screen interval.
-    private var timelineControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 10) {
-                    MissionScrubber()
-                    playPauseButton
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    MissionScrubber()
-                    playPauseButton
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            HStack(spacing: 8) {
-                skipButton(
-                    system: "gobackward.15",
-                    title: "Back",
-                    label: "Skip back 15 seconds",
-                    identifier: "skip-back"
-                ) {
-                    model.skip(by: -PlaybackModel.skipInterval)
-                }
-                skipButton(
-                    system: "goforward.15",
-                    title: "Forward",
-                    label: "Skip forward 15 seconds",
-                    identifier: "skip-forward"
-                ) {
-                    model.skip(by: PlaybackModel.skipInterval)
-                }
-            }
-        }
-    }
-
-    private var playPauseButton: some View {
+    private var capsulePlay: some View {
         let playing = model.playing
         return Button(action: { model.toggle() }) {
-            Label(playing ? "Pause" : "Play", systemImage: playing ? "pause.fill" : "play.fill")
-                .font(.title3.weight(.semibold))
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.black)
-                .lineLimit(1)
-                .frame(minWidth: 112, minHeight: 48)
-                .padding(.horizontal, 12)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(width: 44, height: 36)
+                .background(Color.white, in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("playback-toggle")
         .accessibilityLabel(playing ? "Pause" : "Play")
     }
 
-    private func skipButton(
+    private func capsuleSkip(
         system: String,
-        title: String,
         label: String,
         identifier: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: system)
-                    .font(.title2)
-                Text(title)
-                    .font(.caption2.weight(.semibold))
-            }
-            .foregroundStyle(.white)
-            .frame(minWidth: 64, minHeight: 44)
-            .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Image(systemName: system)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)
         .accessibilityLabel(label)
     }
 
-    private var crewButton: some View {
-        dockButton(model.crewID, label: "Crew, \(model.crewID)") {
-            model.cycleCrew()
-        }
-    }
-
-    private var linesButton: some View {
-        dockButton("Lines", label: "Transcript") { transcript = true }
-    }
-
-    private var momentsButton: some View {
-        dockButton("Moments", label: "Moments") { moments = true }
-            .accessibilityIdentifier("moments-button")
-    }
-
-    private var rangeButton: some View {
-        dockButton(
-            model.range == .flyby ? "Cab run" : "Flyby",
-            label: model.range == .flyby ? "Cab Cam run" : "Flyby window"
-        ) {
-            if model.range == .flyby { model.showCabRun() } else { model.showFlyby() }
-        }
-    }
-
-    private var aboutButton: some View {
-        dockButton("About", label: "About") { about = true }
-    }
-
-    private func windowButton(_ side: WindowSide, title: String, label: String) -> some View {
-        dockButton(title, label: label, selected: model.window == side) {
-            model.setWindow(side)
-        }
-    }
-
-    private func dockButton(
+    private func capsuleText(
         _ title: String,
         label: String,
-        selected: Bool = false,
+        identifier: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(minWidth: 44, minHeight: 44)
-                .frame(maxWidth: placement == .rail ? .infinity : nil)
-                .padding(.horizontal, 8)
-                .background(selected ? Color.white.opacity(0.2) : Color.white.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(minHeight: 44)
+                .padding(.horizontal, 6)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
         .accessibilityLabel(label)
     }
+
+    private var moreMenu: some View {
+        Menu {
+            Button(model.spatial ? "Spatial on" : "Spatial") {
+                model.setSpatial(!model.spatial)
+            }
+            Button("Window 2") { model.setWindow(.nikon) }
+            Button("Window 3") { model.setWindow(.cab) }
+            Button("Lines") { transcript = true }
+            Button(model.range == .flyby ? "Cab run" : "Flyby") {
+                if model.range == .flyby { model.showCabRun() } else { model.showFlyby() }
+            }
+            Button("Crew, \(model.crewID)") { model.cycleCrew() }
+            if model.immersed {
+                Button("Back to the Moon") { model.surface() }
+            } else {
+                Button("Dive into the window") { model.dive() }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("More")
+        .accessibilityIdentifier("more-controls")
+    }
+
 }
 
 struct LiveTranscript: View {
@@ -364,8 +241,6 @@ struct AboutView: View {
                     if let attribution = model.timeline?.attribution {
                         Text(attribution.credit)
                             .font(.headline)
-                        Text(attribution.endorsement)
-                            .font(.body)
                     }
                     Text("This app is not affiliated with or endorsed by NASA.")
                         .font(.body)
@@ -376,6 +251,12 @@ struct AboutView: View {
                             .font(.footnote)
                     }
                     Text("The app icon is a center crop of NASA ID art002e016184, a real Z9 frame from 19:33:26 UTC. It is not a new photograph.")
+                        .font(.footnote)
+                    Text("The globe uses the NASA SVS CGI Moon Kit 2025 LROC color map, file lroc_color_2k.jpg, 2048 by 1024, public domain. Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio, Lunar Reconnaissance Orbiter Camera, Arizona State University, and Noah Petro (NASA/GSFC), visualization by Ernie Wright. SVS 4720. The map is centered on 0° longitude and is an aesthetic rendering, not a photograph and not the flyby lighting.")
+                        .font(.footnote)
+                    Text("Exhibit cards quote the Science and Operational Focus of NASA’s Guide to the Artemis II Lunar Targeting Plan for Aristarchus Plateau, Reiner Gamma, and Orientale Basin. The pictures are the real frames already labeled with those targets.")
+                        .font(.footnote)
+                    Text("Orion’s path is a JPL Horizons observer table: Moon (301) from Artemis II (spacecraft) -1024 body center, sub-observer east longitude and latitude in the IAU MOON_ME body-fixed frame, plus range, one-minute steps from 2026-04-06 18:00 UT through 2026-04-07 02:00 UT. MOON_ME +X is the 0° east meridian, not the body-equator node. Closest approach is the minimum of that table, not a typed-in time. Surface labels use the USGS Gazetteer of Planetary Nomenclature: Aristarchus, Reiner Gamma, and Mare Orientale.")
                         .font(.footnote)
                     if let licenses = model.timeline?.licenses {
                         ForEach(licenses) { license in
