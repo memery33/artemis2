@@ -7,7 +7,7 @@ final class BeginLaunchUITests: XCTestCase {
     func testTapToBeginStaysRunning() {
         let app = XCUIApplication()
         app.launch()
-        let begin = app.buttons["Tap to begin"]
+        let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
         begin.tap()
         // Now Playing asks for artwork on a background queue after begin.

@@ -22,7 +22,7 @@ final class LayoutFrameUITests: XCTestCase {
     func testFramesStayInsideTheScreenInBothOrientations() {
         let app = XCUIApplication()
         app.launch()
-        let begin = app.buttons["Tap to begin"]
+        let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
         begin.tap()
 

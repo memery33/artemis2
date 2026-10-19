@@ -80,7 +80,9 @@ struct DockBar: View {
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            Color.black
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
                 .ignoresSafeArea(edges: .bottom)
         }
     }

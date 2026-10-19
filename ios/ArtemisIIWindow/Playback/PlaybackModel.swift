@@ -51,6 +51,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var arrived = false
     /// The cabin window is in front. The Moon stays one step back.
     @Published var immersed = false
+    /// Set when a playable span reaches its own end. A pause in the middle does not set it.
+    @Published var ended = false
     @Published var engineFailed = false
     /// Phone and landscape read the 720 sibling. The open fold reads the shipped frame.
     @Published var phoneImages = true
@@ -295,6 +297,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     func seek(to date: Date) {
         guard let span = activeSpan else { return }
         utc = MissionClock.clamp(date, to: span)
+        ended = false
         holdUntil = nil
         rebuilding = true
         defer { rebuilding = false }
@@ -718,6 +721,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         utc = nextUTC
         if let spanEnd = activeSpan?.end, utc >= spanEnd {
+            ended = true
             pause(user: true)
             return
         }

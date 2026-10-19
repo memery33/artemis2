@@ -18,6 +18,9 @@ struct RootView: View {
             } else {
                 GateView()
             }
+            if model.arrived, model.ended {
+                EndCard()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
@@ -33,30 +36,103 @@ struct GateView: View {
     @EnvironmentObject private var model: PlaybackModel
     @State private var about = false
 
+    private var hero: Frame? {
+        model.timeline?.frames.first { $0.nasaID == "art002e016184" }
+    }
+
     var body: some View {
         ZStack {
-            Button(action: { model.begin() }) {
-                Text("Tap to begin")
-                    .font(.title2)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Tap to begin")
-
-            VStack {
-                Spacer()
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 22) {
+                if let hero, let image = model.photo(hero, maxPixel: 900) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 220, height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
+                }
+                VStack(spacing: 6) {
+                    Text("Orion Window")
+                        .font(.largeTitle.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("Artemis II Flyby")
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                Button(action: { model.begin() }) {
+                    Text("Begin Flyby")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.black)
+                        .frame(minWidth: 200, minHeight: 52)
+                        .padding(.horizontal, 18)
+                        .background(Color.white, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Begin Flyby")
                 Button("About") { about = true }
                     .font(.body)
                     .foregroundStyle(.white)
                     .frame(minWidth: 44, minHeight: 44)
-                    .padding(.bottom, 12)
+            }
+            .padding(28)
+        }
+        .task(id: hero?.nasaID) {
+            if let hero {
+                model.prefetch(hero, maxPixel: 900)
             }
         }
         .sheet(isPresented: $about) {
             AboutView()
         }
+    }
+}
+
+struct EndCard: View {
+    @EnvironmentObject private var model: PlaybackModel
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.92).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 16) {
+                Text("End of this span")
+                    .font(.largeTitle.weight(.semibold))
+                    .foregroundStyle(.white)
+                if let span = model.activeSpan {
+                    Text("\(span.label) ends at \(Stamp.clock(span.endUTC)) UTC.")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Credit: NASA/Artemis II Crew")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text("This app is not affiliated with or endorsed by NASA.")
+                    .font(.body)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Replay this span") {
+                    if let span = model.activeSpan {
+                        model.seek(to: span.start)
+                        model.play()
+                    }
+                }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .background(Color.white, in: Capsule())
+                Button("Stay with the recording") {
+                    model.ended = false
+                }
+                .font(.body)
+                .foregroundStyle(.white)
+                .frame(minHeight: 44)
+            }
+            .padding(28)
+            .frame(maxWidth: 520, alignment: .leading)
+        }
+        .accessibilityIdentifier("end-card")
     }
 }
 
