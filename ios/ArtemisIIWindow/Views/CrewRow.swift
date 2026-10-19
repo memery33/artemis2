@@ -62,28 +62,44 @@ struct LyricLines: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            verse(focus.previous, prominent: false)
-            verse(focus.current, prominent: true)
-            verse(focus.upcoming, prominent: false)
+            slot("previous", focus.previous, prominent: false)
+            slot("current", focus.current, prominent: true)
+            slot("upcoming", focus.upcoming, prominent: false)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
         }
         .accessibilityElement(children: .combine)
     }
 
+    /// Each role keeps its own row. A line change replaces that row in place, so the fading line cannot draw over the next one.
     @ViewBuilder
-    private func verse(_ line: TranscriptLine?, prominent: Bool) -> some View {
-        if let line {
-            let tint = CrewTint.rgba(line.speaker)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(line.speaker)
-                    .font(prominent ? .caption.weight(.semibold) : .caption2)
-                    .foregroundStyle(Color(red: tint.0, green: tint.1, blue: tint.2).opacity(prominent ? 1 : 0.5))
-                Text(line.text)
-                    .font(prominent ? .title3.weight(.semibold) : .body)
-                    .foregroundStyle(.white.opacity(prominent ? 1 : 0.38))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.leading)
+    private func slot(_ role: String, _ line: TranscriptLine?, prominent: Bool) -> some View {
+        Group {
+            if let line {
+                verse(line, prominent: prominent)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .id(role)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .transition(.identity)
+    }
+
+    private func verse(_ line: TranscriptLine, prominent: Bool) -> some View {
+        let tint = CrewTint.rgba(line.speaker)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(line.speaker)
+                .font(prominent ? .caption.weight(.semibold) : .caption2)
+                .foregroundStyle(Color(red: tint.0, green: tint.1, blue: tint.2).opacity(prominent ? 1 : 0.5))
+            Text(line.text)
+                .font(prominent ? .title3.weight(.semibold) : .body)
+                .foregroundStyle(.white.opacity(prominent ? 1 : 0.38))
+                .contentTransition(.identity)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }

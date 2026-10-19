@@ -160,45 +160,76 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(pixels.height, 1024)
     }
 
-    func testSlightDragStaysOnTheCurrentBrightSegment() {
+    func testSmallDragMovesAProportionallySmallAmountAndLandsOnARecording() {
         let start = Date(timeIntervalSince1970: 1_000)
         let end = start.addingTimeInterval(900)
-        let cabStart = start.addingTimeInterval(10_000)
-        let cabEnd = cabStart.addingTimeInterval(500)
         let flyby = PathSpan(start: start, end: end)
-        let cab = PathSpan(start: cabStart, end: cabEnd)
-        let flybySamples = [
+        let straight = [
             PathScreenSample(date: start, x: 0, y: 0),
             PathScreenSample(date: end, x: 200, y: 0)
         ]
+        let small = PathScrub.drag(
+            anchorDate: start,
+            translationX: 12,
+            translationY: 0,
+            fingerX: 12,
+            fingerY: 0,
+            current: (flyby, straight),
+            others: []
+        )
+        XCTAssertEqual(small?.span, flyby)
+        XCTAssertEqual(small?.date.timeIntervalSince(start) ?? -1, 54, accuracy: 2)
+        XCTAssertLessThan(small?.date.timeIntervalSince(start) ?? 999, 90)
+        XCTAssertNotEqual(small?.date, end)
+
+        // The end of the arc folds back next to the start. A short drag must not land on it.
+        let folded = [
+            PathScreenSample(date: start, x: 0, y: 0),
+            PathScreenSample(date: start.addingTimeInterval(450), x: 100, y: 0),
+            PathScreenSample(date: end, x: 6, y: 2)
+        ]
+        let foldedDrag = PathScrub.drag(
+            anchorDate: start,
+            translationX: 6,
+            translationY: 2,
+            fingerX: 6,
+            fingerY: 2,
+            current: (flyby, folded),
+            others: []
+        )
+        let foldedDelta = foldedDrag?.date.timeIntervalSince(start) ?? 999
+        XCTAssertGreaterThan(foldedDelta, 0)
+        XCTAssertLessThan(foldedDelta, 90)
+        XCTAssertNotEqual(foldedDrag?.date, end)
+
+        let cabStart = start.addingTimeInterval(10_000)
+        let cabEnd = cabStart.addingTimeInterval(500)
+        let cab = PathSpan(start: cabStart, end: cabEnd)
         let cabSamples = [
             PathScreenSample(date: cabStart, x: 0, y: 400),
             PathScreenSample(date: cabEnd, x: 20, y: 400)
         ]
-        let slight = PathScrub.scrub(
-            x: 4,
-            y: 2,
-            current: (flyby, flybySamples),
-            others: [(cab, cabSamples)]
-        )
-        XCTAssertEqual(slight?.span, flyby)
-        XCTAssertEqual(slight?.date.timeIntervalSince(start) ?? -1, 18, accuracy: 2)
-        XCTAssertNotEqual(slight?.date, cabEnd)
-
-        let reached = PathScrub.scrub(
-            x: 10,
-            y: 400,
-            current: (flyby, flybySamples),
+        let reached = PathScrub.drag(
+            anchorDate: start,
+            translationX: 10,
+            translationY: 400,
+            fingerX: 10,
+            fingerY: 400,
+            current: (flyby, straight),
             others: [(cab, cabSamples)]
         )
         XCTAssertEqual(reached?.span, cab)
         XCTAssertEqual(reached?.date.timeIntervalSince(cabStart) ?? -1, 250, accuracy: 2)
         XCTAssertNotEqual(reached?.date, cabEnd)
 
+        let gap = start.addingTimeInterval(860)
         let clip = PathSpan(start: start.addingTimeInterval(30), end: start.addingTimeInterval(400))
-        let snapped = PathScrub.snap(start, recordings: [clip], span: flyby)
-        XCTAssertEqual(snapped, clip.start)
+        let snapped = PathScrub.snap(gap, recordings: [clip], span: flyby)
+        XCTAssertEqual(snapped, clip.end.addingTimeInterval(-0.05))
         XCTAssertNotEqual(snapped, end)
+        XCTAssertNotEqual(snapped, gap)
+        let inside = start.addingTimeInterval(54)
+        XCTAssertEqual(PathScrub.snap(inside, recordings: [clip], span: flyby), inside)
         XCTAssertNil(PathScrub.snap(start, recordings: [], span: flyby))
     }
 }

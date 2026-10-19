@@ -97,6 +97,7 @@ struct MoonGlobeView: View {
                 .accessibilityIdentifier("orion-path")
                 .accessibilityLabel(accessibilityText(samples: samples, radiusKm: document.radiusKm))
                 caption(samples: samples, radiusKm: document.radiusKm)
+                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("globe-caption")
             } else {
                 Text("The Horizons path was not copied into the app.")
@@ -163,8 +164,9 @@ struct MoonGlobeView: View {
     }
 }
 
+@MainActor
 final class GlobeLabels: ObservableObject {
-    struct Site: Equatable, Identifiable {
+    struct Site: Equatable, Identifiable, Sendable {
         var id: String
         var title: String
         var anchor: CGPoint
@@ -254,6 +256,7 @@ private struct GlobeScene: UIViewRepresentable {
         context.coordinator.spans = spans
         context.coordinator.currentSpan = currentSpan
         context.coordinator.labels = labels
+        context.coordinator.clock = utc
         return view
     }
 
@@ -268,6 +271,7 @@ private struct GlobeScene: UIViewRepresentable {
         context.coordinator.spans = spans
         context.coordinator.currentSpan = currentSpan
         context.coordinator.labels = labels
+        context.coordinator.clock = utc
         guard let now = view.scene?.rootNode.childNode(withName: "now", recursively: true),
               let position = FlybyPath.position(at: utc, samples: samples) else {
             context.coordinator.refreshLabels(in: view)
@@ -514,6 +518,8 @@ extension GlobeScene {
         weak var view: SCNView?
         weak var labels: GlobeLabels?
         private var scrubbing = false
+        private var gestureAnchor: (x: CGFloat, y: CGFloat, date: Date)?
+        var clock = Date(timeIntervalSinceReferenceDate: 0)
 
         init(
             onScrubBegan: @escaping () -> Void,
@@ -533,15 +539,15 @@ extension GlobeScene {
             switch gesture.state {
             case .began:
                 scrubbing = true
+                gestureAnchor = (point.x, point.y, clock)
                 onScrubBegan()
-                if let date = nearestPlayable(to: point, in: view) {
-                    onScrub(date)
-                }
             case .changed:
-                if let date = nearestPlayable(to: point, in: view) {
+                guard let gestureAnchor else { return }
+                if let date = draggedDate(to: point, from: gestureAnchor, in: view) {
                     onScrub(date)
                 }
             case .ended, .cancelled, .failed:
+                gestureAnchor = nil
                 if scrubbing {
                     scrubbing = false
                     onScrubEnded()
@@ -558,7 +564,9 @@ extension GlobeScene {
                 onPin(milestone)
                 return
             }
-            if let date = nearestPlayable(to: point, in: view) {
+            let ship = shipPoint(in: view) ?? point
+            let anchor = (x: ship.x, y: ship.y, date: clock)
+            if let date = draggedDate(to: point, from: anchor, in: view) {
                 onScrubBegan()
                 onScrub(date)
                 onScrubEnded()
@@ -630,8 +638,12 @@ extension GlobeScene {
                     visible: visible
                 ))
             }
-            if next != labels.sites {
-                labels.sites = next
+            guard next != labels.sites else { return }
+            // updateUIView runs inside the SwiftUI update. Publishing here warns in every UI test.
+            let published = labels
+            Task { @MainActor in
+                guard published.sites != next else { return }
+                published.sites = next
             }
         }
 
@@ -639,7 +651,35 @@ extension GlobeScene {
             CGPoint(x: (point.x * 2).rounded() / 2, y: (point.y * 2).rounded() / 2)
         }
 
-        private func nearestPlayable(to point: CGPoint, in view: SCNView) -> Date? {
+        private func shipPoint(in view: SCNView) -> CGPoint? {
+            let grouped = screenSamples(in: view)
+            let current = currentSpan ?? spans.first
+            guard let current, let samples = grouped[current], samples.count >= 2 else { return nil }
+            let date = clock
+            if date <= samples[0].date {
+                return CGPoint(x: CGFloat(samples[0].x), y: CGFloat(samples[0].y))
+            }
+            for index in 1..<samples.count {
+                let start = samples[index - 1]
+                let end = samples[index]
+                if date <= end.date {
+                    let span = end.date.timeIntervalSince(start.date)
+                    let portion = span > 0 ? date.timeIntervalSince(start.date) / span : 0
+                    return CGPoint(
+                        x: CGFloat(start.x + (end.x - start.x) * portion),
+                        y: CGFloat(start.y + (end.y - start.y) * portion)
+                    )
+                }
+            }
+            let last = samples[samples.count - 1]
+            return CGPoint(x: CGFloat(last.x), y: CGFloat(last.y))
+        }
+
+        private func draggedDate(
+            to point: CGPoint,
+            from anchor: (x: CGFloat, y: CGFloat, date: Date),
+            in view: SCNView
+        ) -> Date? {
             let grouped = screenSamples(in: view)
             let current = currentSpan ?? spans.first
             guard let current, let samples = grouped[current] else { return nil }
@@ -647,9 +687,12 @@ extension GlobeScene {
                 guard span != current, let rows = grouped[span] else { return nil }
                 return (span, rows)
             }
-            return PathScrub.scrub(
-                x: point.x,
-                y: point.y,
+            return PathScrub.drag(
+                anchorDate: anchor.date,
+                translationX: point.x - anchor.x,
+                translationY: point.y - anchor.y,
+                fingerX: point.x,
+                fingerY: point.y,
                 current: (current, samples),
                 others: others
             )?.date

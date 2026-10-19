@@ -311,20 +311,22 @@ final class MilestonesTests: XCTestCase {
         let cabTime = cab.start.addingTimeInterval(45)
         model.scrubPath(to: cabTime)
         XCTAssertEqual(model.range, .cab)
-        XCTAssertGreaterThan(model.utc, cab.start)
+        XCTAssertEqual(model.utc.timeIntervalSince(cabTime), 0, accuracy: 0.5)
         XCTAssertLessThan(model.utc, cab.end)
-        XCTAssertNotNil(model.segment(at: model.utc))
         XCTAssertTrue(model.playing)
         XCTAssertNotEqual(model.utc, span.end)
         XCTAssertNotEqual(model.utc, cab.end)
 
-        let held = model.utc
         model.scrubPath(to: span.start.addingTimeInterval(-3600))
-        XCTAssertEqual(model.utc, held)
-        XCTAssertNotEqual(held, cabTime)
+        XCTAssertEqual(model.utc.timeIntervalSince(cabTime), 0, accuracy: 0.5)
 
         model.endPathScrub()
         XCTAssertFalse(model.scrubbing)
+        XCTAssertNotNil(model.segment(at: model.utc))
+        XCTAssertGreaterThan(model.utc, cab.start)
+        XCTAssertLessThan(model.utc, cab.end)
+        XCTAssertNotEqual(model.utc, cab.end)
+        XCTAssertNotEqual(model.utc, span.end)
         if !model.engineFailed {
             XCTAssertTrue(model.playing)
         }

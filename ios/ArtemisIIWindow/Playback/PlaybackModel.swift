@@ -432,7 +432,6 @@ final class PlaybackModel: NSObject, ObservableObject {
     func scrubPath(to date: Date) {
         guard let timeline else { return }
         guard let span = spanContaining(date, timeline: timeline) else { return }
-        guard let landed = recordedDate(near: date, in: span, timeline: timeline) else { return }
         if !scrubbing {
             beginScrub()
         }
@@ -441,17 +440,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             currentFile = nil
             audioFile = nil
         }
-        if segment(at: landed) == nil,
-           let track = timeline.segments.first(where: { landed >= $0.start && landed < $0.end })?.track,
-           track != trackID {
-            trackID = track
-            if let member = timeline.crew.first(where: { $0.track == track }) {
-                crewID = member.id
-            }
-            currentFile = nil
-            audioFile = nil
-        }
-        utc = landed
+        utc = MissionClock.clamp(date, to: span)
     }
 
     /// A time inside a real recording in this span. Silent gaps are not a place to land.
@@ -462,7 +451,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard !clips.isEmpty else { return nil }
         let preferred = clips.filter { $0.track == trackID }
         let pool = preferred.isEmpty ? clips : preferred
-        if let hit = pool.first(where: { date >= $0.start && date < $0.end }) {
+        if pool.contains(where: { date >= $0.start && date < $0.end }) {
             return date
         }
         var best: (date: Date, distance: TimeInterval)?
@@ -480,6 +469,20 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func endPathScrub() {
+        guard scrubbing else { return }
+        if let timeline, let span = activeSpan, let landed = recordedDate(near: utc, in: span, timeline: timeline) {
+            if segment(at: landed) == nil,
+               let track = timeline.segments.first(where: { landed >= $0.start && landed < $0.end })?.track,
+               track != trackID {
+                trackID = track
+                if let member = timeline.crew.first(where: { $0.track == track }) {
+                    crewID = member.id
+                }
+                currentFile = nil
+                audioFile = nil
+            }
+            utc = landed
+        }
         endScrub()
     }
 

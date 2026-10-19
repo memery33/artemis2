@@ -224,42 +224,138 @@ struct PathScrubChoice: Equatable, Sendable {
 enum PathScrub {
     /// The finger has to be this close, in points, to a different bright segment before the clock leaves the current span.
     static let reach: Double = 24
+    /// A bright arc drawn shorter than this still takes this many points of finger travel to cross.
+    static let floorLength: Double = 160
 
     static func contains(_ date: Date, spans: [PathSpan]) -> Bool {
         spans.contains { date >= $0.start && date <= $0.end }
     }
 
-    /// Maps the finger along the current bright segment.
-    /// Another span is used only when the finger is actually on that segment and closer to it.
-    static func scrub(
-        x: Double,
-        y: Double,
+    /// Moves the clock by the finger's travel along the current bright segment, starting from `anchorDate`.
+    /// The whole segment's on-screen length maps to that span. A later fold that happens to sit near the finger cannot skip ahead of the drag.
+    /// Another span is used only when the finger is actually on that segment.
+    static func drag(
+        anchorDate: Date,
+        translationX: Double,
+        translationY: Double,
+        fingerX: Double,
+        fingerY: Double,
         current: (span: PathSpan, samples: [PathScreenSample]),
         others: [(span: PathSpan, samples: [PathScreenSample])]
     ) -> PathScrubChoice? {
-        guard let here = project(x: x, y: y, samples: current.samples) else { return nil }
-        let reached = others.compactMap { other -> (span: PathSpan, hit: Projection)? in
-            guard let hit = project(x: x, y: y, samples: other.samples) else { return nil }
-            guard hit.distance <= reach, hit.distance + 1 < here.distance else { return nil }
-            return (other.span, hit)
-        }.min { $0.hit.distance < $1.hit.distance }
-        if let reached {
-            return PathScrubChoice(date: reached.hit.date, span: reached.span)
+        if let reached = reachedSpan(
+            fingerX: fingerX,
+            fingerY: fingerY,
+            current: current,
+            others: others
+        ) {
+            return reached
         }
-        return PathScrubChoice(date: here.date, span: current.span)
+        guard let date = advanced(
+            anchorDate,
+            translationX: translationX,
+            translationY: translationY,
+            fingerX: fingerX,
+            fingerY: fingerY,
+            samples: current.samples,
+            span: current.span
+        ) else { return nil }
+        return PathScrubChoice(date: date, span: current.span)
+    }
+
+    /// Time change is the finger's movement along the polyline, capped by how far the finger actually traveled.
+    static func advanced(
+        _ anchor: Date,
+        translationX: Double,
+        translationY: Double,
+        fingerX: Double,
+        fingerY: Double,
+        samples: [PathScreenSample],
+        span: PathSpan
+    ) -> Date? {
+        guard samples.count >= 2 else { return nil }
+        let duration = span.end.timeIntervalSince(span.start)
+        guard duration > 0 else { return clamp(anchor, to: span) }
+        let basis = max(polylineLength(samples), floorLength)
+        guard basis > 0 else { return clamp(anchor, to: span) }
+        let travel = (translationX * translationX + translationY * translationY).squareRoot()
+        let origin = arcLength(at: anchor, samples: samples) ?? 0
+        let delta: Double
+        if let hit = project(x: fingerX, y: fingerY, samples: samples) {
+            delta = min(max(hit.arc - origin, -travel), travel)
+        } else {
+            delta = 0
+        }
+        let shifted = anchor.addingTimeInterval(delta / basis * duration)
+        return clamp(shifted, to: span)
+    }
+
+    private static func reachedSpan(
+        fingerX: Double,
+        fingerY: Double,
+        current: (span: PathSpan, samples: [PathScreenSample]),
+        others: [(span: PathSpan, samples: [PathScreenSample])]
+    ) -> PathScrubChoice? {
+        guard let here = project(x: fingerX, y: fingerY, samples: current.samples) else { return nil }
+        let reached = others.compactMap { other -> (span: PathSpan, hit: Projection, samples: [PathScreenSample])? in
+            guard let hit = project(x: fingerX, y: fingerY, samples: other.samples) else { return nil }
+            guard hit.distance <= reach, hit.distance + 1 < here.distance else { return nil }
+            return (other.span, hit, other.samples)
+        }.min { $0.hit.distance < $1.hit.distance }
+        guard let reached else { return nil }
+        let length = max(polylineLength(reached.samples), 0.001)
+        let duration = reached.span.end.timeIntervalSince(reached.span.start)
+        let fraction = min(1, max(0, reached.hit.arc / length))
+        return PathScrubChoice(
+            date: reached.span.start.addingTimeInterval(duration * fraction),
+            span: reached.span
+        )
+    }
+
+    static func polylineLength(_ samples: [PathScreenSample]) -> Double {
+        guard samples.count >= 2 else { return 0 }
+        var length = 0.0
+        for index in 1..<samples.count {
+            let dx = samples[index].x - samples[index - 1].x
+            let dy = samples[index].y - samples[index - 1].y
+            length += (dx * dx + dy * dy).squareRoot()
+        }
+        return length
+    }
+
+    static func arcLength(at date: Date, samples: [PathScreenSample]) -> Double? {
+        guard let first = samples.first, samples.count >= 2 else { return nil }
+        if date <= first.date { return 0 }
+        var traveled = 0.0
+        for index in 1..<samples.count {
+            let start = samples[index - 1]
+            let end = samples[index]
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            let segment = (dx * dx + dy * dy).squareRoot()
+            if date <= end.date {
+                let span = end.date.timeIntervalSince(start.date)
+                let portion = span > 0 ? min(1, max(0, date.timeIntervalSince(start.date) / span)) : 0
+                return traveled + segment * portion
+            }
+            traveled += segment
+        }
+        return traveled
     }
 
     /// Closest point on the polyline. The date is interpolated along that segment, not snapped to a distant vertex.
     static func project(x: Double, y: Double, samples: [PathScreenSample]) -> Projection? {
         guard samples.count >= 2 else { return nil }
-        var best = Projection(date: samples[0].date, distance: .greatestFiniteMagnitude)
+        var best = Projection(date: samples[0].date, distance: .greatestFiniteMagnitude, arc: 0)
         var found = false
+        var traveled = 0.0
         for index in 1..<samples.count {
             let start = samples[index - 1]
             let end = samples[index]
             let dx = end.x - start.x
             let dy = end.y - start.y
             let lengthSquared = dx * dx + dy * dy
+            let segment = lengthSquared.squareRoot()
             let t: Double
             if lengthSquared > 0 {
                 t = min(1, max(0, ((x - start.x) * dx + (y - start.y) * dy) / lengthSquared))
@@ -273,10 +369,12 @@ enum PathScrub {
                 let interval = end.date.timeIntervalSince(start.date)
                 best = Projection(
                     date: start.date.addingTimeInterval(interval * t),
-                    distance: distance
+                    distance: distance,
+                    arc: traveled + segment * t
                 )
                 found = true
             }
+            traveled += segment
         }
         return found ? best : nil
     }
@@ -284,6 +382,13 @@ enum PathScrub {
     struct Projection: Equatable, Sendable {
         var date: Date
         var distance: Double
+        var arc: Double
+    }
+
+    private static func clamp(_ date: Date, to span: PathSpan) -> Date {
+        if date < span.start { return span.start }
+        if date > span.end { return span.end }
+        return date
     }
 
     /// Pulls a silent instant onto the nearest recording inside the same span.
@@ -296,7 +401,7 @@ enum PathScrub {
             return PathSpan(start: start, end: end)
         }
         guard !clips.isEmpty else { return nil }
-        if let hit = clips.first(where: { date >= $0.start && date < $0.end }) {
+        if clips.contains(where: { date >= $0.start && date < $0.end }) {
             return date
         }
         var best: (date: Date, distance: TimeInterval)?

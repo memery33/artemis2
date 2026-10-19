@@ -193,7 +193,11 @@ struct StageView: View {
     /// does not seek, pause, or rebuild the player.
     private func applyFrameTier() {
         let phone = LayoutChoice.readsPhoneFrames(mode)
-        if model.phoneImages != phone {
+        let model = model
+        guard model.phoneImages != phone else { return }
+        // The size preference can change mode during the view update. Publish on the next turn.
+        Task { @MainActor in
+            guard model.phoneImages != phone else { return }
             model.phoneImages = phone
         }
     }
