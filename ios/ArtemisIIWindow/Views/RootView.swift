@@ -35,12 +35,9 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
+                // Backgrounding never ends the Live Activity. setSceneActive pushes
+                // the current state, including a pause, before the scene suspends.
                 model.setSceneActive(false)
-                // Keep the Live Activity while audio is playing in the background.
-                // End it only when the scene backgrounds with playback already paused.
-                if !model.playing {
-                    FlybyLiveActivity.scheduleEndAllImmediately()
-                }
             } else if phase == .active {
                 RuntimeHost.noteSceneBecameActive()
                 model.setSceneActive(true)
@@ -351,7 +348,7 @@ struct PhoneColumn: View {
             FrameCaption(side: model.window)
             StatusLines()
             CabinCard(height: 96)
-            CompanionPane()
+            // The other-window thumbnail lives in the fold's narrow column. Here it would span the phone.
             ExhibitCards()
             TargetMap()
                 .frame(height: 180)

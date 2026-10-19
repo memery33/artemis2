@@ -64,11 +64,9 @@ final class PlaybackModel: NSObject, ObservableObject {
     private lazy var player = AVAudioPlayerNode()
     private lazy var environment = AVAudioEnvironmentNode()
     private var audioFile: AVAudioFile?
-    /// The file the clock is following. Tests set this to finish a clip without the audio graph.
-    var currentFile: String?
+    private var currentFile: String?
     private var scheduledStart: TimeInterval = 0
-    /// Sample offset inside `currentFile`. Tests advance it onto the span end.
-    var holdSeconds: TimeInterval = 0
+    private var holdSeconds: TimeInterval = 0
     /// Silent wait before a future-scheduled file. The node counts it as play time.
     private var scheduledLead: TimeInterval = 0
     /// Host time when that future-scheduled file should become audible.
@@ -636,11 +634,10 @@ final class PlaybackModel: NSObject, ObservableObject {
             if playing {
                 chainForward(from: utc)
             }
-            // The display link will not tick in the background. Push the current UTC string once.
-            // The lock screen shows that static text and replaces it on the next playback event.
-            if playing {
-                refreshNowPlaying(force: true)
-            }
+            // The display link will not tick in the background. Push the current state
+            // once, including a pause, so the lock screen shows "Paused" before suspension.
+            // Backgrounding itself does not end the activity.
+            refreshNowPlaying(force: true)
         }
     }
 
@@ -867,9 +864,21 @@ final class PlaybackModel: NSObject, ObservableObject {
         )
     }
 
+    /// Test seam for the private clip-finished path. The audio graph stays unused.
+    func finishCurrentClipForTest(file: String, renderedSeconds: TimeInterval) {
+        currentFile = file
+        holdSeconds = renderedSeconds
+        segmentDidFinish()
+    }
+
+    /// Test seam for one private display-link step. No `CADisplayLink` is installed.
+    func advanceDisplayLinkForTest(to timestamp: CFTimeInterval) {
+        tickOnMain(timestamp)
+    }
+
     /// The scheduled file reached its end. The display link is paused in the
     /// background, so the next real file has to be armed here.
-    func segmentDidFinish() {
+    private func segmentDidFinish() {
         guard playing, !rebuilding, !engineFailed else { return }
         // The armed file has ended. Clear the pre-roll mark so the next file can chain
         // even though the display link never ran to clear it.
@@ -1032,7 +1041,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
     }
 
-    func tickOnMain(_ timestamp: CFTimeInterval) {
+    private func tickOnMain(_ timestamp: CFTimeInterval) {
         guard !rebuilding, !scrubbing else { return }
         let now = timestamp
         let rawDelta = lastWall.map { max(0, now - $0) } ?? 0

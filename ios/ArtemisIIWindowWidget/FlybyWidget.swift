@@ -17,6 +17,7 @@ struct FlybyLiveActivityWidget: Widget {
             VStack(alignment: .leading, spacing: 6) {
                 Text(context.attributes.title)
                     .font(.headline)
+                PausedMarker(playing: context.state.playing, font: .caption.weight(.semibold))
                 ProgressView(value: context.state.progress)
                     .accessibilityLabel("Flyby progress")
                 Text(context.state.nextMilestone)
@@ -39,6 +40,7 @@ struct FlybyLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading) {
+                        PausedMarker(playing: context.state.playing, font: .caption.weight(.semibold))
                         ProgressView(value: context.state.progress)
                         Text(context.state.nextMilestone)
                             .font(.caption)
@@ -47,12 +49,30 @@ struct FlybyLiveActivityWidget: Widget {
             } compactLeading: {
                 MissionClockText(state: context.state, font: .caption2)
             } compactTrailing: {
-                Text(context.state.speaker)
-                    .font(.caption2)
+                if let paused = FlybyActivityAttributes.pausedLabel(playing: context.state.playing) {
+                    Text(paused)
+                        .font(.caption2.weight(.semibold))
+                } else {
+                    Text(context.state.speaker)
+                        .font(.caption2)
+                }
             } minimal: {
                 Text(String(context.state.speaker.prefix(1)))
                     .font(.caption2)
             }
+        }
+    }
+}
+
+/// "Paused" on the Lock Screen and in the Dynamic Island while `playing` is false.
+private struct PausedMarker: View {
+    var playing: Bool
+    var font: Font
+
+    var body: some View {
+        if let label = FlybyActivityAttributes.pausedLabel(playing: playing) {
+            Text(label)
+                .font(font)
         }
     }
 }
