@@ -86,6 +86,14 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var lastInfoSecond = Int.min
     private var lastInfoPlaying = false
     private var lastArtID = ""
+    /// Seek and crew or span switches. Consumed by the next activity push.
+    private var activityEvent = false
+    private var lastActivityPush = Date.distantPast
+    private var lastActivitySpeaker = ""
+    private var lastActivityPlaying: Bool?
+    private var lastActivityEnded = false
+    private var lastActivityWasMissing = false
+    private static let activityPushInterval: TimeInterval = 15
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private var unavailableFiles = Set<String>()
     nonisolated private let lifetime = PlaybackLifetime()
@@ -262,7 +270,6 @@ final class PlaybackModel: NSObject, ObservableObject {
         if user {
             resumeAfterInterrupt = false
         }
-        FlybyLiveActivity.scheduleEndAllImmediately()
         refreshNowPlaying(force: true)
     }
 
@@ -340,6 +347,7 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     func seek(to date: Date, markEnd: Bool = true) {
         guard let span = activeSpan else { return }
+        activityEvent = true
         utc = MissionClock.clamp(date, to: span)
         let atEnd = markEnd && utc >= span.end
         ended = atEnd
@@ -349,7 +357,6 @@ final class PlaybackModel: NSObject, ObservableObject {
         if atEnd {
             playing = false
             stopPlayer()
-            FlybyLiveActivity.scheduleEndAllImmediately()
             refreshNowPlaying(force: true)
             return
         }
@@ -737,6 +744,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         holdUntil = nil
         stopPlayer()
         if playing { followSegment() }
+        activityEvent = true
         refreshNowPlaying(force: true)
     }
 
@@ -1343,15 +1351,17 @@ final class PlaybackModel: NSObject, ObservableObject {
         let elapsed = max(0, utc.timeIntervalSince(span.start))
         let second = Int(elapsed.rounded(.down))
         let artID = artworkID()
-        // A dismissal can remove the activity without moving the clock. The same second
-        // still has to request a new one, or the lock screen stays blank until the next seek.
+        // A dismissal can remove the activity without moving the clock. Notice it once,
+        // then let the 15s cadence retry, so a failed request does not push every frame.
         let activityMissing = playing && !FlybyLiveActivity.isRunning
-        if !force, second == lastInfoSecond, playing == lastInfoPlaying, artID == lastArtID, !activityMissing {
+        let becameMissing = activityMissing && !lastActivityWasMissing
+        if !force, second == lastInfoSecond, playing == lastInfoPlaying, artID == lastArtID, !becameMissing {
             return
         }
         lastInfoSecond = second
         lastInfoPlaying = playing
         lastArtID = artID
+        lastActivityWasMissing = activityMissing
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: span.label,
             MPMediaItemPropertyArtist: "NASA/Artemis II Crew",
@@ -1367,6 +1377,19 @@ final class PlaybackModel: NSObject, ObservableObject {
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
         let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID
+        let spanEnded = utc >= span.end
+        let requested = activityEvent
+        activityEvent = false
+        let playbackChanged = lastActivityPlaying != playing
+        let speakerChanged = speaker != lastActivitySpeaker
+        let endedChanged = spanEnded != lastActivityEnded
+        let due = playing && Date().timeIntervalSince(lastActivityPush) >= Self.activityPushInterval
+        guard requested || becameMissing || playbackChanged || speakerChanged || endedChanged || due else { return }
+        lastActivityPush = Date()
+        lastActivitySpeaker = speaker
+        lastActivityPlaying = playing
+        lastActivityEnded = spanEnded
+        let rate = playing ? 1.0 : 0.0
         FlybyLiveActivity.sync(
             arrived: arrived,
             playing: playing,
@@ -1374,7 +1397,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             nextMilestone: FlybyActivityCopy.nextLabel(after: utc, milestones: milestones),
             speaker: speaker,
             clock: FlybyActivityCopy.lockScreenClock(utc),
-            staleDate: FlybyActivityCopy.staleDate(spanEnd: span.end)
+            staleDate: FlybyActivityCopy.staleDate(playing: playing, utc: utc, spanEnd: span.end, rate: rate)
         )
     }
 

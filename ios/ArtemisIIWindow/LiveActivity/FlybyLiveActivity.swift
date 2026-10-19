@@ -10,9 +10,13 @@ enum FlybyActivityCopy {
         milestones.first { $0.date > date }?.label ?? "End of this span"
     }
 
-    /// The activity goes stale one minute after the mission span ends. Passed on every request and update.
-    static func staleDate(spanEnd: Date) -> Date {
-        spanEnd.addingTimeInterval(60)
+    /// Wall-clock stale date. The mission span is April 2026, so a stale date of `spanEnd + 60s` is already past and SpringBoard drops the activity.
+    /// While playing, the activity stays fresh for the remaining mission time at `rate`, plus one minute. While paused, it stays fresh for 15 minutes.
+    static func staleDate(now: Date = Date(), playing: Bool, utc: Date, spanEnd: Date, rate: Double) -> Date {
+        guard playing else { return now.addingTimeInterval(15 * 60) }
+        let speed = rate > 0 ? rate : 1
+        let remaining = max(0, spanEnd.timeIntervalSince(utc) / speed)
+        return now.addingTimeInterval(remaining + 60)
     }
 
     @MainActor
@@ -124,12 +128,13 @@ enum FlybyLiveActivity {
                 clock: clock,
                 playing: playing
             )
-            guard RuntimeHost.allowsPlaybackServices(), arrived, playing else {
+            guard RuntimeHost.allowsPlaybackServices(), arrived else {
                 let ids = client.identifiers()
                 await client.end(identifiers: ids)
                 return
             }
             if client.identifiers().isEmpty {
+                guard playing else { return }
                 await client.request(state, staleDate: staleDate)
                 return
             }
