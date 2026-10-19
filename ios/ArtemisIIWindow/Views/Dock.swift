@@ -256,7 +256,7 @@ struct AboutView: View {
                         .font(.footnote)
                     Text("Exhibit cards quote the Focus column of NASA’s Guide to the Artemis II Lunar Targeting Plan for Aristarchus Plateau, Reiner Gamma, and Orientale Basin. The pictures are the real frames already labeled with those targets.")
                         .font(.footnote)
-                    Text("Orion’s path is a JPL Horizons geometric state table: target Artemis II (spacecraft) -1024, center Moon (301) body center, MEAN_ME body equator, east-longitude positive, one-minute steps from 2026-04-06 18:00 UT through 2026-04-07 02:00 UT. Closest approach is the minimum of that table, not a typed-in time. Surface labels use the USGS Gazetteer of Planetary Nomenclature: Aristarchus, Reiner Gamma, and Mare Orientale.")
+                    Text("Orion’s path is a JPL Horizons observer table: Moon (301) from Artemis II (spacecraft) -1024 body center, sub-observer east longitude and latitude in the IAU MOON_ME body-fixed frame, plus range, one-minute steps from 2026-04-06 18:00 UT through 2026-04-07 02:00 UT. MOON_ME +X is the 0° east meridian, not the body-equator node. Closest approach is the minimum of that table, not a typed-in time. Surface labels use the USGS Gazetteer of Planetary Nomenclature: Aristarchus, Reiner Gamma, and Mare Orientale.")
                         .font(.footnote)
                     if let licenses = model.timeline?.licenses {
                         ForEach(licenses) { license in

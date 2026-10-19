@@ -6,8 +6,8 @@ struct ArtemisIIWindowApp: App {
 
     init() {
         // A Live Activity from the previous process keeps the widget and chronod alive.
-        // End it before the player, the audio session, or anything else starts.
-        FlybyLiveActivity.endAllImmediately()
+        // Register the dismissal before the player exists. sync is queued behind it and cannot request until the dismissal finishes.
+        FlybyLiveActivity.scheduleEndAllImmediately()
         _model = StateObject(wrappedValue: PlaybackModel())
     }
 

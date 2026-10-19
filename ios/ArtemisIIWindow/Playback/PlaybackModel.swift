@@ -246,7 +246,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if user {
             resumeAfterInterrupt = false
         }
-        FlybyLiveActivity.endAllImmediately()
+        FlybyLiveActivity.scheduleEndAllImmediately()
         refreshNowPlaying(force: true)
     }
 
@@ -333,7 +333,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if atEnd {
             playing = false
             stopPlayer()
-            FlybyLiveActivity.endAllImmediately()
+            FlybyLiveActivity.scheduleEndAllImmediately()
             refreshNowPlaying(force: true)
             return
         }
@@ -681,7 +681,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         holdUntil = nil
         engineFailed = true
         stopPlayer()
-        FlybyLiveActivity.endAllImmediately()
+        FlybyLiveActivity.scheduleEndAllImmediately()
         refreshNowPlaying(force: true)
     }
 
@@ -854,6 +854,13 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard let next = upcomingSegment(after: time) else {
             if lifetime.displayLink?.isPaused == true {
                 pause(user: false)
+                // The display link is not running, so it cannot advance `utc` onto the span end.
+                // Park there and raise the end card before the scene returns.
+                if let end = activeSpan?.end {
+                    utc = end
+                    ended = true
+                    refreshNowPlaying(force: true)
+                }
             }
             return
         }
@@ -1332,7 +1339,8 @@ final class PlaybackModel: NSObject, ObservableObject {
             progress: FlybyActivityCopy.progress(elapsed: elapsed, duration: duration),
             nextMilestone: FlybyActivityCopy.nextLabel(after: utc, milestones: milestones),
             speaker: speaker,
-            clock: FlybyActivityCopy.clock(utc)
+            clock: FlybyActivityCopy.clock(utc),
+            staleDate: span.end
         )
     }
 

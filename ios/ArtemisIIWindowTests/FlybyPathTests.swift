@@ -13,11 +13,61 @@ final class FlybyPathTests: XCTestCase {
     }
 
     func testBundledHorizonsTableCoversTheFlyby() {
-        XCTAssertEqual(document.frame, "MEAN_ME")
+        XCTAssertEqual(document.frame, "MOON_ME")
+        XCTAssertTrue(document.query.contains("COMMAND=301"))
+        XCTAssertTrue(document.query.contains("CENTER=500@-1024"))
+        XCTAssertTrue(document.query.contains("QUANTITIES=14,20"))
+        XCTAssertFalse(document.query.contains("REF_PLANE=BODY EQUATOR"))
         XCTAssertEqual(document.radiusKm, 1737.4)
         XCTAssertGreaterThan(samples.count, 400)
         XCTAssertEqual(document.samples.first?.t, "2026-04-06T18:00:00Z")
         XCTAssertEqual(document.samples.last?.t, "2026-04-07T02:00:00Z")
+    }
+
+    /// Sub-observer longitude in the IAU MOON_ME frame. Horizons prints 253.09°E
+    /// (−106.9°) at 19:40 UT and 179.49° at closest approach.
+    func testBodyFixedLongitudeMatchesTheSubObserverPoint() throws {
+        let target = Self.utc("2026-04-06T19:40:00Z")
+        let at1940 = try XCTUnwrap(samples.min {
+            abs($0.date.timeIntervalSince(target)) < abs($1.date.timeIntervalSince(target))
+        })
+        XCTAssertEqual(at1940.date.timeIntervalSince(target), 0, accuracy: 1)
+        XCTAssertEqual(Self.longitudeEast(at1940), -106.9, accuracy: 1)
+        let approach = try XCTUnwrap(FlybyPath.closestApproach(samples, radiusKm: document.radiusKm))
+        let placed = try XCTUnwrap(FlybyPath.position(at: approach.date, samples: samples))
+        XCTAssertEqual(Self.degreesFrom180(Self.longitudeEast(x: placed.x, y: placed.y)), 0, accuracy: 1)
+    }
+
+    func testClosestApproachUsesTheSampleSpacing() throws {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let rows = [
+            PathSample(date: start, x: 0, y: 0, z: 0, rangeKm: 10),
+            PathSample(date: start.addingTimeInterval(120), x: 0, y: 0, z: 0, rangeKm: 8),
+            PathSample(date: start.addingTimeInterval(240), x: 0, y: 0, z: 0, rangeKm: 9)
+        ]
+        let approach = try XCTUnwrap(FlybyPath.closestApproach(rows, radiusKm: 1))
+        // Vertex is 1/6 of a sample past the middle. The file step is 120 s, not 60.
+        XCTAssertEqual(approach.date.timeIntervalSince(start), 140, accuracy: 0.01)
+    }
+
+    private static func utc(_ text: String) -> Date {
+        let clock = ISO8601DateFormatter()
+        clock.formatOptions = [.withInternetDateTime]
+        return clock.date(from: text) ?? Date(timeIntervalSinceReferenceDate: 0)
+    }
+
+    private static func longitudeEast(_ sample: PathSample) -> Double {
+        longitudeEast(x: sample.x, y: sample.y)
+    }
+
+    private static func longitudeEast(x: Double, y: Double) -> Double {
+        atan2(y, x) * 180 / .pi
+    }
+
+    /// 0 when `longitude` is on the 180° meridian, either sign.
+    private static func degreesFrom180(_ longitude: Double) -> Double {
+        let wrapped = abs(longitude).truncatingRemainder(dividingBy: 360)
+        return abs(180 - wrapped)
     }
 
     func testPathFractionRoundTripsToTheSameTime() {

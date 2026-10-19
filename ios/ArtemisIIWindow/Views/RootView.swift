@@ -35,8 +35,10 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
                 model.setSceneActive(false)
+                // Keep the Live Activity while audio is playing in the background.
+                // End it only when the scene backgrounds with playback already paused.
                 if !model.playing {
-                    FlybyLiveActivity.endAllImmediately()
+                    FlybyLiveActivity.scheduleEndAllImmediately()
                 }
             } else if phase == .active {
                 RuntimeHost.noteSceneBecameActive()

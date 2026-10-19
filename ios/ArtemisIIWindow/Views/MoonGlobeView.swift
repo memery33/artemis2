@@ -62,7 +62,7 @@ struct MoonGlobeView: View {
             Color.black
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("orion-path")
-            Text("Orion’s path from JPL Horizons, Moon center, MEAN_ME. Drag the bright path to move the clock.")
+            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. Drag the bright path to move the clock.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.72))
                 .accessibilityIdentifier("globe-caption")
@@ -129,7 +129,7 @@ struct MoonGlobeView: View {
 
     private func caption(samples: [PathSample], radiusKm: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Orion’s path from JPL Horizons, Moon center, MEAN_ME. Drag the bright path to move the clock.")
+            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. Drag the bright path to move the clock.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
@@ -298,9 +298,12 @@ private struct GlobeScene: UIViewRepresentable {
         moon.materials = [material]
         let moonNode = SCNNode(geometry: moon)
         moonNode.name = "moon"
-        // The SVS map is centered on 0° longitude. SceneKit shows the image
-        // center toward +Z, so yaw it onto the MEAN_ME prime meridian (+X).
-        moonNode.eulerAngles.y = -.pi / 2
+        // The SVS map is centered on 0° longitude, east to the right, north up.
+        // SceneKit shows that image center toward +Z. A +90° yaw about Y carries
+        // +Z onto +X, the IAU MOON_ME prime meridian (0° east). The same yaw
+        // carries image east from +X onto -Z, and GlobeMapping puts MOON_ME
+        // +Y (90° east) on SceneKit -Z. A -90° yaw would put 0° on -X (180°).
+        moonNode.eulerAngles.y = .pi / 2
         scene.rootNode.addChildNode(moonNode)
 
         let glow = SCNSphere(radius: 1.045)
@@ -498,7 +501,7 @@ private struct SplitMix {
 }
 
 private enum GlobeMapping {
-    /// MEAN_ME (x, y east, z north) into SceneKit Y-up.
+    /// IAU MOON_ME body-fixed (x at 0° east, y toward 90° east, z north) into SceneKit Y-up.
     static func scene(_ me: (x: Double, y: Double, z: Double), radiusKm: Double) -> SCNVector3 {
         let scale = 1 / radiusKm
         return SCNVector3(Float(me.x * scale), Float(me.z * scale), Float(-me.y * scale))

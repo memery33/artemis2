@@ -50,6 +50,7 @@ enum FlybyEphemeris {
         return try? JSONDecoder().decode(FlybyDocument.self, from: data)
     }
 
+    /// Rows are already IAU MOON_ME body-fixed coordinates (sub-observer longitude, latitude, and range).
     static func samples(in document: FlybyDocument) -> [PathSample] {
         document.samples.compactMap { row in
             guard let date = try? ISO8601.parse(row.t) else { return nil }
@@ -162,7 +163,8 @@ enum FlybyPath {
             vertex = 0
         }
         let range = curvature * vertex * vertex + slope * vertex + middle
-        let date = sample.date.addingTimeInterval(vertex * 60)
+        let step = samples[index + 1].date.timeIntervalSince(samples[index - 1].date) / 2
+        let date = sample.date.addingTimeInterval(vertex * step)
         return ClosestApproach(
             date: date,
             rangeKm: range,
@@ -423,8 +425,9 @@ enum PathScrub {
     }
 }
 
-/// IAU names placed on the MEAN_ME globe. Coordinates are planetographic,
+/// IAU names placed on the MOON_ME globe. Coordinates are planetographic,
 /// east-positive, from the USGS Gazetteer of Planetary Nomenclature.
+/// These are already body-fixed. They are not rotated by the lunar angle W.
 struct LunarSite: Equatable, Sendable, Identifiable {
     var id: String
     var label: String
@@ -464,7 +467,10 @@ enum LunarSites {
 }
 
 enum MoonFrame {
-    /// MEAN_ME axes from the Horizons header: +X at east-longitude 0, +Y toward 90° east, +Z north.
+    /// IAU MOON_ME body-fixed axes: +X at east-longitude 0 (the mean-Earth meridian),
+    /// +Y toward 90° east, +Z north. The bundled Horizons table is already in this
+    /// frame (observer sub-longitude and sub-latitude, quantity 14). It is not the
+    /// BODY EQUATOR node-of-date vector frame, whose +X is the equator node.
     static func unit(latitude: Double, longitudeEast: Double) -> (x: Double, y: Double, z: Double) {
         let lat = latitude * Double.pi / 180
         let lon = longitudeEast * Double.pi / 180
