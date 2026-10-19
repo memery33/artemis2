@@ -173,6 +173,8 @@ struct PhoneColumn: View {
             CreditLine()
             StatusLines()
             CabinCard(height: 96)
+            MoonGlobeView()
+                .frame(height: 320)
             TargetMap()
                 .frame(height: 180)
         }
@@ -200,6 +202,8 @@ struct FoldLayout: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
+                        MoonGlobeView()
+                            .frame(height: 280)
                         CompanionPane()
                         CabinCard(height: 72)
                         LiveTranscript()

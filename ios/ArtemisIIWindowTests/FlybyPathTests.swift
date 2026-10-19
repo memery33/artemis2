@@ -1,0 +1,100 @@
+import XCTest
+@testable import ArtemisIIWindow
+
+final class FlybyPathTests: XCTestCase {
+    private var document: FlybyDocument!
+    private var samples: [PathSample]!
+
+    override func setUpWithError() throws {
+        document = try XCTUnwrap(FlybyEphemeris.load())
+        samples = FlybyEphemeris.samples(in: document)
+        XCTAssertEqual(samples.count, document.samples.count)
+    }
+
+    func testBundledHorizonsTableCoversTheFlyby() {
+        XCTAssertEqual(document.frame, "MEAN_ME")
+        XCTAssertEqual(document.radiusKm, 1737.4)
+        XCTAssertGreaterThan(samples.count, 400)
+        XCTAssertEqual(document.samples.first?.t, "2026-04-06T18:00:00Z")
+        XCTAssertEqual(document.samples.last?.t, "2026-04-07T02:00:00Z")
+    }
+
+    func testPathFractionRoundTripsToTheSameTime() {
+        let lengths = FlybyPath.arcLengths(samples)
+        for fraction in stride(from: 0.0, through: 1.0, by: 0.1) {
+            let date = FlybyPath.date(atFraction: fraction, samples: samples, lengths: lengths)
+            let back = FlybyPath.fraction(at: date, samples: samples, lengths: lengths)
+            XCTAssertEqual(back, fraction, accuracy: 0.002)
+            let again = FlybyPath.date(atFraction: back, samples: samples, lengths: lengths)
+            XCTAssertEqual(again.timeIntervalSince(date), 0, accuracy: 1)
+        }
+    }
+
+    func testDraggingAlongThePathMovesTimeForward() {
+        let lengths = FlybyPath.arcLengths(samples)
+        var previous = samples[0].date
+        for step in 1...20 {
+            let date = FlybyPath.date(atFraction: Double(step) / 20, samples: samples, lengths: lengths)
+            XCTAssertGreaterThan(date, previous)
+            previous = date
+        }
+        XCTAssertEqual(FlybyPath.date(atFraction: 0, samples: samples), samples[0].date)
+        XCTAssertEqual(FlybyPath.date(atFraction: 1, samples: samples), samples[samples.count - 1].date)
+    }
+
+    func testMilestoneTimesLandOnThePath() throws {
+        let url = try XCTUnwrap(Bundle(for: FlybyPathTests.self).url(forResource: "timeline", withExtension: "json"))
+        let timeline = try Timeline(data: Data(contentsOf: url))
+        let rows = MilestoneList.derive(timeline)
+        let first = try XCTUnwrap(samples.first).date
+        let last = try XCTUnwrap(samples.last).date
+        let inside = rows.filter { $0.date >= first && $0.date <= last }
+        XCTAssertGreaterThan(inside.count, 10)
+        for milestone in inside {
+            let fraction = FlybyPath.fraction(at: milestone.date, samples: samples)
+            XCTAssertGreaterThan(fraction, 0)
+            XCTAssertLessThan(fraction, 1)
+            let back = FlybyPath.date(atFraction: fraction, samples: samples)
+            XCTAssertEqual(back.timeIntervalSince(milestone.date), 0, accuracy: 1)
+            let placed = try XCTUnwrap(FlybyPath.position(at: milestone.date, samples: samples))
+            let range = (placed.x * placed.x + placed.y * placed.y + placed.z * placed.z).squareRoot()
+            XCTAssertGreaterThan(range, document.radiusKm)
+        }
+    }
+
+    func testClosestApproachIsTheMinimumOfTheTable() throws {
+        let approach = try XCTUnwrap(FlybyPath.closestApproach(samples, radiusKm: document.radiusKm))
+        let lowest = try XCTUnwrap(samples.min { $0.rangeKm < $1.rangeKm })
+        let index = try XCTUnwrap(samples.firstIndex { $0.date == lowest.date })
+        XCTAssertGreaterThan(index, 0)
+        XCTAssertLessThan(index, samples.count - 1)
+        XCTAssertLessThan(lowest.rangeKm, samples[index - 1].rangeKm)
+        XCTAssertLessThan(lowest.rangeKm, samples[index + 1].rangeKm)
+        XCTAssertLessThanOrEqual(approach.rangeKm, lowest.rangeKm)
+        XCTAssertEqual(approach.altitudeKm, approach.rangeKm - document.radiusKm, accuracy: 0.0001)
+        XCTAssertGreaterThan(approach.altitudeKm, 0)
+        XCTAssertEqual(approach.date.timeIntervalSince(lowest.date), 0, accuracy: 60)
+        let clock = ISO8601DateFormatter()
+        clock.formatOptions = [.withInternetDateTime]
+        let text = clock.string(from: approach.date)
+        XCTAssertTrue(text.hasPrefix("2026-04-06T23:00:"))
+    }
+
+    func testGazetteerSitesSitOnTheUnitSphere() {
+        XCTAssertEqual(LunarSites.marked.map(\.label), ["Aristarchus", "Reiner Gamma", "Orientale"])
+        XCTAssertEqual(LunarSites.marked.map(\.feature), ["Aristarchus", "Reiner Gamma", "Mare Orientale"])
+        XCTAssertEqual(LunarSites.marked[0].latitude, 23.73)
+        XCTAssertEqual(LunarSites.marked[0].longitudeEast, -47.49)
+        XCTAssertEqual(LunarSites.marked[1].latitude, 7.39)
+        XCTAssertEqual(LunarSites.marked[1].longitudeEast, -58.96)
+        XCTAssertEqual(LunarSites.marked[2].latitude, -19.87)
+        XCTAssertEqual(LunarSites.marked[2].longitudeEast, -94.67)
+        for site in LunarSites.marked {
+            let point = MoonFrame.unit(latitude: site.latitude, longitudeEast: site.longitudeEast)
+            let length = (point.x * point.x + point.y * point.y + point.z * point.z).squareRoot()
+            XCTAssertEqual(length, 1, accuracy: 1e-9)
+        }
+        XCTAssertGreaterThan(MoonFrame.unit(latitude: 23.73, longitudeEast: -47.49).z, 0)
+        XCTAssertLessThan(MoonFrame.unit(latitude: -19.87, longitudeEast: -94.67).z, 0)
+    }
+}

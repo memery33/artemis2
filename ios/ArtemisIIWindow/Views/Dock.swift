@@ -112,6 +112,8 @@ struct DockBar: View {
                 rangeButton
                 aboutButton
                 CabinCard(height: 72)
+                MoonGlobeView()
+                    .frame(height: 168)
                 TargetMap()
                     .frame(height: 120)
             }
@@ -376,6 +378,10 @@ struct AboutView: View {
                             .font(.footnote)
                     }
                     Text("The app icon is a center crop of NASA ID art002e016184, a real Z9 frame from 19:33:26 UTC. It is not a new photograph.")
+                        .font(.footnote)
+                    Text("The globe uses the NASA SVS CGI Moon Kit 2025 LROC color map, file lroc_color_2k.jpg, 2048 by 1024, public domain. Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio, Lunar Reconnaissance Orbiter Camera, visualization by Ernie Wright. SVS 4720. The map is centered on 0° longitude and is an aesthetic rendering, not a photograph and not the flyby lighting.")
+                        .font(.footnote)
+                    Text("Orion’s path is a JPL Horizons geometric state table: target Artemis II (spacecraft) -1024, center Moon (301) body center, MEAN_ME body equator, east-longitude positive, one-minute steps from 2026-04-06 18:00 UT through 2026-04-07 02:00 UT. Closest approach is the minimum of that table, not a typed-in time. Surface labels use the USGS Gazetteer of Planetary Nomenclature: Aristarchus, Reiner Gamma, and Mare Orientale.")
                         .font(.footnote)
                     if let licenses = model.timeline?.licenses {
                         ForEach(licenses) { license in
