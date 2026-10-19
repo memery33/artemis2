@@ -141,6 +141,8 @@ struct PhoneLayout: View {
 /// indicator stay on the cabin. Controls sit in a side rail. Playback is
 /// the same object as portrait, so rotation does not touch the clock.
 struct LandscapeLayout: View {
+    @EnvironmentObject private var model: PlaybackModel
+
     var body: some View {
         GeometryReader { geo in
             let rail = min(156, max(128, geo.size.width * 0.18))
@@ -149,8 +151,14 @@ struct LandscapeLayout: View {
             // scroll view clip, on a 375pt phone as well as a 402pt one.
             let railHeight = max(44, geo.size.height - inset * 2)
             HStack(alignment: .top, spacing: 8) {
-                WindowPane(glassChrome: true)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Group {
+                    if model.immersed {
+                        WindowPane(glassChrome: true)
+                    } else {
+                        MoonGlobeView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 DockBar(placement: .rail)
                     .frame(width: rail, height: railHeight)
             }
@@ -168,13 +176,26 @@ struct PhoneColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ClockReadout()
-            WindowPane()
+            if model.immersed {
+                WindowPane()
+                Button("Back to the Moon") { model.surface() }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("surface-button")
+            } else {
+                MoonGlobeView()
+                    .frame(height: 320)
+                Button("Dive into the window") { model.dive() }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("dive-button")
+            }
             FrameCaption(side: model.window)
             CreditLine()
             StatusLines()
             CabinCard(height: 96)
-            MoonGlobeView()
-                .frame(height: 320)
             TargetMap()
                 .frame(height: 180)
         }
@@ -189,7 +210,7 @@ struct FoldLayout: View {
 
     var body: some View {
         GeometryReader { geo in
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
                     ClockReadout()
                     WindowPane()
@@ -198,6 +219,7 @@ struct FoldLayout: View {
                     CreditLine()
                     StatusLines()
                 }
+                .padding(.trailing, 30)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 ScrollView {
@@ -210,6 +232,7 @@ struct FoldLayout: View {
                     }
                     .padding(.bottom, 12)
                 }
+                .padding(.leading, 30)
                 .frame(width: min(340, geo.size.width * 0.38))
             }
             .padding(.horizontal, 16)

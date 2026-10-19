@@ -49,6 +49,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var range: MissionRange = .flyby
     @Published var spatial = false
     @Published var arrived = false
+    /// The cabin window is in front. The Moon stays one step back.
+    @Published var immersed = false
     @Published var engineFailed = false
     /// Phone and landscape read the 720 sibling. The open fold reads the shipped frame.
     @Published var phoneImages = true
@@ -261,6 +263,18 @@ final class PlaybackModel: NSObject, ObservableObject {
         holdUntil = nil
         setWindow(.cab)
         reloadAtCurrentTime()
+    }
+
+    /// Opens the cabin on the current clock, or on a milestone pin.
+    func dive(to milestone: Milestone? = nil) {
+        if let milestone {
+            jump(to: milestone)
+        }
+        immersed = true
+    }
+
+    func surface() {
+        immersed = false
     }
 
     func showFlyby() {

@@ -226,6 +226,22 @@ final class MilestonesTests: XCTestCase {
         XCTAssertFalse(model.scrubbing)
     }
 
+    @MainActor
+    func testDiveOpensTheWindowAndSurfaceReturnsToTheMoon() throws {
+        let model = PlaybackModel()
+        XCTAssertNil(model.loadError)
+        XCTAssertFalse(model.immersed)
+        model.dive()
+        XCTAssertTrue(model.immersed)
+        model.surface()
+        XCTAssertFalse(model.immersed)
+        let timeline = try XCTUnwrap(model.timeline)
+        let pin = try XCTUnwrap(MilestoneList.derive(timeline).first { $0.id == "span:window.start" })
+        model.dive(to: pin)
+        XCTAssertTrue(model.immersed)
+        XCTAssertEqual(model.utc.timeIntervalSince(pin.date), 0, accuracy: 1)
+    }
+
     func testPhotoAccessLabelOmitsTheLiveGap() throws {
         let frame = try XCTUnwrap(timeline.frames.first { $0.nasaID == "art002e041322" })
         let spoken = FrameSelection.photoAccessLabel(frame)

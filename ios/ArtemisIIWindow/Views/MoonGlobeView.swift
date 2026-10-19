@@ -26,7 +26,7 @@ struct MoonGlobeView: View {
                     utc: model.utc,
                     milestones: pins,
                     onSeek: { model.seek(to: $0) },
-                    onPin: { model.jump(to: $0) }
+                    onPin: { model.dive(to: $0) }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityElement(children: .ignore)

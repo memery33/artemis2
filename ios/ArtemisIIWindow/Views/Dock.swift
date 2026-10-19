@@ -107,6 +107,19 @@ struct DockBar: View {
                     windowButton(.cab, title: "3", label: "Window 3")
                 }
                 crewButton
+                if model.immersed {
+                    Button("Back to the Moon") { model.surface() }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("surface-button")
+                } else {
+                    Button("Dive into the window") { model.dive() }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("dive-button")
+                }
                 linesButton
                 momentsButton
                 rangeButton
