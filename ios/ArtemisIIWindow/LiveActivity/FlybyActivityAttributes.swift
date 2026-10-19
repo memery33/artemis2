@@ -11,5 +11,10 @@ struct FlybyActivityAttributes: Codable, Hashable, Sendable {
         var playing: Bool
     }
 
+    /// Lock Screen and Dynamic Island copy. Nil while the recording is playing.
+    static func pausedLabel(playing: Bool) -> String? {
+        playing ? nil : "Paused"
+    }
+
     var title: String
 }

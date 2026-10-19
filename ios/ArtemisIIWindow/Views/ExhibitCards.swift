@@ -77,10 +77,11 @@ private struct ExhibitSheet: View {
 
     var body: some View {
         let frame = ExhibitLibrary.frame(for: card, frames: model.timeline?.frames ?? [])
+        let image = frame.flatMap { model.photo($0, maxPixel: 1200) }
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if let frame, let image = model.photo(frame, maxPixel: 1200) {
+                    if let frame, let image {
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFill()
@@ -106,7 +107,9 @@ private struct ExhibitSheet: View {
                             .foregroundStyle(.white.opacity(0.7))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    CreditLine()
+                    if image != nil {
+                        CreditLine()
+                    }
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)

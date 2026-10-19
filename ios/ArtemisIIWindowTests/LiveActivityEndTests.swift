@@ -74,6 +74,11 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(state.clock.contains("--"))
     }
 
+    func testPausedMarkerIsAbsentWhilePlaying() {
+        XCTAssertEqual(FlybyActivityAttributes.pausedLabel(playing: false), "Paused")
+        XCTAssertNil(FlybyActivityAttributes.pausedLabel(playing: true))
+    }
+
     /// The span end is April 2026. A stale date taken from that mission time is already past, so the activity is born stale.
     func testStaleDateIsInTheFutureRelativeToNow() throws {
         let now = Date()
@@ -284,9 +289,10 @@ final class LiveActivityEndTests: XCTestCase {
             $0.track == model.trackID && $0.start >= span.start && $0.start < span.end
         })
         model.playing = true
-        model.currentFile = segment.file
-        model.holdSeconds = span.end.timeIntervalSince(segment.start) + 5
-        model.segmentDidFinish()
+        model.finishCurrentClipForTest(
+            file: segment.file,
+            renderedSeconds: span.end.timeIntervalSince(segment.start) + 5
+        )
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertEqual(fake.ended, ["live"])
         XCTAssertTrue(fake.identifiersStore.isEmpty)
@@ -306,7 +312,7 @@ final class LiveActivityEndTests: XCTestCase {
         let span = try XCTUnwrap(model.activeSpan)
         model.playing = true
         model.utc = span.end
-        model.tickOnMain(1)
+        model.advanceDisplayLinkForTest(to: 1)
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertEqual(fake.ended, ["live"])
         XCTAssertTrue(fake.identifiersStore.isEmpty)
@@ -325,7 +331,8 @@ final class LiveActivityEndTests: XCTestCase {
         model.postsLiveActivityWhileSkippingAudio = true
         let span = try XCTUnwrap(model.activeSpan)
         model.playing = true
-        model.utc = span.end.addingTimeInterval(5)
+        // Thirty seconds before the end, so this pause is still mid-span. The background path parks on the end and dismisses the activity.
+        model.utc = span.end.addingTimeInterval(-30)
         model.setSceneActive(false)
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertEqual(fake.ended, ["live"])

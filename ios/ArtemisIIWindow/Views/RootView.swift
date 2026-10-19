@@ -351,7 +351,7 @@ struct PhoneColumn: View {
             FrameCaption(side: model.window)
             StatusLines()
             CabinCard(height: 96)
-            CompanionPane()
+            // The other-window thumbnail lives in the fold's narrow column. Here it would span the phone.
             ExhibitCards()
             TargetMap()
                 .frame(height: 180)

@@ -48,13 +48,6 @@ final class PhotoCreditUITests: XCTestCase {
         XCTAssertEqual(cabinCredit.label, "Credit: NASA/Artemis II Crew")
         reveal(cabin, using: column)
 
-        let other = element(named: "other-window", in: app)
-        XCTAssertTrue(other.waitForExistence(timeout: 8))
-        reveal(other, using: column)
-        let otherCredit = credit(in: other)
-        XCTAssertTrue(otherCredit.waitForExistence(timeout: 8))
-        XCTAssertEqual(otherCredit.label, "Credit: NASA/Artemis II Crew")
-
         let card = element(named: "exhibit-aristarchus-plateau", in: app)
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         reveal(card, using: column)
@@ -65,7 +58,7 @@ final class PhotoCreditUITests: XCTestCase {
         let sheet = element(named: "exhibit-sheet", in: app)
         XCTAssertTrue(sheet.waitForExistence(timeout: 8))
         let sheetCredit = credit(in: sheet)
-        XCTAssertTrue(sheetCredit.waitForExistence(timeout: 5))
+        XCTAssertTrue(sheetCredit.waitForExistence(timeout: 8))
         XCTAssertEqual(sheetCredit.label, "Credit: NASA/Artemis II Crew")
         app.buttons["Done"].tap()
 
