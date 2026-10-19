@@ -190,7 +190,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         do {
             try activateSpokenSession()
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
         } catch {
             failEngine()
@@ -246,6 +246,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if user {
             resumeAfterInterrupt = false
         }
+        FlybyLiveActivity.endAllImmediately()
         refreshNowPlaying(force: true)
     }
 
@@ -332,6 +333,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         if atEnd {
             playing = false
             stopPlayer()
+            FlybyLiveActivity.endAllImmediately()
             refreshNowPlaying(force: true)
             return
         }
@@ -355,7 +357,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard playing, !engineFailed, audioFile != nil else { return }
         do {
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
             if !player.isPlaying {
                 player.play()
@@ -523,7 +525,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         do {
             try activateSpokenSession()
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
             if let segment = segment(at: utc), currentFile == segment.file, audioFile != nil, !player.isPlaying {
                 player.play()
@@ -582,7 +584,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         connectGraph(format: file.processingFormat)
         reschedule(file: file, at: seconds)
         do {
-            try engine.start()
+            try startEngine()
             if wasPlaying { player.play() }
         } catch {
             failEngine()
@@ -679,6 +681,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         holdUntil = nil
         engineFailed = true
         stopPlayer()
+        FlybyLiveActivity.endAllImmediately()
         refreshNowPlaying(force: true)
     }
 
@@ -762,7 +765,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             connectGraph(format: file.processingFormat)
             if restart {
                 do {
-                    try engine.start()
+                    try startEngine()
                 } catch {
                     failEngine()
                     return
@@ -773,7 +776,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard playing else { return }
         do {
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
             player.play()
         } catch {
@@ -906,7 +909,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             connectGraph(format: file.processingFormat)
             if restart {
                 do {
-                    try engine.start()
+                    try startEngine()
                 } catch {
                     failEngine()
                     return
@@ -917,7 +920,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         holdUntil = segment.start
         do {
             if !engine.isRunning {
-                try engine.start()
+                try startEngine()
             }
             if playing {
                 player.play()
@@ -1023,9 +1026,18 @@ final class PlaybackModel: NSObject, ObservableObject {
     // MARK: - Session
 
     private func activateSpokenSession() throws {
+        guard RuntimeHost.allowsPlaybackServices() else { return }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio, policy: .longFormAudio, options: [])
         try session.setActive(true)
+    }
+
+    /// Starting the engine activates the shared audio session. Tests that have not opted in never reach that.
+    private func startEngine() throws {
+        guard RuntimeHost.allowsPlaybackServices() else { return }
+        if !engine.isRunning {
+            try engine.start()
+        }
     }
 
     // The session posts these on an arbitrary queue. The selectors stay
@@ -1119,7 +1131,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             connectGraph(format: file.processingFormat)
             reschedule(file: file, at: position)
             do {
-                try engine.start()
+                try startEngine()
                 if wasPlaying {
                     player.play()
                 }

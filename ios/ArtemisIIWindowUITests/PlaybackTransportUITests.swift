@@ -18,7 +18,7 @@ final class PlaybackTransportUITests: XCTestCase {
     }
 
     func testPlayPauseStopsAndResumesTheClock() throws {
-        let app = XCUIApplication()
+        let app = FlybyUILaunch.application()
         app.launch()
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))

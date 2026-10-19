@@ -21,6 +21,17 @@ enum FlybyActivityCopy {
 }
 
 enum FlybyLiveActivity {
+    /// Dismisses every activity this process can still see, including one left up after a previous launch.
+    /// The lookup stays inside the task so a MainActor-isolated Activity is not sent off the main actor.
+    @MainActor
+    static func endAllImmediately() {
+        Task { @MainActor in
+            for activity in Activity<FlybyActivityAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+        }
+    }
+
     @MainActor
     static func sync(
         arrived: Bool,
@@ -30,8 +41,10 @@ enum FlybyLiveActivity {
         speaker: String,
         clock: String
     ) {
-        guard !RuntimeHost.isUnitTestHost else { return }
-        guard arrived else { return }
+        guard RuntimeHost.allowsPlaybackServices(), arrived, playing else {
+            endAllImmediately()
+            return
+        }
         let state = FlybyActivityAttributes.ContentState(
             progress: progress,
             nextMilestone: nextMilestone,
@@ -39,7 +52,6 @@ enum FlybyLiveActivity {
             clock: clock
         )
         if Activity<FlybyActivityAttributes>.activities.isEmpty {
-            guard playing else { return }
             _ = try? Activity.request(
                 attributes: FlybyActivityAttributes(title: "Orion Window"),
                 content: ActivityContent(state: state, staleDate: nil),
@@ -49,7 +61,7 @@ enum FlybyLiveActivity {
         }
         // Look the activity up inside the task. A MainActor-isolated Activity
         // cannot be sent into the concurrent update.
-        Task {
+        Task { @MainActor in
             await Activity<FlybyActivityAttributes>.activities.first?.update(
                 ActivityContent(state: state, staleDate: nil)
             )

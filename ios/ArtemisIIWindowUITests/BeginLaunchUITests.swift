@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class BeginLaunchUITests: XCTestCase {
     func testTapToBeginStaysRunning() {
-        let app = XCUIApplication()
+        let app = FlybyUILaunch.application()
         app.launch()
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
@@ -18,8 +18,7 @@ final class BeginLaunchUITests: XCTestCase {
     }
 
     func testSeekToEndShowsTheEndCard() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-seekToEnd"]
+        let app = FlybyUILaunch.application(["-seekToEnd"])
         app.launch()
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))

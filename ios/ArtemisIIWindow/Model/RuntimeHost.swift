@@ -23,4 +23,16 @@ enum RuntimeHost {
     static func noteSceneBecameActive() {
         sceneActive = true
     }
+
+    /// Live Activities and the spoken audio session stay off for the unit-test host and for UI tests.
+    /// A test opts in with `-allow-playback-session`.
+    static func allowsPlaybackServices(
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        unitTestHost: Bool = isUnitTestHost
+    ) -> Bool {
+        if arguments.contains("-allow-playback-session") { return true }
+        if unitTestHost { return false }
+        if arguments.contains("-ui-tests") { return false }
+        return true
+    }
 }

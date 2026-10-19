@@ -35,6 +35,9 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
                 model.setSceneActive(false)
+                if !model.playing {
+                    FlybyLiveActivity.endAllImmediately()
+                }
             } else if phase == .active {
                 RuntimeHost.noteSceneBecameActive()
                 model.setSceneActive(true)

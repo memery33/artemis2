@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class SubtitleFrameUITests: XCTestCase {
     func testAtMostOneSubtitleOccupiesAFrame() {
-        let app = XCUIApplication()
+        let app = FlybyUILaunch.application()
         app.launch()
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))

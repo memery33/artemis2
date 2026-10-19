@@ -350,6 +350,10 @@ final class MilestonesTests: XCTestCase {
 
         XCTAssertTrue(PlaybackModel.opensAtSpanEnd(["-seekToEnd"]))
         XCTAssertFalse(PlaybackModel.opensAtSpanEnd([]))
+        XCTAssertFalse(RuntimeHost.allowsPlaybackServices(arguments: ["-XCTest"], unitTestHost: true))
+        XCTAssertFalse(RuntimeHost.allowsPlaybackServices(arguments: ["-ui-tests", "-seekToEnd"], unitTestHost: false))
+        XCTAssertTrue(RuntimeHost.allowsPlaybackServices(arguments: ["-ui-tests", "-allow-playback-session"], unitTestHost: true))
+        XCTAssertTrue(RuntimeHost.allowsPlaybackServices(arguments: [], unitTestHost: false))
     }
 
     @MainActor

@@ -19,7 +19,7 @@ final class LayoutFrameUITests: XCTestCase {
     }
 
     func testFramesStayInsideTheScreenInBothOrientations() {
-        let app = XCUIApplication()
+        let app = FlybyUILaunch.application()
         app.launch()
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
@@ -68,7 +68,7 @@ final class LayoutFrameUITests: XCTestCase {
     }
 
     func testExhibitCardOpensASheet() {
-        let app = XCUIApplication()
+        let app = FlybyUILaunch.application()
         app.launch()
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
