@@ -59,57 +59,38 @@ struct WindowPane: View {
             let pixels = max(geo.size.width, geo.size.height) * displayScale * 1.15
             let fading = mix > 0.001 && mix < 0.999
             let settled = (mix >= 0.999 ? pair.next : pair.current) ?? pair.current
+            let standIn = pair.current == nil && mix == 0
+                ? FrameSelection.standIn(at: model.utc, window: side, frames: model.timeline?.frames ?? [])
+                : nil
+            let empty = pair.current == nil && standIn == nil && mix == 0 ? emptyCopy(pair) : nil
             ZStack {
                 Color.black
                 // Settled clocks show one photograph. Both layers only exist while the crossfade is moving.
                 ZStack {
                     if fading {
                         if let frame = pair.current, let image = model.photo(frame, maxPixel: pixels) {
-                            placed(
-                                image,
-                                motion: motion(progress: progress, index: pair.index),
-                                size: geo.size
-                            )
-                            .opacity(1 - mix)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
-                            .accessibilityAddTraits(.isImage)
+                            photo(image, frame: frame, motion: motion(progress: progress, index: pair.index), size: geo.size)
+                                .opacity(1 - mix)
                         }
                         if let frame = pair.next, let image = model.photo(frame, maxPixel: pixels) {
-                            placed(
-                                image,
-                                motion: motion(progress: 0, index: pair.index + 1),
-                                size: geo.size
-                            )
-                            .opacity(mix)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
-                            .accessibilityAddTraits(.isImage)
+                            photo(image, frame: frame, motion: motion(progress: 0, index: pair.index + 1), size: geo.size)
+                                .opacity(mix)
                         }
                     } else if let frame = settled, let image = model.photo(frame, maxPixel: pixels) {
-                        placed(
+                        photo(
                             image,
+                            frame: frame,
                             motion: motion(progress: mix >= 0.999 ? 0 : progress, index: pair.index),
                             size: geo.size
                         )
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
-                        .accessibilityAddTraits(.isImage)
+                    } else if let standIn, let image = model.photo(standIn.frame, maxPixel: pixels) {
+                        photo(image, frame: standIn.frame, motion: (scale: 1, x: 0, y: 0), size: geo.size)
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
                 .clipped()
-                if pair.current == nil && mix == 0 {
-                    Text(emptyCopy(pair))
-                        .font(.footnote)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .contentTransition(.identity)
-                        .padding(24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                        .padding(.bottom, 88)
-                        .id(side)
-                        .transition(.identity)
+                if let standIn {
+                    standInBanner(standIn)
                 }
                 if pair.outsideSpan, let frame = pair.current {
                     VStack {
@@ -129,9 +110,9 @@ struct WindowPane: View {
                     .allowsHitTesting(false)
                 }
                 if glassChrome {
-                    landscapeChrome
+                    landscapeChrome(empty: empty)
                 } else {
-                    subtitle
+                    subtitle(empty: empty)
                 }
                 if side == .nikon {
                     bezel
@@ -141,11 +122,14 @@ struct WindowPane: View {
                         )
                 }
             }
-            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch)) {
+            .task(id: framePrefetchToken(pair, pixels: pixels, small: model.phoneImages, epoch: model.frameCacheEpoch) + "|" + (standIn?.frame.file ?? "")) {
                 if let frame = pair.current {
                     model.prefetch(frame, maxPixel: pixels)
                 }
                 if let frame = pair.next {
+                    model.prefetch(frame, maxPixel: pixels)
+                }
+                if let frame = standIn?.frame {
                     model.prefetch(frame, maxPixel: pixels)
                 }
             }
@@ -168,22 +152,78 @@ struct WindowPane: View {
         LyricFocus.focus(at: model.utc, track: model.trackID, lines: model.timeline?.lines ?? [])
     }
 
-    private var subtitle: some View {
-        VStack {
-            Spacer()
-            LyricLines(focus: lyricFocus)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.black)
-                .padding(.horizontal, side == .nikon ? 18 : 6)
-                .padding(.bottom, side == .nikon ? 20 : 6)
+    private func photo(
+        _ image: UIImage,
+        frame: Frame,
+        motion: (scale: CGFloat, x: CGFloat, y: CGFloat),
+        size: CGSize
+    ) -> some View {
+        placed(image, motion: motion, size: size)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+            .accessibilityAddTraits(.isImage)
+            .accessibilityIdentifier("window-photo")
+    }
+
+    private func standInBanner(_ standIn: StandInFrame) -> some View {
+        VStack(spacing: 0) {
+            Text(FrameSelection.takenLabel(
+                frame: standIn.frame,
+                now: model.utc,
+                window: standIn.window,
+                otherWindow: standIn.otherWindow
+            ))
+            .font(.subheadline.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(Color.black.opacity(0.55))
+            .accessibilityIdentifier("window-stand-in")
+            Spacer(minLength: 0)
         }
         .allowsHitTesting(false)
     }
 
+    /// A compact translucent band. The photograph stays the hero.
+    /// The no-frame line sits above the words so the band cannot hide it.
+    private func subtitle(empty: String?) -> some View {
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
+            if let empty {
+                emptyLine(empty)
+            }
+            if lyricFocus.current != nil || lyricFocus.previous != nil {
+                lyricBand
+            }
+        }
+        .padding(.horizontal, side == .nikon ? 18 : 6)
+        .padding(.bottom, side == .nikon ? 20 : 6)
+        .allowsHitTesting(false)
+    }
+
+    private var lyricBand: some View {
+        LyricLines(focus: lyricFocus, currentCap: 96, previousCap: 64)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.black.opacity(0.55))
+    }
+
+    private func emptyLine(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("window-empty")
+    }
+
     /// Clocks, the quote, and CreditLine sit on the pane. Padding keeps
     /// them inside the bezel and clear of the rounded corners.
-    private var landscapeChrome: some View {
+    private func landscapeChrome(empty: String?) -> some View {
         VStack(spacing: 0) {
             ClockReadout()
                 .padding(.horizontal, 22)
@@ -191,14 +231,19 @@ struct WindowPane: View {
                 .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
             Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 6) {
-                LyricLines(focus: lyricFocus)
+                if let empty {
+                    emptyLine(empty)
+                }
+                if lyricFocus.current != nil || lyricFocus.previous != nil {
+                    LyricLines(focus: lyricFocus, currentCap: 96, previousCap: 64)
+                }
                 FrameCaption(side: side)
                 StatusLines()
             }
             .foregroundStyle(.white)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.black)
+            .background(Color.black.opacity(0.55))
             .padding(.horizontal, side == .nikon ? 18 : 6)
             .padding(.bottom, side == .nikon ? 22 : 8)
         }
@@ -268,12 +313,25 @@ struct FrameCaption: View {
 
     var body: some View {
         let pair = model.pair(for: side)
+        let standIn = pair.current == nil
+            ? FrameSelection.standIn(at: model.utc, window: side, frames: model.timeline?.frames ?? [])
+            : nil
         VStack(alignment: .leading, spacing: 4) {
-            if let frame = dominant(pair) {
+            if let frame = dominant(pair) ?? standIn?.frame {
                 Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.85))
-                if side == .cab, pair.outsideSpan {
+                if let standIn, standIn.frame.nasaID == frame.nasaID {
+                    Text(FrameSelection.takenLabel(
+                        frame: standIn.frame,
+                        now: model.utc,
+                        window: standIn.window,
+                        otherWindow: standIn.otherWindow
+                    ))
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                } else if side == .cab, pair.outsideSpan {
                     Text(FrameSelection.outsideSpanNotice(frame: frame, now: model.utc))
                         .font(.headline)
                         .foregroundStyle(.white)
@@ -473,10 +531,12 @@ struct StatusLines: View {
                 Text("Audio engine did not start. No substitute sound is played.")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.75))
-            } else if model.segment(at: model.utc) == nil {
-                Text("No recording at this time.")
+            } else if let note = model.recordingStatus() {
+                Text(note)
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("recording-status")
             }
             if model.range == .cab, let note = model.activeSpan?.note {
                 Text(note)

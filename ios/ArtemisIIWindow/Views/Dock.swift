@@ -105,22 +105,64 @@ struct DockBar: View {
     }
 
     private var moreMenu: some View {
-        Menu {
-            Button(model.spatial ? "Spatial on" : "Spatial") {
-                model.setSpatial(!model.spatial)
-            }
-            Button("Window 2") { model.setWindow(.nikon) }
-            Button("Window 3") { model.setWindow(.cab) }
-            Button("Lines") { transcript = true }
-            Button(model.range == .flyby ? "Cab run" : "Flyby") {
+        // The mission clock publishes every frame. Rebuilding this menu on that
+        // tick makes UIKit drop the tap ("updateVisibleMenuWithBlock while no
+        // context menu is visible"). The labels below are not clock values.
+        MoreMenu(
+            spatial: model.spatial,
+            flyby: model.range == .flyby,
+            crewID: model.crewID,
+            immersed: model.immersed,
+            onSpatial: { model.setSpatial(!model.spatial) },
+            onNikon: { model.showWindow(.nikon) },
+            onCab: { model.showWindow(.cab) },
+            onLines: { transcript = true },
+            onSpan: {
                 if model.range == .flyby { model.showCabRun() } else { model.showFlyby() }
+            },
+            onCrew: { model.cycleCrew() },
+            onPlace: {
+                if model.immersed { model.surface() } else { model.dive() }
             }
-            Button("Crew, \(model.crewID)") { model.cycleCrew() }
-            if model.immersed {
-                Button("Back to the Moon") { model.surface() }
-            } else {
-                Button("Dive into the window") { model.dive() }
-            }
+        )
+        .equatable()
+    }
+
+}
+
+/// Menu titles change only when spatial, the span, the crew, or the dive changes.
+/// A playing clock does not rebuild them.
+private struct MoreMenu: View, Equatable {
+    let spatial: Bool
+    let flyby: Bool
+    let crewID: String
+    let immersed: Bool
+    let onSpatial: () -> Void
+    let onNikon: () -> Void
+    let onCab: () -> Void
+    let onLines: () -> Void
+    let onSpan: () -> Void
+    let onCrew: () -> Void
+    let onPlace: () -> Void
+
+    nonisolated static func == (lhs: MoreMenu, rhs: MoreMenu) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.spatial == rhs.spatial
+                && lhs.flyby == rhs.flyby
+                && lhs.crewID == rhs.crewID
+                && lhs.immersed == rhs.immersed
+        }
+    }
+
+    var body: some View {
+        Menu {
+            Button(spatial ? "Spatial on" : "Spatial") { onSpatial() }
+            Button("Window 2") { onNikon() }
+            Button("Window 3") { onCab() }
+            Button("Lines") { onLines() }
+            Button(flyby ? "Cab run" : "Flyby") { onSpan() }
+            Button("Crew, \(crewID)") { onCrew() }
+            Button(immersed ? "Back to the Moon" : "Dive into the window") { onPlace() }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.body.weight(.semibold))
@@ -130,7 +172,6 @@ struct DockBar: View {
         .accessibilityLabel("More")
         .accessibilityIdentifier("more-controls")
     }
-
 }
 
 struct LiveTranscript: View {

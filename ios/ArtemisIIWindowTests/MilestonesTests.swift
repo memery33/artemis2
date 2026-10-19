@@ -227,6 +227,64 @@ final class MilestonesTests: XCTestCase {
     }
 
     @MainActor
+    func testMenuWindowCabRunAndCrewStayOnRealContent() throws {
+        let model = PlaybackModel()
+        XCTAssertNil(model.loadError)
+        XCTAssertEqual(model.crewID, "Wiseman")
+        XCTAssertFalse(model.immersed)
+        XCTAssertEqual(
+            model.recordingStatus(),
+            "No recording at this time. Wiseman and Koch audio starts at 19:33:01 UTC."
+        )
+
+        model.showWindow(.nikon)
+        XCTAssertEqual(model.window, .nikon)
+        XCTAssertTrue(model.immersed)
+        let stand = try XCTUnwrap(
+            FrameSelection.standIn(at: model.utc, window: .nikon, frames: try XCTUnwrap(model.timeline).frames)
+        )
+        XCTAssertNil(model.pair(for: .nikon).current)
+        XCTAssertEqual(stand.frame.nasaID, "art002e016184")
+
+        model.surface()
+        model.showWindow(.cab)
+        XCTAssertEqual(model.window, .cab)
+        XCTAssertTrue(model.immersed)
+        XCTAssertNotNil(model.pair(for: .cab).current)
+
+        model.seek(to: try ISO8601.parse("2026-04-06T19:33:10Z"))
+        let glover = try XCTUnwrap(model.timeline?.crew.first { $0.id == "Glover" })
+        model.follow(glover)
+        XCTAssertEqual(
+            model.recordingStatus(),
+            "No recording on this track at this time. Wiseman and Koch have audio now. This track starts at 19:33:15 UTC."
+        )
+        model.seek(to: try ISO8601.parse("2026-04-06T19:40:00Z"))
+        model.follow(try XCTUnwrap(model.timeline?.crew.first { $0.id == "Wiseman" }))
+        XCTAssertNil(model.recordingStatus())
+        model.cycleCrew()
+        XCTAssertEqual(model.crewID, "Glover")
+
+        model.showCabRun()
+        let cab = try XCTUnwrap(model.timeline?.cabRun)
+        XCTAssertEqual(model.range, .cab)
+        XCTAssertEqual(model.window, .cab)
+        XCTAssertTrue(model.immersed)
+        XCTAssertFalse(model.ended)
+        XCTAssertEqual(model.crewID, "Glover")
+        XCTAssertEqual(model.trackID, "pcd2")
+        XCTAssertEqual(model.utc, cab.start)
+        XCTAssertEqual(model.pair(for: .cab).current?.nasaID, "art002e041348")
+        XCTAssertEqual(
+            model.recordingStatus(),
+            "No recording at this time. Glover and Hansen audio starts at 22:39:11 UTC."
+        )
+        model.cycleCrew()
+        XCTAssertEqual(model.crewID, "Hansen")
+        XCTAssertEqual(model.trackID, "pcd2")
+    }
+
+    @MainActor
     func testDiveOpensTheWindowAndSurfaceReturnsToTheMoon() throws {
         let model = PlaybackModel()
         XCTAssertNil(model.loadError)

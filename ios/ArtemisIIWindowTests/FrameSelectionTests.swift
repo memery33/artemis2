@@ -92,6 +92,37 @@ final class FrameSelectionTests: XCTestCase {
         }
     }
 
+    func testStandInKeepsTheNearestFrameAndSaysHowFarItIs() throws {
+        let start = try date("2026-04-06T19:33:00Z")
+        let window2 = try XCTUnwrap(FrameSelection.standIn(at: start, window: .nikon, frames: timeline.frames))
+        XCTAssertFalse(window2.otherWindow)
+        XCTAssertEqual(window2.window, .nikon)
+        XCTAssertEqual(window2.frame.nasaID, "art002e016184")
+        XCTAssertEqual(
+            FrameSelection.takenLabel(frame: window2.frame, now: start, window: window2.window, otherWindow: false),
+            "Taken 19:33:26 UTC, 27 s after this clock"
+        )
+
+        let stale = try date("2026-04-06T20:03:00Z")
+        let held = try XCTUnwrap(FrameSelection.standIn(at: stale, window: .nikon, frames: timeline.frames))
+        XCTAssertEqual(held.frame.nasaID, "art002e010041")
+        XCTAssertEqual(
+            FrameSelection.takenLabel(frame: held.frame, now: stale, window: .nikon, otherWindow: false),
+            "Taken 19:47:01 UTC, 15 min 58 s before this clock. Not moved to match it."
+        )
+
+        let onlyCab = timeline.frames.filter { $0.instrument == "cab2" }
+        let other = try XCTUnwrap(FrameSelection.standIn(at: start, window: .nikon, frames: onlyCab))
+        XCTAssertTrue(other.otherWindow)
+        XCTAssertEqual(other.window, .cab)
+        XCTAssertEqual(other.frame.nasaID, "art002e041322")
+        XCTAssertEqual(
+            FrameSelection.takenLabel(frame: other.frame, now: start, window: other.window, otherWindow: true),
+            "Window 3. Taken 19:34:44 UTC, 1 min 44 s after this clock"
+        )
+        XCTAssertNil(FrameSelection.standIn(at: start, window: .nikon, frames: []))
+    }
+
     func testMapOmitsHertzsprung() throws {
         let names = Set(MapProjection.geographicTargets(timeline.targets).map(\.name))
         XCTAssertEqual(

@@ -59,20 +59,26 @@ struct CrewRow: View {
 
 struct LyricLines: View {
     var focus: LyricFocus
+    /// Tallest the current line may grow before it scrolls. The fold quote uses 132.
+    var currentCap: CGFloat = 132
+    /// Tallest the previous line may grow before it scrolls. The fold quote uses 88.
+    var previousCap: CGFloat = 88
     @State private var shown: LyricFocus
 
-    init(focus: LyricFocus) {
+    init(focus: LyricFocus, currentCap: CGFloat = 132, previousCap: CGFloat = 88) {
         self.focus = focus
+        self.currentCap = currentCap
+        self.previousCap = previousCap
         _shown = State(initialValue: focus)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let previous = shown.previous {
-                verse(previous, prominent: false)
+                LyricVerse(line: previous, prominent: false, cap: previousCap)
             }
             if let current = shown.current {
-                verse(current, prominent: true)
+                LyricVerse(line: current, prominent: true, cap: currentCap)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -85,10 +91,19 @@ struct LyricLines: View {
         }
         .accessibilityElement(children: .contain)
     }
+}
 
-    private func verse(_ line: TranscriptLine, prominent: Bool) -> some View {
+/// The scroll view's height is the text, and it stops at `cap`. A short line does not
+/// reserve the cap, so the band on the photograph stays the size of the words.
+private struct LyricVerse: View {
+    let line: TranscriptLine
+    let prominent: Bool
+    let cap: CGFloat
+    @State private var textHeight: CGFloat = 0
+
+    var body: some View {
         let tint = CrewTint.rgba(line.speaker)
-        return VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(line.speaker)
                 .font(prominent ? .caption.weight(.semibold) : .caption2)
                 .foregroundStyle(Color(red: tint.0, green: tint.1, blue: tint.2).opacity(prominent ? 1 : 0.55))
@@ -102,9 +117,15 @@ struct LyricLines: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .contentTransition(.identity)
+                    .background {
+                        GeometryReader { geo in
+                            Color.clear.preference(key: LyricTextHeightKey.self, value: geo.size.height)
+                        }
+                    }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(maxHeight: prominent ? 132 : 88)
+            .frame(height: textHeight > 0 ? min(textHeight, cap) : nil)
+            .onPreferenceChange(LyricTextHeightKey.self) { textHeight = $0 }
         }
         .id(line.id)
         .transition(.identity)
@@ -113,5 +134,12 @@ struct LyricLines: View {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("subtitle-line")
         .accessibilityLabel(line.text)
+    }
+}
+
+private struct LyricTextHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

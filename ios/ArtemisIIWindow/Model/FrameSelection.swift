@@ -14,6 +14,16 @@ struct FramePair: Equatable {
     var outsideSpan: Bool = false
 }
 
+/// A real photograph to show when this clock has no frame on the glass yet.
+/// The capture time is the file's own timestamp. It is not moved.
+struct StandInFrame: Equatable {
+    let frame: Frame
+    /// The window the photograph belongs to.
+    let window: WindowSide
+    /// True when this window has no frames, so the other window is shown instead.
+    let otherWindow: Bool
+}
+
 struct Crossfade: Equatable {
     /// 1 at the incoming frame's own timestamp.
     let mix: Double
@@ -71,6 +81,46 @@ enum FrameSelection {
             index: max(0, index - 1),
             outsideSpan: outside
         )
+    }
+
+    /// Nearest real frame for a pane that would otherwise be empty.
+    /// This window wins. The other window is used only when this one has no frames at all.
+    static func standIn(at time: Date, window: WindowSide, frames all: [Frame]) -> StandInFrame? {
+        if let frame = nearest(frames(all, window: window), to: time) {
+            return StandInFrame(frame: frame, window: window, otherWindow: false)
+        }
+        let other: WindowSide = window == .nikon ? .cab : .nikon
+        if let frame = nearest(frames(all, window: other), to: time) {
+            return StandInFrame(frame: frame, window: other, otherWindow: true)
+        }
+        return nil
+    }
+
+    /// "Taken 19:34:00 UTC, 51 s after this clock". A stale hold adds that it was not moved.
+    static func takenLabel(frame: Frame, now: Date, window: WindowSide, otherWindow: Bool) -> String {
+        var text = "Taken \(Stamp.clock(frame.utc)) UTC"
+        if let gap = clockGap(now: now, taken: frame.date) {
+            text += ", \(gap)"
+        }
+        if now.timeIntervalSince(frame.date) >= 45 {
+            text += ". Not moved to match it."
+        }
+        if otherWindow {
+            let name = window == .cab ? "Window 3" : "Window 2"
+            text = "\(name). \(text)"
+        }
+        return text
+    }
+
+    /// Closest capture. An equal distance keeps the frame already taken.
+    static func nearest(_ rows: [Frame], to time: Date) -> Frame? {
+        rows.min { lhs, rhs in
+            let left = abs(lhs.date.timeIntervalSince(time))
+            let right = abs(rhs.date.timeIntervalSince(time))
+            if left != right { return left < right }
+            if (lhs.date <= time) != (rhs.date <= time) { return lhs.date <= time }
+            return lhs.date < rhs.date
+        }
     }
 
     /// Closest capture inside the span. An equal distance keeps the frame already taken.

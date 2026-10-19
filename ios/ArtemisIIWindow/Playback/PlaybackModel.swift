@@ -286,6 +286,16 @@ final class PlaybackModel: NSObject, ObservableObject {
         haptic.impactOccurred()
     }
 
+    /// Selects the window and opens the dive. On the phone the pane is hidden until then,
+    /// so a menu choice that only switches `window` looks like it did nothing.
+    func showWindow(_ side: WindowSide) {
+        setWindow(side)
+        immersed = true
+        if let span = activeSpan, utc < span.end {
+            ended = false
+        }
+    }
+
     func follow(_ member: CrewMember) {
         crewID = member.id
         guard member.track != trackID else { return }
@@ -294,17 +304,31 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func cycleCrew() {
-        guard let members = timeline?.crew, !members.isEmpty else { return }
-        let index = members.firstIndex { $0.id == crewID } ?? -1
-        let next = members[(index + 1) % members.count]
-        crewID = next.id
-        guard next.track != trackID else { return }
-        trackID = next.track
-        reloadAtCurrentTime()
+        guard let timeline, !timeline.crew.isEmpty else { return }
+        let members = timeline.crew
+        let start = members.firstIndex { $0.id == crewID } ?? -1
+        var next = members[(start + 1) % members.count]
+        if let span = activeSpan, !trackHasAudio(next.track, in: span, timeline: timeline) {
+            for offset in 1...members.count {
+                let member = members[(start + offset) % members.count]
+                if trackHasAudio(member.track, in: span, timeline: timeline) {
+                    next = member
+                    break
+                }
+            }
+        }
+        follow(next)
+    }
+
+    /// True when this track has a recording that overlaps the span.
+    private func trackHasAudio(_ track: String, in span: TimeSpan, timeline: Timeline) -> Bool {
+        timeline.segments.contains { segment in
+            segment.track == track && segment.end > span.start && segment.start < span.end
+        }
     }
 
     func showCabRun() {
-        guard timeline?.cabRun != nil else { return }
+        guard let cab = timeline?.cabRun else { return }
         if trackID != "pcd2" {
             trackID = "pcd2"
             if let member = timeline?.crew.first(where: { $0.track == "pcd2" }) {
@@ -312,10 +336,66 @@ final class PlaybackModel: NSObject, ObservableObject {
             }
         }
         range = .cab
-        utc = timeline?.cabRun?.start ?? utc
+        utc = cab.start
         holdUntil = nil
-        setWindow(.cab)
+        ended = false
+        if window != .cab {
+            window = .cab
+        }
+        immersed = true
         reloadAtCurrentTime()
+    }
+
+    /// Honest note when the selected track is silent. Names who has audio now, or when it starts.
+    func recordingStatus() -> String? {
+        guard let timeline else { return nil }
+        if segment(at: utc) != nil { return nil }
+        let span = activeSpan
+        let clips = timeline.segments.filter { segment in
+            guard let span else { return true }
+            return segment.end > span.start && segment.start < span.end
+        }
+        let liveTracks = uniqueTracks(clips.filter { utc >= $0.start && utc < $0.end })
+        if liveTracks.isEmpty {
+            if let upcoming = clips.filter({ $0.start > utc }).min(by: { $0.start < $1.start }) {
+                return upcomingNote(upcoming, timeline: timeline, ended: false)
+            }
+            if let previous = clips.filter({ $0.end <= utc }).max(by: { $0.end < $1.end }) {
+                return upcomingNote(previous, timeline: timeline, ended: true)
+            }
+            return "No recording at this time."
+        }
+        let names = liveTracks.flatMap { crewNames(on: $0, timeline: timeline) }
+        let who = names.joined(separator: " and ")
+        let verb = names.count == 1 ? "has" : "have"
+        var text = "No recording on this track at this time. \(who) \(verb) audio now."
+        if let own = clips.filter({ $0.track == trackID && $0.start > utc }).min(by: { $0.start < $1.start }) {
+            text += " This track starts at \(Stamp.clock(own.startUTC)) UTC."
+        }
+        return text
+    }
+
+    private func upcomingNote(_ segment: Segment, timeline: Timeline, ended: Bool) -> String {
+        let who = crewNames(on: segment.track, timeline: timeline).joined(separator: " and ")
+        let when = Stamp.clock(ended ? segment.endUTC : segment.startUTC)
+        let verb = ended ? "ended" : "starts"
+        if who.isEmpty {
+            return "No recording at this time. Audio \(verb) at \(when) UTC."
+        }
+        return "No recording at this time. \(who) audio \(verb) at \(when) UTC."
+    }
+
+    private func crewNames(on track: String, timeline: Timeline) -> [String] {
+        timeline.crew.filter { $0.track == track }.map(\.id)
+    }
+
+    private func uniqueTracks(_ clips: [Segment]) -> [String] {
+        var seen = Set<String>()
+        var tracks: [String] = []
+        for clip in clips where seen.insert(clip.track).inserted {
+            tracks.append(clip.track)
+        }
+        return tracks
     }
 
     /// Opens the cabin on the current clock, or on a milestone pin.
@@ -345,6 +425,9 @@ final class PlaybackModel: NSObject, ObservableObject {
         utc = timeline?.window.start ?? utc
         holdUntil = nil
         setWindow(.nikon)
+        if let span = activeSpan, utc < span.end {
+            ended = false
+        }
         reloadAtCurrentTime()
     }
 
