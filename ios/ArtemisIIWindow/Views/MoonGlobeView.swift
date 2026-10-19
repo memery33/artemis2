@@ -17,17 +17,14 @@ enum MoonMap {
         return UIImage(contentsOfFile: url.path)
     }
 
-    /// Decodes off the main thread. The unit-test host never starts this work.
-    /// The decode queue matches the main thread's QoS, and the result hops back asynchronously, so the main thread never waits on it.
+    /// Decodes off the main thread. The unit-test host, and any moment before the first scene is active, never starts this work.
     static func load(completion: @escaping @MainActor (UIImage?) -> Void) {
-        guard !RuntimeHost.isUnitTestHost else { return }
+        guard RuntimeHost.mayDecodeImages else { return }
         let url = resourceURL()
-        DispatchQueue.global(qos: .userInteractive).async {
+        Task.detached(priority: .userInitiated) {
             let owned = url.flatMap { decoded($0) }
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    completion(owned.map { UIImage(cgImage: $0.image) })
-                }
+            await MainActor.run {
+                completion(owned.map { UIImage(cgImage: $0.image) })
             }
         }
     }
@@ -238,14 +235,7 @@ private struct GlobeScene: UIViewRepresentable {
         view.antialiasingMode = .multisampling2X
         view.clipsToBounds = true
         view.scene = makeScene()
-        let sceneView = view
-        MoonMap.load { image in
-            guard let image,
-                  let moon = sceneView.scene?.rootNode.childNode(withName: "moon", recursively: false) else {
-                return
-            }
-            moon.geometry?.firstMaterial?.diffuse.contents = image
-        }
+        attachColorMap(to: view, coordinator: context.coordinator)
         view.allowsCameraControl = false
         view.isAccessibilityElement = false
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
@@ -275,6 +265,7 @@ private struct GlobeScene: UIViewRepresentable {
         context.coordinator.currentSpan = currentSpan
         context.coordinator.labels = labels
         context.coordinator.clock = utc
+        attachColorMap(to: view, coordinator: context.coordinator)
         guard let now = view.scene?.rootNode.childNode(withName: "now", recursively: true),
               let position = FlybyPath.position(at: utc, samples: samples) else {
             context.coordinator.refreshLabels(in: view)
@@ -282,6 +273,14 @@ private struct GlobeScene: UIViewRepresentable {
         }
         now.position = GlobeMapping.scene(position, radiusKm: radiusKm)
         context.coordinator.refreshLabels(in: view)
+    }
+
+    /// SceneKit loads a file URL on its own. Assigning a decoded `UIImage` to `diffuse.contents` waits on that loader from the main thread.
+    private func attachColorMap(to view: SCNView, coordinator: Coordinator) {
+        guard !coordinator.didAttachMap, RuntimeHost.mayDecodeImages, let url = MoonMap.resourceURL() else { return }
+        coordinator.didAttachMap = true
+        view.scene?.rootNode.childNode(withName: "moon", recursively: false)?
+            .geometry?.firstMaterial?.diffuse.contents = url
     }
 
     private func makeScene() -> SCNScene {
@@ -521,6 +520,7 @@ extension GlobeScene {
         weak var view: SCNView?
         weak var labels: GlobeLabels?
         private var scrubbing = false
+        var didAttachMap = false
         private var gestureAnchor: (x: CGFloat, y: CGFloat, date: Date)?
         var clock = Date(timeIntervalSinceReferenceDate: 0)
 

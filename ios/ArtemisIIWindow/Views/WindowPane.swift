@@ -104,7 +104,12 @@ struct WindowPane: View {
                         .font(.footnote)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white.opacity(0.85))
+                        .contentTransition(.identity)
                         .padding(24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .padding(.bottom, 88)
+                        .id(side)
+                        .transition(.identity)
                 }
                 if pair.outsideSpan, let frame = pair.current {
                     VStack {
@@ -169,7 +174,7 @@ struct WindowPane: View {
             LyricLines(focus: lyricFocus)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.black.opacity(0.55))
+                .background(Color.black)
                 .padding(.horizontal, side == .nikon ? 18 : 6)
                 .padding(.bottom, side == .nikon ? 20 : 6)
         }
@@ -193,7 +198,7 @@ struct WindowPane: View {
             .foregroundStyle(.white)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.black.opacity(0.55))
+            .background(Color.black)
             .padding(.horizontal, side == .nikon ? 18 : 6)
             .padding(.bottom, side == .nikon ? 22 : 8)
         }

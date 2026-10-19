@@ -59,23 +59,30 @@ struct CrewRow: View {
 
 struct LyricLines: View {
     var focus: LyricFocus
+    @State private var shown: LyricFocus
+
+    init(focus: LyricFocus) {
+        self.focus = focus
+        _shown = State(initialValue: focus)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // The line that just finished sits above the current one. It is a different view, so it cannot fade in place behind the new words.
-            if let previous = focus.previous {
+            if let previous = shown.previous {
                 verse(previous, prominent: false)
             }
-            if let current = focus.current {
+            if let current = shown.current {
                 verse(current, prominent: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .transaction { transaction in
-            transaction.animation = nil
+        .onChange(of: focus) { _, newFocus in
+            var transaction = Transaction(animation: nil)
             transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                shown = newFocus
+            }
         }
-        .animation(nil, value: focus)
         .accessibilityElement(children: .contain)
     }
 
@@ -86,14 +93,17 @@ struct LyricLines: View {
                 .font(prominent ? .caption.weight(.semibold) : .caption2)
                 .foregroundStyle(Color(red: tint.0, green: tint.1, blue: tint.2).opacity(prominent ? 1 : 0.55))
                 .lineLimit(1)
+                .contentTransition(.identity)
             Text(line.text)
                 .font(prominent ? .title3.weight(.semibold) : .body)
                 .foregroundStyle(.white.opacity(prominent ? 1 : 0.72))
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+                .contentTransition(.identity)
         }
         .id(line.id)
+        .transition(.identity)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .clipped()
         .accessibilityElement(children: .combine)

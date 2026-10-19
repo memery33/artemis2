@@ -47,6 +47,16 @@ final class SubtitleFrameUITests: XCTestCase {
                 XCTAssertLessThanOrEqual(hit.height, 1, "\(frames[left]) overlaps \(frames[right])")
             }
         }
+        let missing = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "frame was taken at this time"))
+        for index in 0..<missing.count {
+            let intruder = missing.element(boundBy: index)
+            guard intruder.exists, intruder.frame.width > 1, intruder.frame.height > 1 else { continue }
+            for frame in frames {
+                let hit = intruder.frame.intersection(frame)
+                XCTAssertLessThanOrEqual(hit.width, 1, "\(intruder.label) overlaps \(frame)")
+                XCTAssertLessThanOrEqual(hit.height, 1, "\(intruder.label) overlaps \(frame)")
+            }
+        }
     }
 
     private func park(_ clock: XCUIElement, in app: XCUIApplication, from lower: Int, through upper: Int) {

@@ -132,6 +132,17 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// so other audio is left alone until the viewer starts.
     func begin() {
         guard !arrived, timeline != nil else { return }
+        if Self.opensAtSpanEnd(ProcessInfo.processInfo.arguments), let end = activeSpan?.end {
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                arrived = true
+                utc = end
+                ended = true
+                playing = false
+            }
+            return
+        }
         do {
             try activateSpokenSession()
         } catch {
@@ -142,13 +153,6 @@ final class PlaybackModel: NSObject, ObservableObject {
         installRemoteCommands()
         startDisplayLink()
         haptic.prepare()
-        if Self.opensAtSpanEnd(ProcessInfo.processInfo.arguments), let end = activeSpan?.end {
-            utc = end
-            ended = true
-            playing = false
-            refreshNowPlaying(force: true)
-            return
-        }
         play()
     }
 
@@ -1424,15 +1428,14 @@ enum MediaStore {
             failed.insert(name)
             return
         }
+        guard RuntimeHost.mayDecodeImages else { return }
         inflight.insert(name)
         waiters[name] = ready
         let pixels = CGFloat(pixelBucket(maxPixel))
-        DispatchQueue.global(qos: .userInteractive).async {
+        Task.detached(priority: .userInitiated) {
             let owned = ImageDecode.thumbnail(url: url, maxPixel: pixels)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    MediaStore.finishPrefetch(name: name, owned: owned, url: url, maxPixel: pixels)
-                }
+            await MainActor.run {
+                MediaStore.finishPrefetch(name: name, owned: owned, url: url, maxPixel: pixels)
             }
         }
     }

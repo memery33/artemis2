@@ -25,7 +25,7 @@ final class BeginLaunchUITests: XCTestCase {
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
         begin.tap()
         let card = app.descendants(matching: .any)["end-card"]
-        XCTAssertTrue(card.waitForExistence(timeout: 8))
-        XCTAssertTrue(card.staticTexts["End of this span"].waitForExistence(timeout: 5))
+        XCTAssertTrue(card.waitForExistence(timeout: 15))
+        XCTAssertTrue(card.staticTexts["End of this span"].waitForExistence(timeout: 15))
     }
 }

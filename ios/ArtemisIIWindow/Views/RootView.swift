@@ -20,12 +20,23 @@ struct RootView: View {
             }
             if model.arrived, model.ended {
                 EndCard()
+                    .transition(.identity)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
+            }
+        }
+        .onAppear {
+            if scenePhase == .active {
+                RuntimeHost.noteSceneBecameActive()
             }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
                 model.setSceneActive(false)
             } else if phase == .active {
+                RuntimeHost.noteSceneBecameActive()
                 model.setSceneActive(true)
             }
         }
