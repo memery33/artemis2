@@ -37,14 +37,20 @@ enum FlybyLiveActivity {
             speaker: speaker,
             clock: clock
         )
-        let content = ActivityContent(state: state, staleDate: nil)
-        if let existing = Activity<FlybyActivityAttributes>.activities.first {
-            Task { await existing.update(content) }
-        } else if playing {
+        if Activity<FlybyActivityAttributes>.activities.isEmpty {
+            guard playing else { return }
             _ = try? Activity.request(
                 attributes: FlybyActivityAttributes(title: "Orion Window"),
-                content: content,
+                content: ActivityContent(state: state, staleDate: nil),
                 pushType: nil
+            )
+            return
+        }
+        // Look the activity up inside the task. A MainActor-isolated Activity
+        // cannot be sent into the concurrent update.
+        Task {
+            await Activity<FlybyActivityAttributes>.activities.first?.update(
+                ActivityContent(state: state, staleDate: nil)
             )
         }
     }

@@ -47,10 +47,6 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: NHYXW2AY53
         TARGETED_DEVICE_FAMILY: "1"
-    dependencies:
-      - target: ArtemisIIWindowWidget
-        embed: true
-        codeSign: true
       configs:
         Debug:
           ENABLE_TESTABILITY: YES
@@ -58,6 +54,10 @@ targets:
           ENABLE_TESTABILITY: NO
         ReleaseTesting:
           ENABLE_TESTABILITY: YES
+    dependencies:
+      - target: ArtemisIIWindowWidget
+        embed: true
+        codeSign: true
     preBuildScripts:
       - name: Copy demo data into the app bundle
         basedOnDependencyAnalysis: false

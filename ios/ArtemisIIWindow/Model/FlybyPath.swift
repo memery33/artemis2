@@ -95,7 +95,7 @@ enum FlybyPath {
     }
 
     static func date(atFraction fraction: Double, samples: [PathSample], lengths: [Double]) -> Date {
-        guard let first = samples.first, let last = samples.last, let total = lengths.last, total > 0 else {
+        guard let total = lengths.last, total > 0, samples.count > 1 else {
             return samples.first?.date ?? Date(timeIntervalSinceReferenceDate: 0)
         }
         let target = total * min(1, max(0, fraction))
