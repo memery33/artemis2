@@ -59,9 +59,10 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// Bumped when a prefetched frame lands in the cache. Views read this and stay cache-only.
     @Published private(set) var frameCacheEpoch = 0
 
-    private var engine = AVAudioEngine()
-    private var player = AVAudioPlayerNode()
-    private var environment = AVAudioEnvironmentNode()
+    /// Created on first use. The unit-test host never reads these, so it never builds an audio graph.
+    private lazy var engine = AVAudioEngine()
+    private lazy var player = AVAudioPlayerNode()
+    private lazy var environment = AVAudioEnvironmentNode()
     private var audioFile: AVAudioFile?
     private var currentFile: String?
     private var scheduledStart: TimeInterval = 0
@@ -93,12 +94,13 @@ final class PlaybackModel: NSObject, ObservableObject {
         super.init()
         spatial = UserDefaults.standard.bool(forKey: Self.spatialDefaultsKey)
         loadTimeline()
+        MediaStore.observeMemoryWarning()
+        guard !RuntimeHost.isUnitTestHost else { return }
         attachGraph()
         configureEnvironment()
         engine.connect(player, to: engine.mainMixerNode, format: nil)
         observeNotifications()
         observeEngineConfiguration()
-        MediaStore.observeMemoryWarning()
     }
 
     deinit {
@@ -143,6 +145,10 @@ final class PlaybackModel: NSObject, ObservableObject {
             }
             return
         }
+        guard !RuntimeHost.isUnitTestHost else {
+            arrived = true
+            return
+        }
         do {
             try activateSpokenSession()
         } catch {
@@ -173,6 +179,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         playing = true
         resumeAfterInterrupt = false
+        guard !RuntimeHost.isUnitTestHost else {
+            refreshNowPlaying(force: true)
+            return
+        }
         guard !engineFailed else {
             refreshNowPlaying(force: true)
             return
@@ -354,6 +364,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func restartPlayerIfNeeded() {
+        guard !skipsAudio else { return }
         guard playing, !engineFailed, audioFile != nil else { return }
         do {
             if !engine.isRunning {
@@ -521,6 +532,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func engagePlayback() {
+        guard !skipsAudio else { return }
         guard playing, !engineFailed else { return }
         do {
             try activateSpokenSession()
@@ -696,6 +708,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         scheduleGeneration += 1
         scheduledLead = 0
         audibleHostSeconds = nil
+        guard !skipsAudio else { return }
         player.stop()
     }
 
@@ -721,7 +734,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         refreshNowPlaying(force: true)
     }
 
+    private var skipsAudio: Bool { RuntimeHost.isUnitTestHost }
+
     private func followSegment() {
+        guard !skipsAudio else { return }
         guard playing, !engineFailed, holdUntil == nil else { return }
         guard let segment = segment(at: utc) else {
             if player.isPlaying {
@@ -736,6 +752,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func loadSegment(_ segment: Segment) {
+        guard !skipsAudio else { return }
         if unavailableFiles.contains(segment.file) {
             currentFile = segment.file
             audioFile = nil
@@ -790,6 +807,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func reschedule(file: AVAudioFile, at seconds: TimeInterval, when: AVAudioTime? = nil, lead: TimeInterval = 0) {
+        guard !skipsAudio else { return }
         stopPlayer()
         let generation = scheduleGeneration
         if let when, when.isHostTimeValid {
@@ -1189,6 +1207,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func rebuildEngine() {
+        guard !skipsAudio else { return }
         rebuilding = true
         defer { rebuilding = false }
         stopPlayer()
@@ -1313,6 +1332,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func refreshNowPlaying(force: Bool) {
+        guard !skipsAudio else { return }
         guard arrived, let span = activeSpan else { return }
         let elapsed = max(0, utc.timeIntervalSince(span.start))
         let second = Int(elapsed.rounded(.down))

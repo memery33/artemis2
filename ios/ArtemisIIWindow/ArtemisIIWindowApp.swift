@@ -6,8 +6,11 @@ struct ArtemisIIWindowApp: App {
 
     init() {
         // A Live Activity from the previous process keeps the widget and chronod alive.
-        // Register the dismissal before the player exists. sync is queued behind it and cannot request until the dismissal finishes.
-        FlybyLiveActivity.scheduleEndAllImmediately()
+        // End it, and wait until that end finishes, before the player exists.
+        // The unit-test host does not enter this path and does not touch ActivityKit.
+        if !RuntimeHost.isUnitTestHost {
+            FlybyLiveActivity.finishLaunchCleanup()
+        }
         _model = StateObject(wrappedValue: PlaybackModel())
     }
 

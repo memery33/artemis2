@@ -36,7 +36,7 @@ struct MoonGlobeView: View {
             Color.black
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("orion-path")
-            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. Drag the bright path to move the clock.")
+            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. The arc is drawn at 5% of its true altitude so it sits around the Moon. Latitude and longitude are unchanged. Drag the bright path to move the clock.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.72))
                 .accessibilityIdentifier("globe-caption")
@@ -103,7 +103,7 @@ struct MoonGlobeView: View {
 
     private func caption(samples: [PathSample], radiusKm: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. Drag the bright path to move the clock.")
+            Text("Orion’s path from JPL Horizons, Moon center, body-fixed MOON_ME. The arc is drawn at 5% of its true altitude so it sits around the Moon. Latitude and longitude are unchanged. Drag the bright path to move the clock.")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
@@ -246,8 +246,24 @@ private struct GlobeScene: UIViewRepresentable {
             context.coordinator.refreshLabels(in: view)
             return
         }
-        now.position = GlobeMapping.scene(position, radiusKm: radiusKm)
+        now.position = GlobeMapping.scene(position, radiusKm: radiusKm, compressAltitude: true)
+        placeCamera(in: view.scene?.rootNode, toward: position)
         context.coordinator.refreshLabels(in: view)
+    }
+
+    /// Looks along Orion’s current Moon-fixed direction and lights the globe from the side, as before.
+    /// No separate Sun vector is bundled, so the light stays the previous camera-relative key.
+    private func placeCamera(in root: SCNNode?, toward me: (x: Double, y: Double, z: Double)) {
+        guard let root,
+              let cameraNode = root.childNode(withName: "camera", recursively: false),
+              let sun = root.childNode(withName: "sun", recursively: false) else { return }
+        let cameraPosition = GlobeMapping.cameraPosition(toward: me)
+        cameraNode.position = cameraPosition
+        cameraNode.look(at: SCNVector3(0, 0, 0))
+        let side = cross(cameraPosition, SCNVector3(0, 1, 0))
+        let sideLength = max(0.001, simdLength(side))
+        sun.position = SCNVector3(side.x / sideLength * 8, 3.2, side.z / sideLength * 8)
+        sun.look(at: SCNVector3(0, 0, 0))
     }
 
     /// SceneKit loads a file URL on its own. Assigning a decoded `UIImage` to `diffuse.contents` waits on that loader from the main thread.
@@ -309,7 +325,7 @@ private struct GlobeScene: UIViewRepresentable {
         addStars(to: scene)
 
         if samples.count > 1 {
-            let context = lineGeometry(samples.map { GlobeMapping.scene(($0.x, $0.y, $0.z), radiusKm: radiusKm) })
+            let context = lineGeometry(samples.map { GlobeMapping.scene(($0.x, $0.y, $0.z), radiusKm: radiusKm, compressAltitude: true) })
             context.firstMaterial?.diffuse.contents = UIColor(white: 0.42, alpha: 1)
             context.firstMaterial?.emission.contents = UIColor(white: 0.28, alpha: 1)
             context.firstMaterial?.lightingModel = .constant
@@ -320,7 +336,7 @@ private struct GlobeScene: UIViewRepresentable {
             for span in spans {
                 let bright = samples.filter { $0.date >= span.start && $0.date <= span.end }
                 guard bright.count > 1 else { continue }
-                let geometry = lineGeometry(bright.map { GlobeMapping.scene(($0.x, $0.y, $0.z), radiusKm: radiusKm) })
+                let geometry = lineGeometry(bright.map { GlobeMapping.scene(($0.x, $0.y, $0.z), radiusKm: radiusKm, compressAltitude: true) })
                 geometry.firstMaterial?.diffuse.contents = UIColor(red: 0.82, green: 0.93, blue: 1, alpha: 1)
                 geometry.firstMaterial?.emission.contents = UIColor(red: 0.75, green: 0.9, blue: 1, alpha: 1)
                 geometry.firstMaterial?.lightingModel = .constant
@@ -337,7 +353,7 @@ private struct GlobeScene: UIViewRepresentable {
         let nowNode = SCNNode(geometry: now)
         nowNode.name = "now"
         if let position = FlybyPath.position(at: utc, samples: samples) {
-            nowNode.position = GlobeMapping.scene(position, radiusKm: radiusKm)
+            nowNode.position = GlobeMapping.scene(position, radiusKm: radiusKm, compressAltitude: true)
         }
         scene.rootNode.addChildNode(nowNode)
 
@@ -351,7 +367,7 @@ private struct GlobeScene: UIViewRepresentable {
             pin.firstMaterial?.lightingModel = .constant
             let node = SCNNode(geometry: pin)
             node.name = "pin-\(milestone.id)"
-            node.position = GlobeMapping.scene(position, radiusKm: radiusKm)
+            node.position = GlobeMapping.scene(position, radiusKm: radiusKm, compressAltitude: true)
             scene.rootNode.addChildNode(node)
         }
 
@@ -369,37 +385,22 @@ private struct GlobeScene: UIViewRepresentable {
 
         let camera = SCNCamera()
         camera.zNear = 0.01
-        camera.zFar = 200
+        camera.zFar = 80
         camera.fieldOfView = 38
         let cameraNode = SCNNode()
         cameraNode.camera = camera
         cameraNode.name = "camera"
-        var cameraPosition = SCNVector3(0, 2, 16)
-        if let approach = FlybyPath.closestApproach(samples, radiusKm: radiusKm),
-           let position = FlybyPath.position(at: approach.date, samples: samples) {
-            let placed = GlobeMapping.scene(position, radiusKm: radiusKm)
-            let length = max(0.001, simdLength(placed))
-            let outward: Float = length + 6
-            cameraPosition = SCNVector3(
-                placed.x / length * outward,
-                placed.y / length * outward * 0.35 + 1.2,
-                placed.z / length * outward
-            )
-        }
-        cameraNode.position = cameraPosition
-        cameraNode.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(cameraNode)
 
         let sun = SCNNode()
+        sun.name = "sun"
         sun.light = SCNLight()
         sun.light?.type = .directional
         sun.light?.intensity = 1100
         sun.light?.color = UIColor(white: 1, alpha: 1)
-        let side = cross(cameraPosition, SCNVector3(0, 1, 0))
-        let sideLength = max(0.001, simdLength(side))
-        sun.position = SCNVector3(side.x / sideLength * 8, 3.2, side.z / sideLength * 8)
-        sun.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(sun)
+        let aim = FlybyPath.position(at: utc, samples: samples) ?? (x: 1.0, y: 0.0, z: 0.0)
+        placeCamera(in: scene.rootNode, toward: aim)
 
         let ambient = SCNNode()
         ambient.light = SCNLight()
@@ -419,7 +420,7 @@ private struct GlobeScene: UIViewRepresentable {
             let theta = Float(rng.next()) * 2 * .pi
             let z = Float(rng.next()) * 2 - 1
             let ring = (1 - z * z).squareRoot()
-            let radius = Float(18 + rng.next() * 16)
+            let radius = Float(5.4 + rng.next() * 3.2)
             points.append(SCNVector3(ring * cos(theta) * radius, z * radius, ring * sin(theta) * radius))
         }
         let source = SCNGeometrySource(vertices: points)
@@ -485,10 +486,57 @@ private struct SplitMix {
     }
 }
 
-private enum GlobeMapping {
+/// Shared by the globe and the tests. The moon node’s +90° yaw about Y puts texture
+/// u = 0.5 (longitude 0) on SceneKit +X, which is MOON_ME +X. East increases u and
+/// lands on SceneKit −Z, which is MOON_ME +Y.
+enum GlobeMapping {
+    /// Fraction of the true altitude kept on screen. Direction is not changed.
+    static let displayAltitudeScale = 0.05
+    /// Moon radii. At a 38° field of view the disk fills most of the panel.
+    static let cameraDistance: Float = 3.85
+
+    /// Equirectangular SVS map. u = 0.5 is longitude 0; east increases u.
+    static func textureU(longitudeEast: Double) -> Double {
+        var lon = longitudeEast.truncatingRemainder(dividingBy: 360)
+        if lon > 180 { lon -= 360 }
+        if lon <= -180 { lon += 360 }
+        return 0.5 + lon / 360
+    }
+
+    /// Where that texture coordinate is painted after the +90° yaw.
+    static func scene(textureU u: Double, latitude: Double) -> SCNVector3 {
+        let longitude = (u - 0.5) * 360
+        return scene(MoonFrame.unit(latitude: latitude, longitudeEast: longitude), radiusKm: 1)
+    }
+
+    /// Camera on the ray from the Moon’s center through this MOON_ME vector, far enough for the disk to fill the panel.
+    static func cameraPosition(toward me: (x: Double, y: Double, z: Double)) -> SCNVector3 {
+        let aimed = scene(me, radiusKm: 1)
+        let length = (aimed.x * aimed.x + aimed.y * aimed.y + aimed.z * aimed.z).squareRoot()
+        guard length > 0.001 else { return SCNVector3(cameraDistance, 0, 0) }
+        return SCNVector3(
+            aimed.x / length * cameraDistance,
+            aimed.y / length * cameraDistance,
+            aimed.z / length * cameraDistance
+        )
+    }
+
     /// IAU MOON_ME body-fixed (x at 0° east, y toward 90° east, z north) into SceneKit Y-up.
-    static func scene(_ me: (x: Double, y: Double, z: Double), radiusKm: Double) -> SCNVector3 {
-        let scale = 1 / radiusKm
+    /// `compressAltitude` draws a path sample closer than its true range and keeps its direction.
+    static func scene(
+        _ me: (x: Double, y: Double, z: Double),
+        radiusKm: Double,
+        compressAltitude: Bool = false
+    ) -> SCNVector3 {
+        let range = (me.x * me.x + me.y * me.y + me.z * me.z).squareRoot()
+        let scale: Double
+        if compressAltitude, range > 0, radiusKm > 0 {
+            let moons = range / radiusKm
+            let display = 1 + max(0, moons - 1) * displayAltitudeScale
+            scale = display / range
+        } else {
+            scale = 1 / max(radiusKm, 0.001)
+        }
         return SCNVector3(Float(me.x * scale), Float(me.z * scale), Float(-me.y * scale))
     }
 }
@@ -690,7 +738,7 @@ extension GlobeScene {
             for span in spans {
                 var rows: [PathScreenSample] = []
                 for sample in samples where sample.date >= span.start && sample.date <= span.end {
-                    let position = GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm)
+                    let position = GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: radiusKm, compressAltitude: true)
                     let projected = view.projectPoint(position)
                     if let camera, (projected.z >= 1 || !facesCamera(position, camera: camera)) {
                         continue
@@ -740,7 +788,7 @@ extension GlobeScene {
             var best: (milestone: Milestone, distance: CGFloat)?
             for milestone in milestones {
                 guard let position = FlybyPath.position(at: milestone.date, samples: samples) else { continue }
-                let placed = GlobeMapping.scene(position, radiusKm: radiusKm)
+                let placed = GlobeMapping.scene(position, radiusKm: radiusKm, compressAltitude: true)
                 let projected = view.projectPoint(placed)
                 if let camera, (projected.z >= 1 || !facesCamera(placed, camera: camera)) {
                     continue

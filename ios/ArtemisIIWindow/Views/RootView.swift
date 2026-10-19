@@ -62,21 +62,22 @@ struct GateView: View {
             VStack(spacing: 22) {
                 if let hero {
                     VStack(spacing: 8) {
-                        if let image = model.photo(hero, maxPixel: 900) {
-                            // art002e009951 is a bright limb. The black sky sits on the right,
-                            // so the square keeps the lit surface.
-                            Color.clear
-                                .frame(width: 220, height: 220)
-                                .overlay(alignment: .leading) {
+                        // art002e009951 is a bright limb. The black sky sits on the right,
+                        // so the square keeps the lit surface. The frame stays up while the
+                        // JPEG decodes, and the credit stays under it.
+                        Color.clear
+                            .frame(width: 220, height: 220)
+                            .overlay(alignment: .leading) {
+                                if let image = model.photo(hero, maxPixel: 900) {
                                     Image(uiImage: image)
                                         .resizable()
                                         .scaledToFill()
                                         .frame(width: 320, height: 220)
                                 }
-                                .clipped()
-                                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                                .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
-                        }
+                            }
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                            .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
                         CreditLine()
                     }
                 }
@@ -106,8 +107,13 @@ struct GateView: View {
             .padding(28)
         }
         .task(id: hero?.nasaID) {
-            if let hero {
+            guard let hero else { return }
+            RuntimeHost.noteSceneBecameActive()
+            for _ in 0..<40 {
+                if Task.isCancelled { return }
                 model.prefetch(hero, maxPixel: 900)
+                if model.photo(hero, maxPixel: 900) != nil { return }
+                try? await Task.sleep(nanoseconds: 100_000_000)
             }
         }
         .sheet(isPresented: $about) {
@@ -243,9 +249,9 @@ struct PhoneLayout: View {
     }
 }
 
-/// Landscape phone. The glass fills the safe area; the island and home
-/// indicator stay on the cabin. Controls sit in a side rail. Playback is
-/// the same object as portrait, so rotation does not touch the clock.
+/// Landscape phone. The Moon fills the left side. Crew, credit, and exhibits
+/// sit on the right, and the capsule runs along the bottom. Playback is the
+/// same object as portrait, so rotation does not touch the clock.
 struct LandscapeLayout: View {
     @EnvironmentObject private var model: PlaybackModel
     @State private var exhibits = false
@@ -276,23 +282,32 @@ struct LandscapeLayout: View {
         }
     }
 
-    /// The Moon fills the width. The capsule sits under it, so the path cannot run through the controls.
+    /// Globe on the left, crew and credit on the right, capsule along the bottom.
     private func globe(in size: CGSize) -> some View {
-        VStack(spacing: 0) {
+        let panel = min(320, max(220, size.width * 0.38))
+        return VStack(spacing: 0) {
             ClockReadout()
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-            MoonGlobeView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
-            Button("Exhibits") { exhibits = true }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .padding(.horizontal, 16)
-                .accessibilityIdentifier("exhibits-button")
-            CrewRow()
-                .padding(.horizontal, 16)
+                .padding(.top, 4)
+            HStack(alignment: .top, spacing: 8) {
+                MoonGlobeView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.leading, 8)
+                VStack(alignment: .leading, spacing: 8) {
+                    CrewRow()
+                    CreditLine()
+                    Button("Exhibits") { exhibits = true }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .accessibilityIdentifier("exhibits-button")
+                    Spacer(minLength: 0)
+                }
+                .padding(.trailing, 10)
+                .padding(.top, 4)
+                .frame(width: panel)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             DockBar()
         }
         .frame(width: size.width, height: size.height, alignment: .top)

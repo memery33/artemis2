@@ -35,6 +35,15 @@ protocol FlybyActivityClient: AnyObject {
     func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async
 }
 
+/// Used while this process is the unit-test host. It never calls ActivityKit.
+@MainActor
+final class SilentFlybyActivities: FlybyActivityClient {
+    func identifiers() -> [String] { [] }
+    func end(identifiers: [String]) async {}
+    func request(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {}
+    func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {}
+}
+
 @MainActor
 final class SystemFlybyActivities: FlybyActivityClient {
     func identifiers() -> [String] {
@@ -69,7 +78,9 @@ enum FlybyLiveActivity {
     private static var chain: Task<Void, Never>?
 
     @MainActor
-    static var client: any FlybyActivityClient = SystemFlybyActivities()
+    static var client: any FlybyActivityClient = RuntimeHost.isUnitTestHost
+        ? SilentFlybyActivities()
+        : SystemFlybyActivities()
 
     @MainActor
     static var isRunning: Bool {
@@ -93,12 +104,30 @@ enum FlybyLiveActivity {
     }
 
     /// Registers the dismissal before returning. `sync` is queued behind it.
+    /// The unit-test host's client is silent, so this does not touch ActivityKit there.
     @MainActor
     @discardableResult
     static func scheduleEndAllImmediately() -> Task<Void, Never> {
         let ids = client.identifiers()
         return enqueue {
             await client.end(identifiers: ids)
+        }
+    }
+
+    /// Ends every activity and does not return until that end has finished.
+    /// Launch calls this before the player exists. The unit-test host skips it.
+    @MainActor
+    static func finishLaunchCleanup() {
+        guard !RuntimeHost.isUnitTestHost else { return }
+        let gate = LaunchCleanup()
+        enqueue {
+            let ids = client.identifiers()
+            await client.end(identifiers: ids)
+            gate.finish()
+        }
+        let deadline = Date().addingTimeInterval(2)
+        while !gate.isFinished, Date() < deadline {
+            RunLoop.current.run(mode: .common, before: Date().addingTimeInterval(0.05))
         }
     }
 
@@ -120,6 +149,7 @@ enum FlybyLiveActivity {
                 nextMilestone: nextMilestone,
                 speaker: speaker,
                 clock: clock,
+                hourText: FlybyActivityAttributes.ContentState.hourText(for: utcStart),
                 playing: playing,
                 utcStart: utcStart,
                 wallStart: wallStart
@@ -147,5 +177,23 @@ enum FlybyLiveActivity {
         }
         chain = task
         return task
+    }
+}
+
+/// Lets launch wait until the dismissal task has finished without leaving the main actor.
+private final class LaunchCleanup: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+
+    var isFinished: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return finished
+    }
+
+    func finish() {
+        lock.lock()
+        finished = true
+        lock.unlock()
     }
 }

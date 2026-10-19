@@ -55,8 +55,9 @@ struct FlybyLiveActivityWidget: Widget {
     }
 }
 
-/// While playback is running, the mission clock is a timer anchored at `(utcStart, wallStart)`.
-/// The widget process advances it. A paused activity shows the last `HH:mm:ss` string.
+/// While playback is running, the hour is fixed and the minutes and seconds are a
+/// count-up under one hour, so the widget draws real seconds at 1x. A paused
+/// activity shows the last `HH:mm:ss` string.
 struct MissionClockText: View {
     var state: FlybyActivityAttributes.ContentState
     var font: Font
@@ -64,7 +65,15 @@ struct MissionClockText: View {
     var body: some View {
         Group {
             if state.playing {
-                Text(timerInterval: state.missionTimer, countsDown: false)
+                HStack(spacing: 0) {
+                    Text(state.hourText)
+                    Text(
+                        timerInterval: state.missionTimer,
+                        pauseTime: nil,
+                        countsDown: false,
+                        showsHours: false
+                    )
+                }
             } else {
                 Text(state.clock)
             }

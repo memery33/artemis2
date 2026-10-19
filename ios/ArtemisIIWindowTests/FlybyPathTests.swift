@@ -1,3 +1,4 @@
+import SceneKit
 import UIKit
 import XCTest
 @testable import ArtemisIIWindow
@@ -36,6 +37,64 @@ final class FlybyPathTests: XCTestCase {
         let approach = try XCTUnwrap(FlybyPath.closestApproach(samples, radiusKm: document.radiusKm))
         let placed = try XCTUnwrap(FlybyPath.position(at: approach.date, samples: samples))
         XCTAssertEqual(Self.degreesFrom180(Self.longitudeEast(x: placed.x, y: placed.y)), 0, accuracy: 1)
+    }
+
+    /// The SVS texture and the crater pins use one mapping. u for 47.4°W is the
+    /// Aristarchus pin, and Mare Crisium (59.1°E) sits toward the eastern limb.
+    func testTextureLongitudeMatchesThePin() {
+        let longitude = -47.4
+        let latitude = 23.7
+        let u = GlobeMapping.textureU(longitudeEast: longitude)
+        XCTAssertEqual(u, 0.5 + longitude / 360, accuracy: 0.000001)
+        let pin = GlobeMapping.scene(
+            MoonFrame.unit(latitude: latitude, longitudeEast: longitude),
+            radiusKm: 1
+        )
+        let painted = GlobeMapping.scene(textureU: u, latitude: latitude)
+        XCTAssertEqual(Double(painted.x), Double(pin.x), accuracy: 0.0001)
+        XCTAssertEqual(Double(painted.y), Double(pin.y), accuracy: 0.0001)
+        XCTAssertEqual(Double(painted.z), Double(pin.z), accuracy: 0.0001)
+        XCTAssertGreaterThan(pin.x, Float(0))
+        XCTAssertGreaterThan(pin.y, Float(0))
+        XCTAssertGreaterThan(pin.z, Float(0))
+
+        let crisium = GlobeMapping.scene(
+            MoonFrame.unit(latitude: 17.0, longitudeEast: 59.1),
+            radiusKm: 1
+        )
+        XCTAssertGreaterThan(crisium.x, Float(0))
+        XCTAssertLessThan(crisium.z, Float(0))
+        XCTAssertGreaterThan(abs(crisium.z), crisium.x)
+    }
+
+    func testDisplayedPathKeepsDirectionAndPullsTheRangeIn() throws {
+        let target = Self.utc("2026-04-06T19:40:00Z")
+        let sample = try XCTUnwrap(samples.min {
+            abs($0.date.timeIntervalSince(target)) < abs($1.date.timeIntervalSince(target))
+        })
+        let shown = GlobeMapping.scene(
+            (sample.x, sample.y, sample.z),
+            radiusKm: document.radiusKm,
+            compressAltitude: true
+        )
+        let full = GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: document.radiusKm)
+        let shownLength = Self.length(shown)
+        let fullLength = Self.length(full)
+        XCTAssertGreaterThan(Double(shownLength), 1.01)
+        XCTAssertLessThan(shownLength, fullLength)
+        XCTAssertEqual(Double(shown.x / shownLength), Double(full.x / fullLength), accuracy: 0.0001)
+        XCTAssertEqual(Double(shown.y / shownLength), Double(full.y / fullLength), accuracy: 0.0001)
+        XCTAssertEqual(Double(shown.z / shownLength), Double(full.z / fullLength), accuracy: 0.0001)
+        let camera = GlobeMapping.cameraPosition(toward: (sample.x, sample.y, sample.z))
+        XCTAssertEqual(Double(Self.length(camera)), Double(GlobeMapping.cameraDistance), accuracy: 0.001)
+        let aim = GlobeMapping.cameraDistance
+        XCTAssertEqual(Double(camera.x / aim), Double(full.x / fullLength), accuracy: 0.0001)
+        XCTAssertEqual(Double(camera.y / aim), Double(full.y / fullLength), accuracy: 0.0001)
+        XCTAssertEqual(Double(camera.z / aim), Double(full.z / fullLength), accuracy: 0.0001)
+    }
+
+    private static func length(_ point: SCNVector3) -> Float {
+        (point.x * point.x + point.y * point.y + point.z * point.z).squareRoot()
     }
 
     func testClosestApproachUsesTheSampleSpacing() throws {

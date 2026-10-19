@@ -61,12 +61,25 @@ final class LiveActivityEndTests: XCTestCase {
             nextMilestone: "End of this span",
             speaker: "Wiseman",
             clock: "19:33:01",
+            hourText: "19:",
             playing: true,
             utcStart: utc,
             wallStart: wall
         )
-        let seconds = TimeInterval(19 * 3600 + 33 * 60 + 1)
-        XCTAssertEqual(state.missionTimer.lowerBound.timeIntervalSince(wall), -seconds, accuracy: 0.5)
-        XCTAssertGreaterThan(state.missionTimer.upperBound, wall)
+        XCTAssertEqual(FlybyActivityAttributes.ContentState.hourText(for: utc), "19:")
+        XCTAssertEqual(state.hourText, "19:")
+        let minuteSeconds = TimeInterval(33 * 60 + 1)
+        XCTAssertEqual(state.missionTimer.lowerBound.timeIntervalSince(wall), -minuteSeconds, accuracy: 0.5)
+        XCTAssertEqual(
+            state.missionTimer.upperBound.timeIntervalSince(state.missionTimer.lowerBound),
+            3599,
+            accuracy: 0.5
+        )
+        XCTAssertLessThan(minuteSeconds, 3600)
+    }
+
+    @MainActor
+    func testUnitTestHostStartsWithASilentActivityClient() {
+        XCTAssertTrue(FlybyLiveActivity.client is SilentFlybyActivities)
     }
 }

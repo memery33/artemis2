@@ -8,6 +8,8 @@ struct FlybyActivityAttributes: ActivityAttributes {
         var speaker: String
         /// Mission UTC as `HH:mm:ss`, used while playback is paused.
         var clock: String
+        /// Hour prefix, including the colon, so the ticking minute timer can show real seconds.
+        var hourText: String
         /// While playing, the widget counts this anchor up instead of waiting for the app to push a new string.
         var playing: Bool
         /// Mission time at `wallStart`.
@@ -20,13 +22,23 @@ struct FlybyActivityAttributes: ActivityAttributes {
 }
 
 extension FlybyActivityAttributes.ContentState {
-    /// A count-up timer that reads the mission UTC time of day at `wallStart` and keeps ticking with the wall clock.
+    /// Minute-and-second count-up. The elapsed time stays under an hour, so the Live Activity
+    /// draws real seconds and advances with the wall clock instead of a coarse `HH:mm:--` timer.
     var missionTimer: ClosedRange<Date> {
+        let parts = Self.utcParts(utcStart)
+        let seconds = TimeInterval(parts.minute * 60 + parts.second)
+        let start = wallStart.addingTimeInterval(-seconds)
+        return start...start.addingTimeInterval(3599)
+    }
+
+    static func hourText(for date: Date) -> String {
+        String(format: "%02d:", utcParts(date).hour)
+    }
+
+    private static func utcParts(_ date: Date) -> (hour: Int, minute: Int, second: Int) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-        let parts = calendar.dateComponents([.hour, .minute, .second], from: utcStart)
-        let seconds = TimeInterval((parts.hour ?? 0) * 3600 + (parts.minute ?? 0) * 60 + (parts.second ?? 0))
-        let start = wallStart.addingTimeInterval(-seconds)
-        return start...start.addingTimeInterval(48 * 60 * 60)
+        let parts = calendar.dateComponents([.hour, .minute, .second], from: date)
+        return (parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
     }
 }
