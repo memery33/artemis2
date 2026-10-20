@@ -251,14 +251,20 @@ struct WindowPane: View {
     }
 }
 
-/// Small credit kept on every photograph. The words stay fully visible.
+/// Small credit kept on every photograph. Its own element, so a crater page
+/// query can find `photo-credit` beside the picture.
 struct CreditLine: View {
     var body: some View {
         Text("Credit: NASA/Artemis II Crew")
             .font(HybridFont.text(11, relativeTo: .caption2))
-            .foregroundStyle(HybridColor.cream.opacity(0.82))
+            .foregroundStyle(HybridColor.cream)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.55), in: Capsule())
             .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("photo-credit")
+            .accessibilityLabel("Credit: NASA/Artemis II Crew")
     }
 }
 

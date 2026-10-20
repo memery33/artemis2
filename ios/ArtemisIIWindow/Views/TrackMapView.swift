@@ -143,6 +143,7 @@ struct TrackMapView: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .environment(\.colorScheme, .dark)
                 .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
         }
         .clipped()
