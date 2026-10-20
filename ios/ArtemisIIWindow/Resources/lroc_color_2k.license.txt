@@ -1,6 +1,7 @@
 NASA Scientific Visualization Studio, CGI Moon Kit, ID 4720
 https://svs.gsfc.nasa.gov/4720/
-File: lroc_color_2k.jpg, 2048 by 1024, the 2025 LROC color map, centered on 0 degrees longitude.
+Source file: lroc_color_2k.jpg, 2048 by 1024, the 2025 LROC color map, centered on 0 degrees longitude.
+That equirectangular file is not bundled. The shipped crater map is lroc-track.jpg, a 1400 by 663 reprojection from 340 degrees E to 150 degrees E and 48 degrees N to 42 degrees S, drawn with north up and west on the left.
 Downloaded 2026-10-18 from
 https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg
 

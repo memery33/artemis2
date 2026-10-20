@@ -57,6 +57,7 @@ enum CraterKind: String, Identifiable, Equatable {
 struct HybridStage: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Namespace private var flight
     @State private var panelOpen = false
     /// Finger travel while the sheet is tracking. Zero once it snaps.
@@ -227,7 +228,7 @@ struct HybridStage: View {
                 FlybyRuler { kind in
                     crater = kind
                 }
-                .frame(width: 150)
+                .frame(width: dynamicTypeSize.isAccessibilitySize ? 228 : 176)
             }
             .frame(height: panelHeight)
             .background { panelFill }
@@ -292,6 +293,7 @@ struct HybridStage: View {
                 .frame(height: 44)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
+                .allowsHitTesting(!panelOpen)
                 .gesture(panelDrag(panelHeight: panelHeight))
                 .accessibilityElement()
                 .accessibilityIdentifier("panel-edge")
@@ -411,14 +413,12 @@ enum HybridFrames {
         }
     }
 
-    /// Window 2 (D5) only. The Z9 frames are the cabin: a bright slit at the top and hardware below.
-    /// Until the first frame tagged Moon, that frame stays up, at its own capture time.
+    /// Window 2 (D5) only. The latest real frame at or before the clock stays up.
+    /// Before the first frame, that first frame is shown, so Glushko (art002e009611,
+    /// 19:33:59) is on screen through 19:34:29 instead of the later Moon frame.
     static func windowTwo(at time: Date, frames: [Frame]) -> Frame? {
         let rows = frames.filter { $0.instrument == "nkd5015" }.sorted { $0.date < $1.date }
         guard !rows.isEmpty else { return nil }
-        if let moon = rows.first(where: { $0.targetID == "Moon" }), time < moon.date {
-            return moon
-        }
         if let taken = rows.last(where: { $0.date <= time }) {
             return taken
         }
@@ -459,19 +459,136 @@ enum HybridFrames {
 }
 
 enum HybridClock {
-    static func domain(timeline: Timeline?) -> (start: Date, end: Date)? {
-        guard let timeline else { return nil }
-        let end = FlybyEphemeris.bundled.flatMap {
+    /// The observation and the cab run share most of the ruler. The coasts are short.
+    static let observationWeight = 0.62
+    static let coastWeight = 0.06
+    static let cabWeight = 0.26
+    static let tailWeight = 0.06
+
+    static func approachDate(timeline: Timeline) -> Date {
+        FlybyEphemeris.bundled.flatMap {
             FlybyPath.closestApproach($0.samples, radiusKm: $0.document.radiusKm)?.date
         } ?? timeline.window.end
-        return (timeline.window.start, end)
+    }
+
+    /// The Horizons closest approach, only when that instant is inside a playable span.
+    static func playableApproach(timeline: Timeline) -> Date? {
+        let date = approachDate(timeline: timeline)
+        if date >= timeline.window.start, date < timeline.window.end { return date }
+        if let cab = timeline.cabRun, date >= cab.start, date < cab.end { return date }
+        return nil
+    }
+
+    static func pieces(timeline: Timeline) -> [RulerPiece] {
+        let window = timeline.window
+        let approach = approachDate(timeline: timeline)
+        guard let cab = timeline.cabRun, cab.start > window.end, cab.end > cab.start else {
+            if approach > window.end {
+                return [
+                    RulerPiece(start: window.start, end: window.end, weight: observationWeight),
+                    RulerPiece(start: window.end, end: approach, weight: coastWeight + cabWeight + tailWeight),
+                ]
+            }
+            return [RulerPiece(start: window.start, end: window.end, weight: 1)]
+        }
+        var rows = [
+            RulerPiece(start: window.start, end: window.end, weight: observationWeight),
+            RulerPiece(start: window.end, end: cab.start, weight: coastWeight),
+            RulerPiece(start: cab.start, end: cab.end, weight: cabWeight),
+        ]
+        if approach > cab.end {
+            rows.append(RulerPiece(start: cab.end, end: approach, weight: tailWeight))
+        }
+        return rows
     }
 
     static func fraction(date: Date, timeline: Timeline?) -> Double {
-        guard let domain = domain(timeline: timeline) else { return 0 }
-        let span = domain.end.timeIntervalSince(domain.start)
-        guard span > 0 else { return 0 }
-        return min(1, max(0, date.timeIntervalSince(domain.start) / span))
+        guard let timeline else { return 0 }
+        let rows = pieces(timeline: timeline)
+        let total = rows.reduce(0) { $0 + $1.weight }
+        guard total > 0 else { return 0 }
+        var used = 0.0
+        for (index, piece) in rows.enumerated() {
+            let duration = piece.end.timeIntervalSince(piece.start)
+            let isLast = index == rows.count - 1
+            if date < piece.end || isLast {
+                let local: Double
+                if duration <= 0 || date <= piece.start {
+                    local = 0
+                } else if date >= piece.end {
+                    local = 1
+                } else {
+                    local = date.timeIntervalSince(piece.start) / duration
+                }
+                return min(1, max(0, (used + piece.weight * local) / total))
+            }
+            used += piece.weight
+        }
+        return 1
+    }
+
+    static func date(atFraction fraction: Double, timeline: Timeline?) -> Date? {
+        guard let timeline else { return nil }
+        let rows = pieces(timeline: timeline)
+        let total = rows.reduce(0) { $0 + $1.weight }
+        guard total > 0, let first = rows.first else { return nil }
+        let target = min(1, max(0, fraction)) * total
+        var used = 0.0
+        for (index, piece) in rows.enumerated() {
+            let next = used + piece.weight
+            let isLast = index == rows.count - 1
+            if target <= next || isLast {
+                let local = piece.weight > 0 ? (target - used) / piece.weight : 0
+                let duration = piece.end.timeIntervalSince(piece.start)
+                return piece.start.addingTimeInterval(duration * min(1, max(0, local)))
+            }
+            used = next
+        }
+        return first.start
+    }
+
+    static func openingLine(window: TimeSpan) -> String {
+        let clock = Stamp.clock(window.startUTC)
+        let seconds = max(0, Int(window.end.timeIntervalSince(window.start).rounded()))
+        let minutes = seconds / 60
+        let remain = seconds % 60
+        let duration = remain == 0 ? "\(minutes) min" : "\(minutes) min \(remain) s"
+        return "\(clock) UTC · \(duration)"
+    }
+}
+
+struct RulerPiece: Equatable {
+    var start: Date
+    var end: Date
+    var weight: Double
+}
+
+/// One inset for the rail, the ticks, the needle, `y`, and `date(atY:)`.
+enum RulerMetrics {
+    static let topInset: CGFloat = 16
+    static let bottomInset: CGFloat = 16
+
+    static func trackHeight(_ height: CGFloat) -> CGFloat {
+        max(1, height - topInset - bottomInset)
+    }
+
+    static func y(fraction: Double, height: CGFloat) -> CGFloat {
+        topInset + CGFloat(min(1, max(0, fraction))) * trackHeight(height)
+    }
+
+    static func fraction(y: CGFloat, height: CGFloat) -> Double {
+        let track = trackHeight(height)
+        return Double(min(1, max(0, (y - topInset) / track)))
+    }
+}
+
+enum FrameOptics {
+    /// "Window 2 · 400 mm" when the frame's label carries a window and a focal length.
+    static func line(_ frame: Frame) -> String? {
+        guard let window = frame.window, !window.isEmpty, let mm = frame.focalLengthMM, mm > 0 else { return nil }
+        let whole = mm.rounded()
+        let digits = abs(mm - whole) < 0.05 ? String(format: "%.0f", whole) : String(format: "%.1f", mm)
+        return "Window \(window) · \(digits) mm"
     }
 }
 
@@ -600,7 +717,7 @@ struct ControlPanel: View {
             .fill(HybridColor.cream.opacity(0.72))
             .frame(width: 36, height: 4)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: 28)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
             .onTapGesture {
                 if suppressCloseTap {
@@ -712,7 +829,7 @@ struct ControlPanel: View {
                 .fontWeight(.medium)
                 .foregroundStyle(selected ? HybridColor.ink : HybridColor.dim)
                 .padding(.horizontal, 12)
-                .frame(minHeight: 36)
+                .frame(minHeight: 44)
                 .background {
                     Capsule().fill(selected ? HybridColor.cream.opacity(0.92) : Color.white.opacity(0.06))
                 }
@@ -764,9 +881,8 @@ struct FlybyRuler: View {
                 tickLayer(height: height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     .allowsHitTesting(false)
-                labelColumn
-                    .padding(.bottom, 76)
-                    .padding(.trailing, 34)
+                labelColumn(height: height, width: geo.size.width)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .overlay(alignment: .trailing) {
                 Color.clear
@@ -793,9 +909,9 @@ struct FlybyRuler: View {
         return ZStack(alignment: .topTrailing) {
             Capsule()
                 .fill(HybridColor.cream.opacity(0.32))
-                .frame(width: 1, height: max(0, height - 96))
-                .padding(.top, 54)
+                .frame(width: 1, height: RulerMetrics.trackHeight(height))
                 .padding(.trailing, 18)
+                .offset(y: RulerMetrics.topInset)
             if let window = timeline?.window {
                 spanBar(from: window.start, to: window.end, height: height, width: 2, trailing: 30, color: HybridColor.gold)
             }
@@ -813,7 +929,7 @@ struct FlybyRuler: View {
                 .fill(HybridColor.cream)
                 .frame(width: 22, height: 2)
                 .padding(.trailing, 10)
-                .offset(y: y(model.utc, height: height))
+                .offset(y: y(model.utc, height: height) - 1)
                 .shadow(color: HybridColor.gold.opacity(0.9), radius: 4)
         }
         .allowsHitTesting(false)
@@ -829,35 +945,46 @@ struct FlybyRuler: View {
             .offset(y: top)
     }
 
-    private var labelColumn: some View {
-        VStack(alignment: .trailing, spacing: 14) {
+    private func labelColumn(height: CGFloat, width: CGFloat) -> some View {
+        ZStack(alignment: .topTrailing) {
             if let line = quote(utc: "2026-04-06T19:33:02.700Z") {
-                labelButton(time: Stamp.clock(line.utc), name: "Aristarchus", now: isNow(line.date), identifier: "milestone-aristarchus") {
-                    onCrater(.aristarchus)
+                placed(at: line.date, height: height, width: width) {
+                    labelButton(time: Stamp.clock(line.utc), name: "Aristarchus", now: isNow(line.date), identifier: "milestone-aristarchus") {
+                        onCrater(.aristarchus)
+                    }
                 }
             }
             if let line = quote(utc: "2026-04-06T19:36:05.938Z") {
-                labelButton(time: Stamp.clock(line.utc), name: "Wiseman's line", now: isNow(line.date), identifier: "milestone-wiseman") {
-                    model.seek(to: line.date, markEnd: false)
+                placed(at: line.date, height: height, width: width) {
+                    labelButton(time: Stamp.clock(line.utc), name: "Aristarchus line", now: isNow(line.date), identifier: "milestone-wiseman") {
+                        model.showFlyby()
+                        model.seek(toLine: line)
+                    }
                 }
             }
             if let line = quote(utc: "2026-04-06T19:40:57.609Z") {
-                labelButton(time: Stamp.clock(line.utc), name: "Reiner Gamma", now: isNow(line.date), identifier: "milestone-reiner") {
-                    onCrater(.reiner)
+                placed(at: line.date, height: height, width: width) {
+                    labelButton(time: Stamp.clock(line.utc), name: "Reiner Gamma", now: isNow(line.date), identifier: "milestone-reiner") {
+                        onCrater(.reiner)
+                    }
                 }
             }
             if let approach = approachDate {
-                labelButton(
-                    time: ClockMath.utcText(approach).replacingOccurrences(of: " UTC", with: ""),
-                    name: "Closest approach",
-                    now: isNow(approach),
-                    identifier: "milestone-approach"
-                ) {
-                    parkBeforeEnd(approach)
+                placed(at: approach, height: height, width: width) {
+                    approachMark(approach)
                 }
             }
         }
-        .frame(width: 108, alignment: .trailing)
+    }
+
+    private func placed<Label: View>(at date: Date, height: CGFloat, width: CGFloat, @ViewBuilder label: () -> Label) -> some View {
+        let gutter: CGFloat = 36
+        let labelWidth = max(96, width - gutter - 4)
+        let centerX = width - gutter - labelWidth / 2
+        let centerY = min(max(22, y(date, height: height)), max(22, height - 22))
+        return label()
+            .frame(width: labelWidth, alignment: .trailing)
+            .position(x: centerX, y: centerY)
     }
 
     private func labelButton(
@@ -874,12 +1001,13 @@ struct FlybyRuler: View {
                     .fontWeight(.semibold)
                 Text(name)
                     .font(HybridFont.text(11, relativeTo: .caption2))
-                    .lineLimit(2)
+                    .lineLimit(3)
                     .multilineTextAlignment(.trailing)
-                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+            .fixedSize(horizontal: false, vertical: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -900,8 +1028,41 @@ struct FlybyRuler: View {
         return FlybyPath.closestApproach(bundled.samples, radiusKm: bundled.document.radiusKm)?.date
     }
 
+    /// Closest approach from the Horizons table. It sits after both playable spans,
+    /// so the mark is the real time and is not a seek to the end of the span.
+    @ViewBuilder
+    private func approachMark(_ date: Date) -> some View {
+        let playable = model.timeline.flatMap { HybridClock.playableApproach(timeline: $0) } != nil
+        if playable {
+            labelButton(
+                time: ClockMath.utcText(date).replacingOccurrences(of: " UTC", with: ""),
+                name: "Closest approach",
+                now: isNow(date),
+                identifier: "milestone-approach"
+            ) {
+                model.seek(to: date, markEnd: false)
+            }
+        } else {
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(ClockMath.utcText(date).replacingOccurrences(of: " UTC", with: ""))
+                    .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
+                    .fontWeight(.semibold)
+                Text("Closest approach")
+                    .font(HybridFont.text(11, relativeTo: .caption2))
+                    .lineLimit(3)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(isNow(date) ? HybridColor.gold : HybridColor.cream)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("milestone-approach")
+            .accessibilityLabel("Closest approach, outside the flyby and the cab run")
+        }
+    }
+
     private func y(_ date: Date, height: CGFloat) -> CGFloat {
-        HybridClock.fraction(date: date, timeline: model.timeline) * height
+        RulerMetrics.y(fraction: HybridClock.fraction(date: date, timeline: model.timeline), height: height)
     }
 
     private func scrub(height: CGFloat) -> some Gesture {
@@ -909,7 +1070,7 @@ struct FlybyRuler: View {
             .onChanged { value in
                 guard let date = date(atY: value.location.y, height: height) else { return }
                 if !model.scrubbing { model.beginScrub() }
-                land(on: date)
+                model.scrubRuler(to: date)
             }
             .onEnded { _ in
                 model.endScrub(markEnd: false)
@@ -917,46 +1078,7 @@ struct FlybyRuler: View {
     }
 
     private func date(atY y: CGFloat, height: CGFloat) -> Date? {
-        guard height > 1, let domain = HybridClock.domain(timeline: model.timeline) else { return nil }
-        let span = domain.end.timeIntervalSince(domain.start)
-        guard span > 0 else { return nil }
-        return domain.start.addingTimeInterval(span * min(1, max(0, y / height)))
-    }
-
-    /// The ruler runs through closest approach. A drag past the observation window
-    /// parks inside the real span and does not end the Live Activity.
-    private func land(on date: Date) {
-        guard let timeline = model.timeline else { return }
-        if let cab = timeline.cabRun, date >= cab.start {
-            if model.trackID != "pcd2" {
-                model.trackID = "pcd2"
-                if let member = timeline.crew.first(where: { $0.track == "pcd2" }) {
-                    model.crewID = member.id
-                }
-            }
-            if model.range != .cab { model.range = .cab }
-            if model.window != .cab { model.setWindow(.cab) }
-            if date < cab.end {
-                model.utc = date
-            } else {
-                model.utc = cab.end.addingTimeInterval(-0.05)
-            }
-            return
-        }
-        let leavingCab = model.range == .cab
-        if model.range != .flyby { model.range = .flyby }
-        if leavingCab, model.window != .nikon { model.setWindow(.nikon) }
-        if date >= timeline.window.start, date < timeline.window.end {
-            model.utc = date
-        } else {
-            model.utc = timeline.window.end.addingTimeInterval(-0.05)
-        }
-    }
-
-    private func parkBeforeEnd(_ date: Date) {
-        guard let span = model.activeSpan else { return }
-        let parked = min(date, span.end.addingTimeInterval(-0.05))
-        model.seek(to: max(parked, span.start), markEnd: false)
+        HybridClock.date(atFraction: RulerMetrics.fraction(y: y, height: height), timeline: model.timeline)
     }
 }
 
@@ -1074,23 +1196,11 @@ struct CraterPage: View {
             .frame(height: 180)
             .frame(maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(false)
-            TrackMapView(date: model.utc, emphasized: kind.siteID)
+            TrackMapView(date: frame?.date ?? model.utc, emphasized: kind.siteID)
                 .frame(height: 168)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .padding(.horizontal, 20)
                 .padding(.bottom, 28)
-            VStack(alignment: .leading, spacing: 4) {
-                if let frame {
-                    Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
-                        .font(HybridFont.text(12, relativeTo: .caption))
-                        .foregroundStyle(HybridColor.cream)
-                        .shadow(color: .black.opacity(0.7), radius: 6, y: 1)
-                }
-                CreditLine()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.leading, 20)
-            .padding(.top, 108)
         }
         .frame(height: 420)
         .clipped()
@@ -1125,6 +1235,21 @@ struct CraterPage: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("about-this-data")
             .accessibilityLabel("About this data")
+            if let frame {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
+                        .accessibilityIdentifier("crater-photo-id")
+                    if let optics = FrameOptics.line(frame) {
+                        Text(optics)
+                            .accessibilityIdentifier("crater-optics")
+                    }
+                    Text(frame.credit)
+                }
+                .font(HybridFont.text(13, relativeTo: .footnote))
+                .foregroundStyle(HybridColor.dim)
+                .fixedSize(horizontal: false, vertical: true)
+                CreditLine()
+            }
             if showsData {
                 VStack(alignment: .leading, spacing: 10) {
                     if let site {
@@ -1149,5 +1274,22 @@ struct CraterPage: View {
 
     private func hemisphere(_ value: Double, positive: String, negative: String) -> String {
         String(format: "%.2f° %@", abs(value), value >= 0 ? positive : negative)
+    }
+}
+
+/// Small credit kept on every photograph. Its own element, so a crater page
+/// query can find `photo-credit` beside the picture.
+struct CreditLine: View {
+    var body: some View {
+        Text("Credit: NASA/Artemis II Crew")
+            .font(HybridFont.text(11, relativeTo: .caption2))
+            .foregroundStyle(HybridColor.cream)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.55), in: Capsule())
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("photo-credit")
+            .accessibilityLabel("Credit: NASA/Artemis II Crew")
     }
 }

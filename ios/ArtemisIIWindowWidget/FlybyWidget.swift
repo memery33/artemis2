@@ -67,8 +67,14 @@ struct FlybyLiveActivityWidget: Widget {
                         .font(HybridFont.text(11, relativeTo: .caption2))
                 }
             } minimal: {
-                Text(String(context.state.speaker.prefix(1)))
-                    .font(HybridFont.text(11, relativeTo: .caption2))
+                if context.state.playing {
+                    Text(String(context.state.speaker.prefix(1)))
+                        .font(HybridFont.text(11, relativeTo: .caption2))
+                } else {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .accessibilityLabel("Paused")
+                }
             }
         }
     }

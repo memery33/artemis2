@@ -1,5 +1,21 @@
 import SwiftUI
 
+/// RootView's scene-phase policy. Backgrounding pauses the clock push and does not end the Live Activity.
+@MainActor
+enum SceneActivity {
+    static func apply(_ phase: ScenePhase, model: PlaybackModel) {
+        switch phase {
+        case .background:
+            model.setSceneActive(false)
+        case .active:
+            RuntimeHost.noteSceneBecameActive()
+            model.setSceneActive(true)
+        default:
+            break
+        }
+    }
+}
+
 struct RootView: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.scenePhase) private var scenePhase
@@ -28,20 +44,10 @@ struct RootView: View {
             }
         }
         .onAppear {
-            if scenePhase == .active {
-                RuntimeHost.noteSceneBecameActive()
-                model.setSceneActive(true)
-            }
+            SceneActivity.apply(scenePhase, model: model)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background {
-                // Backgrounding never ends the Live Activity. setSceneActive pushes
-                // the current state, including a pause, before the scene suspends.
-                model.setSceneActive(false)
-            } else if phase == .active {
-                RuntimeHost.noteSceneBecameActive()
-                model.setSceneActive(true)
-            }
+            SceneActivity.apply(phase, model: model)
         }
     }
 }
@@ -103,7 +109,7 @@ struct GateView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
                     .shadow(color: .black.opacity(0.55), radius: 12, y: 4)
-                Text("19:33:00 UTC · 15 min 30 s")
+                Text(model.timeline.map { HybridClock.openingLine(window: $0.window) } ?? "")
                     .font(HybridFont.text(15, relativeTo: .subheadline))
                     .foregroundStyle(HybridColor.dim)
                     .lineLimit(1)

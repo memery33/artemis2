@@ -152,6 +152,7 @@ struct Frame: Decodable, Equatable, Identifiable {
     let look: String?
     let targetID: String
     let exposureNote: String
+    let focalLengthMM: Double?
 
     var id: String { nasaID }
     var isCabinCard: Bool { nasaID == Timeline.cabinID }
@@ -163,6 +164,7 @@ struct Frame: Decodable, Equatable, Identifiable {
         case cameraLabel = "camera_label"
         case targetID = "target_id"
         case exposureNote = "exposure_note"
+        case focalLengthMM = "focal_length_mm"
     }
 
     init(from decoder: Decoder) throws {
@@ -177,6 +179,7 @@ struct Frame: Decodable, Equatable, Identifiable {
         look = try raw.decodeIfPresent(String.self, forKey: .look)
         targetID = try raw.decodeIfPresent(String.self, forKey: .targetID) ?? ""
         exposureNote = try raw.decodeIfPresent(String.self, forKey: .exposureNote) ?? ""
+        focalLengthMM = try raw.decodeIfPresent(Double.self, forKey: .focalLengthMM)
         date = try ISO8601.parse(utc)
     }
 }

@@ -260,16 +260,6 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertLessThan(MoonFrame.unit(latitude: -19.87, longitudeEast: -94.67).z, 0)
     }
 
-    func testLROColorMapLoadsFromTheBundle() throws {
-        let url = try XCTUnwrap(MoonMap.resourceURL())
-        let data = try Data(contentsOf: url)
-        XCTAssertGreaterThan(data.count, 100_000)
-        let image = try XCTUnwrap(MoonMap.image())
-        let pixels = try XCTUnwrap(image.cgImage)
-        XCTAssertEqual(pixels.width, 2048)
-        XCTAssertEqual(pixels.height, 1024)
-    }
-
     func testSnapPullsASilentInstantOntoTheNearestRecording() {
         let start = Date(timeIntervalSince1970: 1_000)
         let end = start.addingTimeInterval(900)

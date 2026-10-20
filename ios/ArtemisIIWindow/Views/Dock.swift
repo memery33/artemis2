@@ -1,149 +1,5 @@
 import SwiftUI
 
-struct DockBar: View {
-    @EnvironmentObject private var model: PlaybackModel
-    @State private var about = false
-    @State private var moments = false
-
-    var body: some View {
-        controls
-            .sheet(isPresented: $about) { AboutView() }
-            .sheet(isPresented: $moments) { MomentsSheet() }
-    }
-
-    @ViewBuilder
-    private var controls: some View {
-        capsuleControls
-    }
-
-    /// The same capsule on the Moon and in the cabin. Spatial, lines, and the spans are in the menu.
-    private var capsuleControls: some View {
-        HStack(spacing: 2) {
-            capsuleSkip(
-                system: "gobackward.15",
-                label: "Skip back 15 seconds",
-                identifier: "skip-back"
-            ) {
-                model.skip(by: -PlaybackModel.skipInterval)
-            }
-            capsulePlay
-            capsuleSkip(
-                system: "goforward.15",
-                label: "Skip forward 15 seconds",
-                identifier: "skip-forward"
-            ) {
-                model.skip(by: PlaybackModel.skipInterval)
-            }
-            capsuleText("Moments", label: "Moments", identifier: "moments-button") { moments = true }
-            capsuleText("Info", label: "Info and Credits", identifier: "info-button") { about = true }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background {
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
-                .environment(\.colorScheme, .dark)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("transport-capsule")
-    }
-
-    private var capsulePlay: some View {
-        let playing = model.playing
-        return Button(action: { model.toggle() }) {
-            Image(systemName: playing ? "pause.fill" : "play.fill")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.black)
-                .frame(width: 44, height: 36)
-                .background(Color.white, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("playback-toggle")
-        .accessibilityLabel(playing ? "Pause" : "Play")
-    }
-
-    private func capsuleSkip(
-        system: String,
-        label: String,
-        identifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: system)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
-        .accessibilityLabel(label)
-    }
-
-    private func capsuleText(
-        _ title: String,
-        label: String,
-        identifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .frame(minHeight: 44)
-                .padding(.horizontal, 6)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
-        .accessibilityLabel(label)
-    }
-
-}
-
-struct LiveTranscript: View {
-    @EnvironmentObject private var model: PlaybackModel
-
-    private var rows: [TranscriptLine] {
-        let lines = model.timeline?.lines.filter { $0.track == model.trackID } ?? []
-        return lines.filter { line in
-            let delta = line.date.timeIntervalSince(model.utc)
-            return delta > -15 && delta < 45
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Transcript")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.7))
-            if rows.isEmpty {
-                Text("No transcript line in this stretch.")
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.7))
-            } else {
-                ForEach(rows) { line in
-                    Button(action: { model.seek(toLine: line) }) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(line.speaker) · \(Stamp.clock(line.utc))")
-                                .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.6))
-                            Text(line.text)
-                                .font(.footnote)
-                                .foregroundStyle(.white)
-                                .multilineTextAlignment(.leading)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-}
-
 struct TranscriptSheet: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.dismiss) private var dismiss
@@ -239,9 +95,11 @@ struct AboutView: View {
                     }
                     Text("The app icon is a center crop of NASA ID art002e016184, a real Z9 frame from 19:33:26 UTC. It is not a new photograph.")
                         .font(HybridFont.text(13, relativeTo: .footnote))
-                    Text("The globe uses the NASA SVS CGI Moon Kit 2025 LROC color map, file lroc_color_2k.jpg, 2048 by 1024, public domain. Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio, Lunar Reconnaissance Orbiter Camera, Arizona State University, and Noah Petro (NASA/GSFC), visualization by Ernie Wright. SVS 4720. The map is centered on 0° longitude and is an aesthetic rendering, not a photograph and not the flyby lighting. The crater map, lroc-track.jpg, is a reprojection of that same file from 340° E to 150° E and 48° N to 42° S.")
+                    Text("Orion Window plays one clock: the crew recording, the Window 2 and Window 3 photographs, and a crater map of the track. The flyby and the cab run are separate spans. The span and spatial switches are on this screen.")
                         .font(HybridFont.text(13, relativeTo: .footnote))
-                    Text("Exhibit cards quote the Science and Operational Focus of NASA’s Guide to the Artemis II Lunar Targeting Plan for Aristarchus Plateau, Reiner Gamma, and Orientale Basin. The pictures are the real frames already labeled with those targets.")
+                    Text("The crater map, lroc-track.jpg, is a 1400 by 663 reprojection of the NASA SVS CGI Moon Kit 2025 LROC color map, SVS 4720, from 340° E to 150° E and 48° N to 42° S. The app draws it with north up and west on the left. Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio, Lunar Reconnaissance Orbiter Camera, Arizona State University, and Noah Petro (NASA/GSFC), visualization by Ernie Wright. It is an aesthetic rendering, not a photograph and not the flyby lighting.")
+                        .font(HybridFont.text(13, relativeTo: .footnote))
+                    Text("Crater pages quote the Science and Operational Focus of NASA’s Guide to the Artemis II Lunar Targeting Plan for Aristarchus Plateau, Reiner Gamma, and Orientale Basin. The pictures are the real frames already labeled with those targets.")
                         .font(HybridFont.text(13, relativeTo: .footnote))
                     Text("Orion’s path is a JPL Horizons observer table: Moon (301) from Artemis II (spacecraft) -1024 body center, sub-observer east longitude and latitude in the IAU MOON_ME body-fixed frame, plus range, one-minute steps from 2026-04-06 18:00 UT through 2026-04-07 02:00 UT. MOON_ME +X is the 0° east meridian, not the body-equator node. Closest approach is the minimum of that table, not a typed-in time. Surface labels use the USGS Gazetteer of Planetary Nomenclature: Aristarchus, Reiner Gamma, and Mare Orientale.")
                         .font(HybridFont.text(13, relativeTo: .footnote))

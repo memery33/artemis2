@@ -49,13 +49,12 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var range: MissionRange = .flyby
     @Published var spatial = false
     @Published var arrived = false
-    /// The cabin window is in front. The Moon stays one step back.
-    @Published var immersed = false
     /// Set when a playable span reaches its own end. A pause in the middle does not set it.
     @Published var ended = false
     @Published var engineFailed = false
-    /// Phone and landscape read the 720 sibling. The open fold reads the shipped frame.
-    @Published var phoneImages = true
+    /// The hybrid stage reads the shipped frame. `maxPixel` caps the decode.
+    /// Lock-screen art still asks for the 720 sibling on its own.
+    @Published var phoneImages = false
     /// Bumped when a prefetched frame lands in the cache. Views read this and stay cache-only.
     @Published private(set) var frameCacheEpoch = 0
 
@@ -318,28 +317,6 @@ final class PlaybackModel: NSObject, ObservableObject {
         reloadAtCurrentTime()
     }
 
-    /// Opens the cabin on the current clock, or on a milestone pin.
-    /// Entering the cabin does not jump to the span end or raise the end card.
-    func dive(to milestone: Milestone? = nil) {
-        let selected = milestone?.jumpDate ?? milestone?.date ?? utc
-        if let milestone {
-            jump(to: milestone, markEnd: false)
-        }
-        if let timeline, let span = spanContaining(selected, timeline: timeline),
-           selected >= span.start, selected < span.end, utc != selected {
-            // A pin cue can clamp onto the span end. The cabin opens on the moment that was chosen.
-            seek(to: selected, markEnd: false)
-        }
-        if let span = activeSpan, utc < span.end {
-            ended = false
-        }
-        immersed = true
-    }
-
-    func surface() {
-        immersed = false
-    }
-
     func showFlyby() {
         range = .flyby
         utc = timeline?.window.start ?? utc
@@ -462,6 +439,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         let duration = span.end.timeIntervalSince(span.start)
         let date = span.start.addingTimeInterval(duration * min(1, max(0, fraction)))
         utc = MissionClock.clamp(date, to: span)
+    }
+
+    /// Ruler drag. Stays strictly inside the active span. A date in the cab run,
+    /// or on the span end, does not move the clock and does not change range.
+    func scrubRuler(to date: Date) {
+        guard scrubbing, let span = activeSpan else { return }
+        guard date >= span.start, date < span.end else { return }
+        utc = date
     }
 
     /// `markEnd` is false while the flyby ruler is exploring the coast past the
@@ -1436,6 +1421,33 @@ final class PlaybackModel: NSObject, ObservableObject {
         pair(for: window).current?.nasaID ?? ""
     }
 
+    func pair(for side: WindowSide) -> FramePair {
+        let frames = timeline?.frames ?? []
+        guard let span = activeSpan else {
+            return FrameSelection.visiblePair(at: utc, window: side, frames: frames)
+        }
+        return FrameSelection.visiblePair(
+            at: utc,
+            window: side,
+            frames: frames,
+            spanStart: span.start,
+            spanEnd: span.end
+        )
+    }
+
+    func photo(_ frame: Frame, maxPixel: CGFloat) -> UIImage? {
+        _ = frameCacheEpoch
+        let cap = maxPixel > 1 ? maxPixel : 1400
+        return MediaStore.cachedImage(file: frame.file, small: phoneImages, maxPixel: cap)
+    }
+
+    func prefetch(_ frame: Frame, maxPixel: CGFloat) {
+        let cap = maxPixel > 1 ? maxPixel : 1400
+        MediaStore.prefetch(file: frame.file, small: phoneImages, maxPixel: cap) { [weak self] in
+            self?.noteFramesDecoded(file: frame.file)
+        }
+    }
+
     private func artworkImage() -> UIImage? {
         let file = currentArtworkFile()
         if let image = MediaStore.cachedImage(file: file, small: true, maxPixel: 720) {
@@ -1569,7 +1581,7 @@ enum MediaStore {
         pinOrder.removeAll { $0 == name }
         pinOrder.append(name)
         pinned[name] = image
-        while pinOrder.count > 8 {
+        while pinOrder.count > 4 {
             let oldest = pinOrder.removeFirst()
             pinned.removeValue(forKey: oldest)
         }

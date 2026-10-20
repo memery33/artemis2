@@ -67,13 +67,11 @@ z = sin(lat)
 
 At 2026-04-06 19:40 UT, Horizons prints `SunSub-LON` 306.562535° and `SunSub-LAT` 1.028083°.
 
-## Moon map
+## Crater map
 
-NASA SVS CGI Moon Kit, ID 4720, file `lroc_color_2k.jpg`, 2048 by 1024, centered on 0° longitude with east to the right. https://svs.gsfc.nasa.gov/4720/
+NASA SVS CGI Moon Kit, ID 4720, file `lroc_color_2k.jpg`, 2048 by 1024, centered on 0° longitude with east to the right. https://svs.gsfc.nasa.gov/4720/ That equirectangular file is the source of the reprojection and is not bundled.
 
-SceneKit shows that image center toward +Z. The moon node is yawed +90° about Y so +Z lands on MOON_ME +X (0° east). A −90° yaw would put the prime meridian on −X, which is 180° longitude.
-
-`ArtemisIIWindow/Resources/lroc-track.jpg` is a 1400 by 663 reprojection of that same file for the crater map. Columns run from 340° E to 150° E and rows from 48° N to 42° S, so the observation and the approach to closest approach stay on one strip. It is not a new photograph.
+`ArtemisIIWindow/Resources/lroc-track.jpg` is a 1400 by 663 reprojection of that file. Columns in the file run from 340° E to 150° E and rows from 48° N to 42° S. The app mirrors the file so the crater map has north up and west on the left. It is not a new photograph.
 
 ## Type
 

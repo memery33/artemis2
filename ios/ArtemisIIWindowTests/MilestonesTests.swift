@@ -226,22 +226,6 @@ final class MilestonesTests: XCTestCase {
         XCTAssertFalse(model.scrubbing)
     }
 
-    @MainActor
-    func testDiveOpensTheWindowAndSurfaceReturnsToTheMoon() throws {
-        let model = PlaybackModel()
-        XCTAssertNil(model.loadError)
-        XCTAssertFalse(model.immersed)
-        model.dive()
-        XCTAssertTrue(model.immersed)
-        model.surface()
-        XCTAssertFalse(model.immersed)
-        let timeline = try XCTUnwrap(model.timeline)
-        let pin = try XCTUnwrap(MilestoneList.derive(timeline).first { $0.id == "span:window.start" })
-        model.dive(to: pin)
-        XCTAssertTrue(model.immersed)
-        XCTAssertEqual(model.utc.timeIntervalSince(pin.date), 0, accuracy: 1)
-    }
-
     func testLyricsShowTheWholeLineAndItsNeighbors() throws {
         let track = "pcd3"
         let rows = timeline.lines.filter { $0.track == track }.sorted { $0.date < $1.date }
@@ -355,26 +339,6 @@ final class MilestonesTests: XCTestCase {
         XCTAssertFalse(RuntimeHost.allowsPlaybackServices(arguments: ["-ui-tests", "-seekToEnd"], unitTestHost: false))
         XCTAssertTrue(RuntimeHost.allowsPlaybackServices(arguments: ["-ui-tests", "-allow-playback-session"], unitTestHost: true))
         XCTAssertTrue(RuntimeHost.allowsPlaybackServices(arguments: [], unitTestHost: false))
-    }
-
-    @MainActor
-    func testDiveOpensAtTheSelectedMoment() throws {
-        let model = PlaybackModel()
-        let span = try XCTUnwrap(model.activeSpan)
-        let moment = span.start.addingTimeInterval(90)
-        model.seek(to: moment)
-        model.playing = true
-        model.dive()
-        XCTAssertTrue(model.immersed)
-        XCTAssertFalse(model.ended)
-        XCTAssertEqual(model.utc.timeIntervalSince(moment), 0, accuracy: 0.5)
-        XCTAssertLessThan(model.utc, span.end)
-
-        let pin = try XCTUnwrap(MilestoneList.derive(try XCTUnwrap(model.timeline)).first { $0.id == "span:window.start" })
-        model.dive(to: pin)
-        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 0, accuracy: 0.5)
-        XCTAssertFalse(model.ended)
-        XCTAssertNotEqual(model.utc, span.end)
     }
 
     func testPhotoAccessLabelOmitsTheLiveGap() throws {

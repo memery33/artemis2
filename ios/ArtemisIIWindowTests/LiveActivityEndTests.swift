@@ -275,7 +275,7 @@ final class LiveActivityEndTests: XCTestCase {
     }
 
     /// Pausing in the app and then locking the screen is the scene-phase background path.
-    /// RootView only calls setSceneActive(false). That must keep the activity and push playing = false.
+    /// RootView applies `.background` through SceneActivity, which must keep the activity.
     @MainActor
     func testBackgroundingWhilePausedKeepsTheActivity() async throws {
         let fake = FakeFlybyActivities(identifiers: ["live"])
@@ -292,12 +292,50 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertTrue(fake.ended.isEmpty)
         XCTAssertFalse(model.playing)
 
-        model.setSceneActive(false)
+        SceneActivity.apply(.background, model: model)
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertTrue(fake.ended.isEmpty)
         XCTAssertEqual(fake.identifiersStore, ["live"])
         XCTAssertEqual(fake.updatedPlaying.last, false)
         XCTAssertFalse(model.ended)
+        XCTAssertLessThan(model.utc, span.end)
+    }
+
+    /// A ruler drag inside the flyby, including a finger that reaches into the cab run,
+    /// stays in the active span and does not end the Live Activity.
+    @MainActor
+    func testDraggingTheRulerKeepsTheLiveActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.playing = true
+        let span = try XCTUnwrap(model.activeSpan)
+        let timeline = try XCTUnwrap(model.timeline)
+        let cab = try XCTUnwrap(timeline.cabRun)
+        let inside = span.start.addingTimeInterval(120)
+
+        model.beginScrub()
+        model.scrubRuler(to: inside)
+        XCTAssertEqual(model.utc.timeIntervalSince(inside), 0, accuracy: 0.01)
+        model.scrubRuler(to: cab.start.addingTimeInterval(30))
+        XCTAssertEqual(model.range, .flyby)
+        XCTAssertEqual(model.window, .nikon)
+        XCTAssertEqual(model.utc.timeIntervalSince(inside), 0, accuracy: 0.01)
+        model.scrubRuler(to: span.end)
+        XCTAssertLessThan(model.utc, span.end)
+        XCTAssertNotEqual(model.utc, span.end.addingTimeInterval(-0.05))
+        model.endScrub(markEnd: false)
+        model.advanceDisplayLinkForTest(to: 1)
+        model.advanceDisplayLinkForTest(to: 2)
+        await FlybyLiveActivity.finishQueuedWork()
+
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+        XCTAssertFalse(model.ended)
+        XCTAssertTrue(model.playing)
         XCTAssertLessThan(model.utc, span.end)
     }
 
