@@ -149,7 +149,7 @@ final class LayoutFrameUITests: XCTestCase {
     /// AX3 is UICTContentSizeCategoryAccessibilityXL (not the Swift name AccessibilityExtraLarge).
     /// AX1 AccessibilityM, AX2 AccessibilityL, AX3 AccessibilityXL, AX4 AccessibilityXXL, AX5 AccessibilityXXXL.
     /// The closed screen stays the phone's width. Once the panel is open, the scroll column
-    /// and every transport control stay inside that width.
+    /// fills that width, and the transport, speaker, crew, and moment labels stay inside it.
     func testAccessibilityExtraLargeKeepsTheTransportReachable() {
         assertClosedScreenStaysOnThePhone(category: "UICTContentSizeCategoryAccessibilityXL")
     }
@@ -203,23 +203,85 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(scroll.frame.minX, 0)
         XCTAssertLessThanOrEqual(scroll.frame.width, app.frame.width + 0.5)
         XCTAssertLessThanOrEqual(scroll.frame.maxX, app.frame.width + 0.5)
+        XCTAssertGreaterThanOrEqual(scroll.frame.width, app.frame.width - 48)
 
-        assertWithinWindow(app.staticTexts["mission-clock"], app: app, scroll: scroll)
+        let clock: XCUIElement = app.descendants(matching: .any)["mission-clock"]
+        assertWithinWindow(clock, app: app, scroll: scroll)
+        XCTAssertTrue(clock.label.contains("UTC"))
+        XCTAssertTrue(clock.label.contains("MET"))
+        XCTAssertFalse(clock.label.contains("…"))
+
         assertWithinWindow(app.buttons["skip-back"], app: app, scroll: scroll)
         assertWithinWindow(app.buttons["playback-toggle"], app: app, scroll: scroll)
         assertWithinWindow(app.buttons["skip-forward"], app: app, scroll: scroll)
+
+        let speaker: XCUIElement = app.staticTexts["speaker-name"]
+        assertWithinWindow(speaker, app: app, scroll: scroll)
+        XCTAssertEqual(speaker.label, "HANSEN")
+        XCTAssertLessThanOrEqual(speaker.frame.height, speaker.frame.width)
+
         assertWithinWindow(app.buttons["window-nikon"], app: app, scroll: scroll)
         assertWithinWindow(app.buttons["window-cab"], app: app, scroll: scroll)
+        for name in ["Wiseman", "Glover", "Koch", "Hansen"] {
+            assertWithinWindow(app.buttons["crew-\(name)"], app: app, scroll: scroll)
+        }
         assertWithinWindow(app.buttons["lines-button"], app: app, scroll: scroll)
         assertWithinWindow(app.buttons["moments-button"], app: app, scroll: scroll)
         assertWithinWindow(app.buttons["about-button"], app: app, scroll: scroll)
+        assertStackedMoments(app: app, scroll: scroll)
+    }
+
+    /// Each moment's time sits above its name, inside the sheet, and the two do not overlap.
+    private func assertStackedMoments(app: XCUIApplication, scroll: XCUIElement) {
+        let names: [String] = ["milestone-aristarchus", "milestone-wiseman", "milestone-reiner", "milestone-approach"]
+        let panel: XCUIElement = app.descendants(matching: .any)["control-panel"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 4))
+        for name in names {
+            let time: XCUIElement = app.descendants(matching: .any)["\(name)-time"]
+            let title: XCUIElement = app.descendants(matching: .any)["\(name)-name"]
+            reveal(time, app: app, scroll: scroll)
+            reveal(title, app: app, scroll: scroll)
+            assertMomentPiece(time, app: app, panelTop: panel.frame.minY)
+            assertMomentPiece(title, app: app, panelTop: panel.frame.minY)
+            XCTAssertGreaterThanOrEqual(title.frame.minY, time.frame.maxY - 0.5)
+            let overlap: CGRect = time.frame.intersection(title.frame)
+            XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1)
+        }
+    }
+
+    private func reveal(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 8))
+        var attempts: Int = 0
+        while attempts < 16 {
+            let frame: CGRect = element.frame
+            let inColumn: Bool = frame.minY >= scroll.frame.minY - 0.5 && frame.maxY <= app.frame.maxY - 4 && frame.height > 1
+            if inColumn {
+                break
+            }
+            if frame.minY < scroll.frame.minY - 0.5 {
+                break
+            }
+            let start: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+            let end: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48))
+            start.press(forDuration: 0.01, thenDragTo: end)
+            attempts += 1
+        }
+    }
+
+    private func assertMomentPiece(_ element: XCUIElement, app: XCUIApplication, panelTop: CGFloat) {
+        let frame: CGRect = element.frame
+        XCTAssertGreaterThan(frame.width, 1)
+        XCTAssertGreaterThan(frame.height, 1)
+        XCTAssertGreaterThanOrEqual(frame.minX, 0)
+        XCTAssertLessThanOrEqual(frame.maxX, app.frame.width + 0.5)
+        XCTAssertGreaterThanOrEqual(frame.minY, panelTop - 0.5)
     }
 
     /// Scrolls the open panel until `element` is on screen, then requires it inside the window.
     private func assertWithinWindow(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
         XCTAssertTrue(element.waitForExistence(timeout: 8))
         var attempts: Int = 0
-        while attempts < 12 {
+        while attempts < 16 {
             let frame: CGRect = element.frame
             let inView: Bool = frame.minY >= -0.5 && frame.maxY <= app.frame.maxY + 0.5
             if inView, element.isHittable {

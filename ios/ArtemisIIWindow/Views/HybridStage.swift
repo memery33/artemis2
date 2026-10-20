@@ -283,30 +283,9 @@ struct HybridStage: View {
     }
 
     private func sheet(panelHeight: CGFloat, width: CGFloat, safeBottom: CGFloat) -> some View {
-        let rulerWidth: CGFloat = dynamicTypeSize.isAccessibilitySize ? 228 : 176
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(alignment: .bottom, spacing: 0) {
-                ControlPanel(
-                    height: panelHeight,
-                    safeBottom: safeBottom,
-                    onClose: { setPanelOpen(false) },
-                    onDragChanged: trackPanelDrag,
-                    onDragEnded: { translation, predicted, velocity in
-                        finishPanelDrag(
-                            translation: translation,
-                            predicted: predicted,
-                            velocity: velocity,
-                            height: panelHeight
-                        )
-                    }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                FlybyRuler(safeBottom: safeBottom) { kind in
-                    crater = kind
-                }
-                .frame(width: rulerWidth)
-            }
+            sheetColumns(panelHeight: panelHeight, safeBottom: safeBottom)
             .frame(width: width, height: panelHeight, alignment: .leading)
             .clipped()
             .background { panelFill }
@@ -319,6 +298,45 @@ struct HybridStage: View {
                     .accessibilityValue(panelOpen ? "open" : "closed")
             }
         }
+    }
+
+    /// Default type keeps the moments rail on the right. Accessibility sizes give the
+    /// controls the full width; the same moments sit in the scroll column instead.
+    @ViewBuilder
+    private func sheetColumns(panelHeight: CGFloat, safeBottom: CGFloat) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            controlPanel(panelHeight: panelHeight, safeBottom: safeBottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            HStack(alignment: .bottom, spacing: 0) {
+                controlPanel(panelHeight: panelHeight, safeBottom: safeBottom)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                FlybyRuler(safeBottom: safeBottom) { kind in
+                    crater = kind
+                }
+                .frame(width: 176)
+            }
+        }
+    }
+
+    private func controlPanel(panelHeight: CGFloat, safeBottom: CGFloat) -> ControlPanel {
+        ControlPanel(
+            height: panelHeight,
+            safeBottom: safeBottom,
+            onClose: { setPanelOpen(false) },
+            onDragChanged: trackPanelDrag,
+            onDragEnded: { translation, predicted, velocity in
+                finishPanelDrag(
+                    translation: translation,
+                    predicted: predicted,
+                    velocity: velocity,
+                    height: panelHeight
+                )
+            },
+            onCrater: { kind in
+                crater = kind
+            }
+        )
     }
 
     private var panelFill: some View {
@@ -866,10 +884,7 @@ struct DocumentaryCaption: View {
         VStack(alignment: .leading, spacing: compact ? 6 : 8) {
             if let line {
                 if let name = SpeakerLabel.display(line.speaker) {
-                    Text(name.uppercased())
-                        .font(HybridFont.text(11, relativeTo: .caption2))
-                        .tracking(1.6)
-                        .foregroundStyle(HybridColor.gold)
+                    speakerName(name)
                 }
                 TranscriptLineText(
                     text: line.text,
@@ -895,6 +910,24 @@ struct DocumentaryCaption: View {
         .shadow(color: .black.opacity(0.65), radius: compact ? 0 : 8, y: 2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
+    }
+
+    /// One line at every size. Accessibility sizes scale the word instead of breaking it.
+    @ViewBuilder
+    private func speakerName(_ name: String) -> some View {
+        let text = Text(name.uppercased())
+            .font(HybridFont.text(11, relativeTo: .caption2))
+            .tracking(1.6)
+            .foregroundStyle(HybridColor.gold)
+        if dynamicTypeSize.isAccessibilitySize {
+            text
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("speaker-name")
+        } else {
+            text
+        }
     }
 
     /// Default type keeps the dim one-line id. Accessibility sizes may wrap it.
@@ -948,6 +981,7 @@ struct ControlPanel: View {
     var onClose: () -> Void
     var onDragChanged: (CGFloat) -> Void
     var onDragEnded: (_ translation: CGFloat, _ predicted: CGFloat, _ velocity: CGFloat) -> Void
+    var onCrater: (CraterKind) -> Void
     @State private var about = false
     @State private var transcript = false
     @State private var moments = false
@@ -1015,6 +1049,7 @@ struct ControlPanel: View {
                         windowRow
                         CrewRow()
                         secondaryRow
+                        AccessibilityMomentList(onCrater: onCrater)
                     }
                     .padding(.bottom, 8)
                     .frame(width: geo.size.width, alignment: .leading)
@@ -1084,13 +1119,23 @@ struct ControlPanel: View {
                     .minimumScaleFactor(0.3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityHidden(true)
-                Text("\(clocks.utc) · \(clocks.met)")
-                    .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
-                    .foregroundStyle(HybridColor.dim)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("mission-clock")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(clocks.utc)
+                        .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
+                        .foregroundStyle(HybridColor.dim)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(clocks.met)
+                        .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
+                        .foregroundStyle(HybridColor.dim)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("mission-clock")
+                .accessibilityLabel("\(clocks.utc) · \(clocks.met)")
             } else {
                 Text(time)
                     .font(HybridFont.display(32, relativeTo: .largeTitle))
@@ -1279,6 +1324,104 @@ struct ControlPanel: View {
             }
             .fixedSize()
         }
+    }
+}
+
+/// The four rail moments, stacked. Time sits on its own line above the name so a
+/// large type size cannot draw one through the other or past the phone.
+struct AccessibilityMomentList: View {
+    @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    var onCrater: (CraterKind) -> Void
+
+    private var lineGap: CGFloat {
+        switch dynamicTypeSize {
+        case .accessibilityMedium:
+            return 6
+        case .accessibilityLarge:
+            return 8
+        case .accessibilityExtraLarge:
+            return 10
+        case .accessibilityExtraExtraLarge:
+            return 12
+        case .accessibilityExtraExtraExtraLarge:
+            return 16
+        default:
+            return 8
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: lineGap) {
+            if let line = quote(RulerLabelMarks.aristarchus) {
+                momentRow(time: Stamp.clock(line.utc), name: "Aristarchus", identifier: "milestone-aristarchus") {
+                    onCrater(.aristarchus)
+                }
+            }
+            if let line = quote(RulerLabelMarks.aristarchusLine) {
+                momentRow(time: Stamp.clock(line.utc), name: "Aristarchus line", identifier: "milestone-wiseman") {
+                    model.showFlyby()
+                    model.seek(toLine: line)
+                }
+            }
+            if let line = quote(RulerLabelMarks.reiner) {
+                momentRow(time: Stamp.clock(line.utc), name: "Reiner Gamma", identifier: "milestone-reiner") {
+                    onCrater(.reiner)
+                }
+            }
+            if let approach = approachDate {
+                let time = ClockMath.utcText(approach).replacingOccurrences(of: " UTC", with: "")
+                let playable = model.timeline.flatMap { HybridClock.playableApproach(timeline: $0) } != nil
+                if playable {
+                    momentRow(time: time, name: "Closest approach", identifier: "milestone-approach") {
+                        model.seek(to: approach, markEnd: false)
+                    }
+                } else {
+                    momentLabel(time: time, name: "Closest approach", identifier: "milestone-approach")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func quote(_ utc: String) -> TranscriptLine? {
+        model.timeline?.lines.first { $0.utc == utc }
+    }
+
+    private var approachDate: Date? {
+        guard let bundled = FlybyEphemeris.bundled else { return nil }
+        return FlybyPath.closestApproach(bundled.samples, radiusKm: bundled.document.radiusKm)?.date
+    }
+
+    private func momentRow(time: String, name: String, identifier: String, action: @escaping () -> Void) -> some View {
+        momentLabel(time: time, name: name, identifier: identifier, action: action)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: action)
+    }
+
+    private func momentLabel(time: String, name: String, identifier: String, action: (() -> Void)? = nil) -> some View {
+        VStack(alignment: .leading, spacing: lineGap) {
+            momentLine(time, identifier: "\(identifier)-time", action: action)
+                .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
+                .fontWeight(.semibold)
+            momentLine(name, identifier: "\(identifier)-name", action: action)
+                .font(HybridFont.text(15, relativeTo: .subheadline))
+                .fontWeight(.semibold)
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+
+    private func momentLine(_ text: String, identifier: String, action: (() -> Void)?) -> some View {
+        Text(text)
+            .foregroundStyle(HybridColor.cream)
+            .lineLimit(1)
+            .minimumScaleFactor(0.4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier(identifier)
+            .accessibilityAction(.default) {
+                action?()
+            }
     }
 }
 
