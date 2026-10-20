@@ -26,12 +26,12 @@ struct FlybyLiveActivityWidget: Widget {
                     .font(HybridFont.text(15, relativeTo: .subheadline))
                     .foregroundStyle(HybridColor.cream)
                     .lineLimit(2)
-                HStack {
+                HStack(alignment: .top) {
                     Text(context.state.speaker)
                         .font(HybridFont.text(13, relativeTo: .caption))
                         .foregroundStyle(HybridColor.gold)
                     Spacer()
-                    MissionClockText(state: context.state, font: HybridFont.text(12, relativeTo: .caption))
+                    MissionClockText(state: context.state, font: HybridFont.text(12, relativeTo: .caption), showsElapsed: true)
                 }
             }
             .padding(14)
@@ -96,31 +96,40 @@ private struct PausedMarker: View {
     }
 }
 
-/// Mission `HH:mm:ss` as a wall-clock count from `clockStart`. It advances while the phone is locked.
-/// Hours are shown, and the range is a day that contains now, so this is not the minutes-and-seconds
-/// interval that a Live Activity draws as `--`. A pause freezes the count. VoiceOver reads the absolute UTC string.
+/// Absolute mission UTC from the last push, plus, on the Lock Screen, elapsed time since the span start.
+/// The UTC line is the static string. It is not a `showsHours` timer: that redacts seconds to `--` and
+/// painted the day-long count about five minutes fast. The elapsed line ticks only while playing.
+/// VoiceOver reads the static strings, so it does not speak a redacted timer.
 struct MissionClockText: View {
     var state: FlybyActivityAttributes.ContentState
     var font: Font
+    var showsElapsed: Bool = false
 
     var body: some View {
-        clock
-            .font(font.monospacedDigit())
-            .foregroundStyle(HybridColor.cream)
-            .accessibilityLabel(state.clock)
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(state.clock)
+            if showsElapsed {
+                elapsedLine
+            }
+        }
+        .font(font.monospacedDigit())
+        .foregroundStyle(HybridColor.cream)
+        .multilineTextAlignment(.trailing)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
     }
 
-    private var clock: Text {
-        guard state.clockEnd > state.clockStart else {
-            return Text(state.clock)
+    private var accessibilityText: String {
+        showsElapsed ? "\(state.clock), \(state.elapsedText)" : state.clock
+    }
+
+    @ViewBuilder
+    private var elapsedLine: some View {
+        if state.playing, state.elapsedEnd > state.elapsedStart {
+            (Text(timerInterval: state.elapsedStart...state.elapsedEnd, countsDown: false)
+                + Text(" into the flyby"))
+        } else {
+            Text(state.elapsedText)
         }
-        return Text("at ")
-            + Text(
-                timerInterval: state.clockStart...state.clockEnd,
-                pauseTime: state.clockPause,
-                countsDown: false,
-                showsHours: true
-            )
-            + Text(" UTC")
     }
 }

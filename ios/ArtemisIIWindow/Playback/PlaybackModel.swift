@@ -1565,7 +1565,11 @@ final class PlaybackModel: NSObject, ObservableObject {
         lastActivityPlaying = playing
         lastActivityEnded = spanEnded
         let rate = playing ? 1.0 : 0.0
-        let timer = FlybyActivityCopy.missionTimer(utc: utc, playing: playing && !spanEnded)
+        let timer = FlybyActivityCopy.elapsedTimer(
+            utc: utc,
+            spanStart: span.start,
+            spanEnd: span.end
+        )
         FlybyLiveActivity.sync(
             arrived: arrived,
             playing: playing,
@@ -1573,9 +1577,9 @@ final class PlaybackModel: NSObject, ObservableObject {
             nextMilestone: milestone,
             speaker: speaker,
             clock: FlybyActivityCopy.lockScreenClock(utc),
-            clockStart: timer.start,
-            clockEnd: timer.end,
-            clockPause: timer.pause,
+            elapsedStart: timer.start,
+            elapsedEnd: timer.end,
+            elapsedText: timer.text,
             staleDate: FlybyActivityCopy.staleDate(playing: playing, utc: utc, spanEnd: span.end, rate: rate)
         )
     }

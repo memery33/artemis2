@@ -33,32 +33,49 @@ enum FlybyActivityCopy {
         clockFormatter.string(from: date)
     }
 
-    /// Lock-screen line. VoiceOver reads this. The widget's visible clock is `missionTimer`, which keeps counting while locked.
+    /// Lock-screen line. The card shows this string. It changes when playback pushes, not by counting.
     @MainActor
     static func lockScreenClock(_ date: Date) -> String {
         "at \(clock(date)) UTC"
     }
 
-    /// Wall interval whose elapsed time is the mission clock's hour, minute, and second.
-    /// The range is a full day and contains `now`, and the widget asks for hours, so it is not the
-    /// minutes-and-seconds interval that a Live Activity draws as `--`.
-    struct MissionTimer: Equatable, Sendable {
+    /// Elapsed time since the span started, as a wall-clock interval the lock screen can tick,
+    /// plus the same count written out for the paused card and for VoiceOver.
+    ///
+    /// Do not anchor this at UTC midnight and pass it to `Text(timerInterval:showsHours:)`.
+    /// That range made `now - start` equal the time of day (19:33:18 → 19h33m18s), and the unit test
+    /// for that difference passed, so the dates were not five minutes early. The Lock Screen still
+    /// painted `at 19:38:-- UTC` during 19:33:18–19:33:35, and `at 19:53:-- UTC` in the tail near 19:48.
+    /// Two renderer behaviors did that: with `showsHours` it does not print the duration as a UTC clock,
+    /// and on the Lock Screen it replaces the seconds with `--`. The five minutes were that presentation
+    /// (19:33 read as 19:38, 19:48 as 19:53), not `span.start` and not `Calendar.startOfDay`.
+    /// This interval is only `utc - spanStart`, and it is never asked to look like `HH:mm:ss`.
+    struct ElapsedTimer: Equatable, Sendable {
         var start: Date
         var end: Date
-        var pause: Date?
+        var text: String
     }
 
-    static func missionTimer(now: Date = Date(), utc: Date, playing: Bool) -> MissionTimer {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? TimeZone(identifier: "UTC") ?? .current
-        let midnight = calendar.startOfDay(for: utc)
-        let seconds = utc.timeIntervalSince(midnight)
-        let start = now.addingTimeInterval(-seconds)
-        return MissionTimer(
+    static func elapsedTimer(
+        now: Date = Date(),
+        utc: Date,
+        spanStart: Date,
+        spanEnd: Date
+    ) -> ElapsedTimer {
+        let elapsed = max(0, utc.timeIntervalSince(spanStart))
+        let duration = max(0, spanEnd.timeIntervalSince(spanStart))
+        let start = now.addingTimeInterval(-elapsed)
+        return ElapsedTimer(
             start: start,
-            end: start.addingTimeInterval(24 * 60 * 60),
-            pause: playing ? nil : now
+            end: start.addingTimeInterval(duration),
+            text: elapsedLabel(elapsed)
         )
+    }
+
+    /// `mm:ss into the flyby`. Minutes may pass 59. This is the paused label and the accessibility label.
+    static func elapsedLabel(_ elapsed: TimeInterval) -> String {
+        let total = max(0, Int(elapsed.rounded(.down)))
+        return String(format: "%02d:%02d into the flyby", total / 60, total % 60)
     }
 }
 
@@ -219,9 +236,9 @@ enum FlybyLiveActivity {
         nextMilestone: String,
         speaker: String,
         clock: String,
-        clockStart: Date,
-        clockEnd: Date,
-        clockPause: Date?,
+        elapsedStart: Date,
+        elapsedEnd: Date,
+        elapsedText: String,
         staleDate: Date?
     ) {
         enqueue {
@@ -231,9 +248,9 @@ enum FlybyLiveActivity {
                 speaker: speaker,
                 clock: clock,
                 playing: playing,
-                clockStart: clockStart,
-                clockEnd: clockEnd,
-                clockPause: clockPause
+                elapsedStart: elapsedStart,
+                elapsedEnd: elapsedEnd,
+                elapsedText: elapsedText
             )
             guard arrived else {
                 let ids = client.identifiers()

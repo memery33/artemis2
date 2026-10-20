@@ -6,14 +6,15 @@ struct FlybyActivityAttributes: Codable, Hashable, Sendable {
         var progress: Double
         var nextMilestone: String
         var speaker: String
-        /// Absolute mission UTC, `at HH:mm:ss UTC`. VoiceOver reads this. The lock screen draws `clockStart`.
+        /// Absolute mission UTC, `at HH:mm:ss UTC`, from the last push. The lock screen shows this string.
+        /// VoiceOver reads it. It is not a `Text(timerInterval:)`.
         var clock: String
         var playing: Bool
-        /// Wall-clock count whose elapsed time is the mission `HH:mm:ss`. It ticks while the app is suspended.
-        /// `clockPause` freezes that count while playback is paused.
-        var clockStart: Date
-        var clockEnd: Date
-        var clockPause: Date?
+        /// Wall interval whose elapsed time is `utc - span.start`. The lock screen ticks this only while playing.
+        /// `elapsedText` is that same count as `mm:ss into the flyby`, used while paused and for VoiceOver.
+        var elapsedStart: Date
+        var elapsedEnd: Date
+        var elapsedText: String
     }
 
     /// Lock Screen and Dynamic Island copy. Nil while the recording is playing.

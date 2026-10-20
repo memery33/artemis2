@@ -63,35 +63,49 @@ final class LiveActivityEndTests: XCTestCase {
         let text = FlybyActivityCopy.lockScreenClock(utc)
         XCTAssertEqual(text, "at 19:38:45 UTC")
         XCTAssertFalse(text.contains("--"))
-        let timer = FlybyActivityCopy.missionTimer(now: Date(timeIntervalSince1970: 1_700_000_000), utc: utc, playing: true)
+        let spanStart = try ISO8601.parse("2026-04-06T19:33:00Z")
+        let spanEnd = try ISO8601.parse("2026-04-06T19:48:30Z")
+        let timer = FlybyActivityCopy.elapsedTimer(now: Date(timeIntervalSince1970: 1_700_000_000), utc: utc, spanStart: spanStart, spanEnd: spanEnd)
         let state = FlybyActivityAttributes.ContentState(
             progress: 0.2,
             nextMilestone: "End of this span",
             speaker: "Wiseman",
             clock: text,
             playing: true,
-            clockStart: timer.start,
-            clockEnd: timer.end,
-            clockPause: timer.pause
+            elapsedStart: timer.start,
+            elapsedEnd: timer.end,
+            elapsedText: timer.text
         )
         XCTAssertEqual(state.clock, "at 19:38:45 UTC")
         XCTAssertFalse(state.clock.contains("--"))
-        XCTAssertNil(state.clockPause)
-        XCTAssertGreaterThan(state.clockEnd, state.clockStart)
+        XCTAssertFalse(state.elapsedText.contains("--"))
+        XCTAssertEqual(state.elapsedText, "05:45 into the flyby")
     }
 
-    /// The lock-screen count is the mission hour, minute, and second, measured on the wall clock.
-    func testMissionTimerMatchesUTCAndStaysInsideADay() throws {
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let utc = try ISO8601.parse("2026-04-06T19:38:45Z")
-        let playing = FlybyActivityCopy.missionTimer(now: now, utc: utc, playing: true)
-        XCTAssertEqual(now.timeIntervalSince(playing.start), 19 * 3600 + 38 * 60 + 45, accuracy: 0.001)
-        XCTAssertEqual(playing.end.timeIntervalSince(playing.start), 24 * 60 * 60, accuracy: 0.001)
-        XCTAssertGreaterThan(playing.end, now)
-        XCTAssertNil(playing.pause)
+    /// Elapsed at a known mission time is `missionTime - span.start`, not the time of day.
+    /// A midnight anchor plus `Text(timerInterval:showsHours:)` painted 19:33 as 19:38 and hid the seconds.
+    func testElapsedAnchorMatchesTimeSinceSpanStart() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let spanStart = try ISO8601.parse("2026-04-06T19:33:00Z")
+        let spanEnd = try ISO8601.parse("2026-04-06T19:48:30Z")
+        let utc = try ISO8601.parse("2026-04-06T19:33:18Z")
+        let early = FlybyActivityCopy.elapsedTimer(now: now, utc: utc, spanStart: spanStart, spanEnd: spanEnd)
+        let elapsed = utc.timeIntervalSince(spanStart)
+        XCTAssertEqual(elapsed, 18, accuracy: 0.001)
+        XCTAssertEqual(now.timeIntervalSince(early.start), elapsed, accuracy: 0.001)
+        XCTAssertEqual(early.end.timeIntervalSince(early.start), spanEnd.timeIntervalSince(spanStart), accuracy: 0.001)
+        XCTAssertEqual(early.text, "00:18 into the flyby")
+        XCTAssertEqual(FlybyActivityCopy.elapsedLabel(elapsed), early.text)
+        // The retired midnight anchor was ~19h33m. This interval is 18 seconds, so a showsHours clock cannot recur.
+        XCTAssertLessThan(now.timeIntervalSince(early.start), 60)
+        XCTAssertGreaterThan(abs(now.timeIntervalSince(early.start) - (19 * 3600 + 33 * 60 + 18)), 60)
 
-        let paused = FlybyActivityCopy.missionTimer(now: now, utc: utc, playing: false)
-        XCTAssertEqual(paused.pause, now)
+        let tail = try ISO8601.parse("2026-04-06T19:48:00Z")
+        let late = FlybyActivityCopy.elapsedTimer(now: now, utc: tail, spanStart: spanStart, spanEnd: spanEnd)
+        XCTAssertEqual(now.timeIntervalSince(late.start), tail.timeIntervalSince(spanStart), accuracy: 0.001)
+        XCTAssertEqual(tail.timeIntervalSince(spanStart), 15 * 60, accuracy: 0.001)
+        XCTAssertEqual(late.text, "15:00 into the flyby")
+        XCTAssertEqual(late.end.timeIntervalSince(late.start), 15 * 60 + 30, accuracy: 0.001)
     }
 
     func testPausedMarkerIsAbsentWhilePlaying() {
