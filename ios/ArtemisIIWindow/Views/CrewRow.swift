@@ -22,13 +22,10 @@ struct CrewRow: View {
 
     private var standardCrew: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(model.timeline?.crew ?? []) { member in
-                        standardChip(member)
-                    }
+            HStack(spacing: 4) {
+                ForEach(model.timeline?.crew ?? []) { member in
+                    standardChip(member)
                 }
-                .frame(minHeight: 44)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             note(lineLimit: 1, scale: 0.8)
@@ -52,19 +49,17 @@ struct CrewRow: View {
         return Button {
             model.follow(member)
         } label: {
-            ZStack {
-                Color.clear.frame(width: 44, height: 44)
-                VStack(spacing: 2) {
-                    letter(member, speaking: speaking, followed: followed)
-                    Text(member.id)
-                        .font(HybridFont.text(10, relativeTo: .caption2))
-                        .fontWeight(.medium)
-                        .foregroundStyle(HybridColor.dim.opacity(followed ? 1 : 0.8))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: true)
-                }
+            VStack(spacing: 2) {
+                letter(member, speaking: speaking, followed: followed)
+                Text(member.id)
+                    .font(HybridFont.text(10, relativeTo: .caption2))
+                    .fontWeight(.medium)
+                    .foregroundStyle(HybridColor.cream)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(maxWidth: .infinity)
             }
-            .fixedSize()
+            .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

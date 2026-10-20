@@ -250,8 +250,15 @@ struct HybridStage: View {
             // The closed stage reserves that same card's height above the caption.
             if crater == nil, revealed >= 80, let gap = model.approachGap {
                 VStack {
-                    approachCard(gap, width: min(320, max(0, size.width - 40)))
-                        .padding(.top, 12)
+                    approachCard(
+                        gap,
+                        width: min(320, max(0, size.width - 40)),
+                        maxHeight: ClosedCaptionMetrics.approachCardCap(
+                            dynamicType: dynamicTypeSize,
+                            screenHeight: size.height
+                        )
+                    )
+                        .padding(.top, ClosedCaptionMetrics.approachCardTopInset)
                         .padding(.horizontal, 20)
                     Spacer(minLength: 0)
                 }
@@ -283,9 +290,22 @@ struct HybridStage: View {
             size.height - ClosedCaptionMetrics.bottomClearance - ClosedCaptionMetrics.topClearance
         )
         if let gap = model.approachGap {
-            ApproachColumn(spacing: 12) {
-                approachCard(gap, width: min(320, max(0, size.width - 40)))
-                    .padding(.top, 12)
+            ApproachColumn(
+                spacing: 12,
+                cardCap: ClosedCaptionMetrics.approachCardCap(
+                    dynamicType: dynamicTypeSize,
+                    screenHeight: size.height
+                )
+            ) {
+                approachCard(
+                    gap,
+                    width: min(320, max(0, size.width - 40)),
+                    maxHeight: ClosedCaptionMetrics.approachCardCap(
+                        dynamicType: dynamicTypeSize,
+                        screenHeight: size.height
+                    )
+                )
+                    .padding(.top, ClosedCaptionMetrics.approachCardTopInset)
                 DocumentaryCaption(compact: false, includeCredit: true, fitOfferedHeight: true)
                     .frame(maxWidth: captionWidth, maxHeight: .infinity, alignment: .bottomLeading)
                     .clipped()
@@ -319,8 +339,8 @@ struct HybridStage: View {
         }
     }
 
-    private func approachCard(_ gap: String, width: CGFloat) -> some View {
-        Text(gap)
+    private func approachCard(_ gap: String, width: CGFloat, maxHeight: CGFloat? = nil) -> some View {
+        let copy = Text(gap)
             .font(
                 model.approachInformational
                     ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
@@ -331,16 +351,28 @@ struct HybridStage: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: width, alignment: .leading)
             .padding(12)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.black.opacity(0.62))
-                    }
+        return Group {
+            if let maxHeight {
+                ScrollView(.vertical, showsIndicators: false) {
+                    copy
+                }
+                .frame(width: width, height: maxHeight, alignment: .top)
+                .clipped()
+            } else {
+                copy
             }
-            .accessibilityIdentifier("approach-gap")
-            .accessibilityLabel(gap)
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.black.opacity(0.62))
+                }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("approach-gap")
+        .accessibilityLabel(gap)
     }
 
     private func sheet(panelHeight: CGFloat, width: CGFloat, safeBottom: CGFloat) -> some View {
@@ -985,7 +1017,7 @@ struct DocumentaryCaption: View {
                 frameIdentity(frame)
             }
             if includeCredit {
-                CreditLine()
+                CreditLine(compresses: fitOfferedHeight)
             }
         }
         .shadow(color: .black.opacity(0.65), radius: compact ? 0 : 8, y: 2)
@@ -1009,12 +1041,10 @@ struct DocumentaryCaption: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background {
+                    // Solid, not thin material. Material let the bright frame through
+                    // and the small name failed contrast.
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.black.opacity(0.55))
-                        }
+                        .fill(Color.black.opacity(0.88))
                 }
                 .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, alignment: .leading)
                 .accessibilityIdentifier("speaker-name")
@@ -1042,10 +1072,11 @@ struct DocumentaryCaption: View {
                 .multilineTextAlignment(.leading)
                 .lineLimit(2)
                 .minimumScaleFactor(0.5)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: !fitOfferedHeight)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("frame-id")
                 .background {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(.ultraThinMaterial)
@@ -1060,14 +1091,17 @@ struct DocumentaryCaption: View {
                 .foregroundStyle(HybridColor.dim)
                 .lineLimit(2)
                 .minimumScaleFactor(0.4)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: !fitOfferedHeight)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("frame-id")
         } else {
             label
                 .foregroundStyle(HybridColor.dim)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: !fitOfferedHeight)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("frame-id")
         }
     }
 }
@@ -1243,12 +1277,25 @@ struct ControlPanel: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                     .accessibilityHidden(true)
-                Text("\(clocks.utc) · \(clocks.met)")
+                ViewThatFits(in: .horizontal) {
+                    Text("\(clocks.utc) · \(clocks.met)")
+                        .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
+                        .foregroundStyle(HybridColor.dim)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("mission-clock")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(clocks.utc)
+                        Text(clocks.met)
+                    }
                     .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
                     .foregroundStyle(HybridColor.dim)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("mission-clock")
+                    .accessibilityLabel("\(clocks.utc) · \(clocks.met)")
+                }
             }
         }
     }
@@ -1297,6 +1344,7 @@ struct ControlPanel: View {
             skipLabel(label)
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .accessibilityLabel(access)
         .accessibilityIdentifier(identifier)
     }
@@ -1314,6 +1362,8 @@ struct ControlPanel: View {
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         } else {
             text
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .frame(minWidth: 44, minHeight: 44)
         }
     }
@@ -1364,8 +1414,10 @@ struct ControlPanel: View {
                 }
         } else {
             text
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .padding(.horizontal, 12)
-                .frame(minHeight: 44)
+                .frame(minWidth: 44, minHeight: 44)
                 .background {
                     Capsule().fill(selected ? HybridColor.cream.opacity(0.92) : Color.white.opacity(0.06))
                 }
@@ -1413,15 +1465,14 @@ struct ControlPanel: View {
                 .padding(.horizontal, 4)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         } else {
-            ZStack {
-                Color.clear.frame(width: 44, height: 44)
-                Text(title)
-                    .font(HybridFont.text(15, relativeTo: .subheadline))
-                    .fontWeight(.semibold)
-                    .foregroundStyle(HybridColor.cream)
-                    .padding(.horizontal, 4)
-            }
-            .fixedSize()
+            Text(title)
+                .font(HybridFont.text(15, relativeTo: .subheadline))
+                .fontWeight(.semibold)
+                .foregroundStyle(HybridColor.cream)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
     }
 }
@@ -2110,6 +2161,7 @@ enum WindowSafeArea {
 /// Card on top, caption in whatever height remains. The caption is not offered the card's rect.
 private struct ApproachColumn: Layout {
     var spacing: CGFloat
+    var cardCap: CGFloat?
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
@@ -2118,8 +2170,15 @@ private struct ApproachColumn: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
         guard let card = subviews.first else { return }
         let width = bounds.width
-        let cardSize = card.sizeThatFits(ProposedViewSize(width: width, height: nil))
-        let cardHeight = min(max(0, cardSize.height), bounds.height)
+        // The closed card adds a top inset outside the capped text. Keep that inset,
+        // and stop the measured text from taking the rest of the phone.
+        let limit = cardCap.map { min($0 + ClosedCaptionMetrics.approachCardTopInset, bounds.height) }
+        let cardSize = card.sizeThatFits(ProposedViewSize(width: width, height: limit))
+        var cardHeight = max(0, cardSize.height)
+        if let limit {
+            cardHeight = min(cardHeight, limit)
+        }
+        cardHeight = min(cardHeight, bounds.height)
         card.place(
             at: CGPoint(x: bounds.minX, y: bounds.minY),
             proposal: ProposedViewSize(width: width, height: cardHeight)
@@ -2151,6 +2210,24 @@ enum ClosedCaptionMetrics {
     }
     /// Bottom of the credit sits on the top of the Controls strip.
     static var bottomClearance: CGFloat { controlsBottomInset + controlsStripHeight }
+    /// Gap between the top of the closed stage and the closest-approach card.
+    static let approachCardTopInset: CGFloat = 12
+
+    /// AX4 and AX5 only. The full sentence stays in the card and scrolls.
+    /// Smaller sizes keep the card at its natural height.
+    static func approachCardCap(dynamicType: DynamicTypeSize, screenHeight: CGFloat) -> CGFloat? {
+        let reserve: CGFloat
+        switch dynamicType {
+        case .accessibility5:
+            reserve = 500
+        case .accessibility4:
+            reserve = 440
+        default:
+            return nil
+        }
+        let available = max(0, screenHeight - bottomClearance - 36)
+        return min(200, max(96, available - reserve))
+    }
 }
 
 /// The scrollable part of the sheet keeps its height. The home-indicator inset is added
@@ -2168,6 +2245,10 @@ enum PanelMetrics {
 /// Small credit kept on every photograph. Its own element, so a crater page
 /// query can find `photo-credit` beside the picture.
 struct CreditLine: View {
+    /// When the closed caption is sharing a bounded slot with the approach card,
+    /// the pill shrinks into that slot instead of drawing past the controls.
+    var compresses: Bool = false
+
     var body: some View {
         Text("Credit: NASA/Artemis II Crew")
             .font(HybridFont.text(11, relativeTo: .caption2))
@@ -2178,7 +2259,7 @@ struct CreditLine: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.black.opacity(0.55), in: Capsule())
-            .fixedSize(horizontal: false, vertical: true)
+            .fixedSize(horizontal: false, vertical: !compresses)
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("photo-credit")
             .accessibilityLabel("Credit: NASA/Artemis II Crew")

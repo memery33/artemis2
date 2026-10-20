@@ -383,6 +383,61 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertLessThanOrEqual(captionFrame.maxX, app.frame.width + 0.5)
         XCTAssertLessThanOrEqual(cardFrame.maxY, captionFrame.minY + 1)
         XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1)
+        if category == "UICTContentSizeCategoryAccessibilityXXXL" {
+            assertCaptionClearsControls(app: app, card: card, caption: caption)
+        }
+    }
+
+    /// AX5. The frame id and the credit stay above the Controls strip and on the phone.
+    private func assertCaptionClearsControls(app: XCUIApplication, card: XCUIElement, caption: XCUIElement) {
+        let controls = app.buttons["open-panel"]
+        let frameID = element(named: "frame-id", in: app)
+        let credit = element(named: "photo-credit", in: app)
+        XCTAssertTrue(controls.waitForExistence(timeout: 4))
+        XCTAssertTrue(frameID.waitForExistence(timeout: 4))
+        XCTAssertTrue(credit.waitForExistence(timeout: 4))
+        let deadline = Date().addingTimeInterval(3)
+        var controlsTop = controls.frame.minY
+        var cardFrame = card.frame
+        var captionFrame = caption.frame
+        var idFrame = frameID.frame
+        var creditFrame = credit.frame
+        while Date() < deadline {
+            controlsTop = controls.frame.minY
+            cardFrame = card.frame
+            captionFrame = caption.frame
+            idFrame = frameID.frame
+            creditFrame = credit.frame
+            let limit = controlsTop + 1
+            let bottom = app.frame.maxY + 0.5
+            let clear = controls.frame.height > 1
+                && captionFrame.height > 1
+                && idFrame.height > 1
+                && creditFrame.height > 1
+                && captionFrame.maxY <= limit
+                && idFrame.maxY <= limit
+                && creditFrame.maxY <= limit
+                && cardFrame.maxY <= bottom
+                && captionFrame.maxY <= bottom
+                && idFrame.maxY <= bottom
+                && creditFrame.maxY <= bottom
+                && cardFrame.height < app.frame.height * 0.5
+            if clear { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        let limit = controlsTop + 1
+        let bottom = app.frame.maxY + 0.5
+        XCTAssertGreaterThan(controls.frame.height, 1)
+        XCTAssertLessThan(cardFrame.height, app.frame.height * 0.5)
+        XCTAssertLessThanOrEqual(captionFrame.maxY, limit)
+        XCTAssertLessThanOrEqual(idFrame.maxY, limit)
+        XCTAssertLessThanOrEqual(creditFrame.maxY, limit)
+        XCTAssertLessThanOrEqual(cardFrame.maxY, bottom)
+        XCTAssertLessThanOrEqual(captionFrame.maxY, bottom)
+        XCTAssertLessThanOrEqual(idFrame.maxY, bottom)
+        XCTAssertLessThanOrEqual(creditFrame.maxY, bottom)
+        XCTAssertGreaterThanOrEqual(idFrame.minY, -0.5)
+        XCTAssertGreaterThanOrEqual(creditFrame.minY, -0.5)
     }
 
     private func reveal(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {

@@ -361,7 +361,7 @@ struct OrionReadout: View {
     }
 
     /// Spaces, grouping commas, and the decimal stay on one line with the unit.
-    static func unbroken(_ text: String) -> String {
+    nonisolated static func unbroken(_ text: String) -> String {
         text
             .replacingOccurrences(of: " ", with: "\u{00A0}")
             .replacingOccurrences(of: ",", with: ",\u{2060}")
