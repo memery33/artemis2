@@ -251,17 +251,24 @@ struct HybridStage: View {
             if crater == nil, revealed >= 80, shownFrame != nil {
                 VStack {
                     Spacer()
-                    HStack {
+                    if dynamicTypeSize.isAccessibilitySize {
                         CreditLine()
-                        Spacer()
+                            .frame(maxWidth: max(0, size.width - 40), alignment: .leading)
+                            .padding(.leading, 20)
+                            .padding(.bottom, revealed + 10)
+                    } else {
+                        HStack {
+                            CreditLine()
+                            Spacer()
+                        }
+                        .padding(.leading, 20)
+                        .padding(.bottom, revealed + 10)
                     }
-                    .padding(.leading, 20)
-                    .padding(.bottom, revealed + 10)
                 }
             }
             if crater == nil {
-                sheet(panelHeight: panelHeight, safeBottom: safeBottom)
-                    .frame(width: size.width)
+                sheet(panelHeight: panelHeight, width: size.width, safeBottom: safeBottom)
+                    .frame(width: size.width, alignment: .leading)
                     .offset(y: shift)
                 // Stay mounted for the whole drag. Removing it mid-gesture
                 // cancelled the swipe after the sheet had risen about 90 pt.
@@ -275,8 +282,9 @@ struct HybridStage: View {
         .clipped()
     }
 
-    private func sheet(panelHeight: CGFloat, safeBottom: CGFloat) -> some View {
-        VStack(spacing: 0) {
+    private func sheet(panelHeight: CGFloat, width: CGFloat, safeBottom: CGFloat) -> some View {
+        let rulerWidth: CGFloat = dynamicTypeSize.isAccessibilitySize ? 228 : 176
+        return VStack(spacing: 0) {
             Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: 0) {
                 ControlPanel(
@@ -293,12 +301,14 @@ struct HybridStage: View {
                         )
                     }
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 FlybyRuler(safeBottom: safeBottom) { kind in
                     crater = kind
                 }
-                .frame(width: dynamicTypeSize.isAccessibilitySize ? 228 : 176)
+                .frame(width: rulerWidth)
             }
-            .frame(height: panelHeight)
+            .frame(width: width, height: panelHeight, alignment: .leading)
+            .clipped()
             .background { panelFill }
             .overlay(alignment: .topLeading) {
                 Color.clear
@@ -838,10 +848,10 @@ struct DocumentaryCaption: View {
         return nil
     }
 
-    /// Closed caption at an accessibility size may shrink to the width and height it is given.
-    /// Everywhere else the quote keeps its natural size.
+    /// Accessibility sizes, including the open panel, shrink the quote to the width they are given.
+    /// Default type keeps the natural size: the closed caption is uncapped, and the panel quote is two lines.
     private var quoteUsesNaturalHeight: Bool {
-        compact || !dynamicTypeSize.isAccessibilitySize
+        !dynamicTypeSize.isAccessibilitySize
     }
 
     private var line: TranscriptLine? {
@@ -876,12 +886,7 @@ struct DocumentaryCaption: View {
                 .fixedSize(horizontal: false, vertical: quoteUsesNaturalHeight)
             }
             if let frame {
-                Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
-                    .font(HybridFont.text(12, relativeTo: .caption))
-                    .foregroundStyle(HybridColor.dim)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .fixedSize(horizontal: false, vertical: true)
+                frameIdentity(frame)
             }
             if includeCredit {
                 CreditLine()
@@ -890,6 +895,48 @@ struct DocumentaryCaption: View {
         .shadow(color: .black.opacity(0.65), radius: compact ? 0 : 8, y: 2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
+    }
+
+    /// Default type keeps the dim one-line id. Accessibility sizes may wrap it.
+    /// The closed caption at those sizes sits on the bright Moon, so the id gets the
+    /// same dark glass and shadow that keep the quote readable.
+    @ViewBuilder
+    private func frameIdentity(_ frame: Frame) -> some View {
+        let label = Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
+            .font(HybridFont.text(12, relativeTo: .caption))
+        if !compact, dynamicTypeSize.isAccessibilitySize {
+            label
+                .foregroundStyle(HybridColor.cream)
+                .multilineTextAlignment(.leading)
+                .lineLimit(2)
+                .minimumScaleFactor(0.5)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.black.opacity(0.55))
+                        }
+                }
+                .shadow(color: .black.opacity(0.65), radius: 8, y: 2)
+        } else if dynamicTypeSize.isAccessibilitySize {
+            label
+                .foregroundStyle(HybridColor.dim)
+                .lineLimit(2)
+                .minimumScaleFactor(0.4)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            label
+                .foregroundStyle(HybridColor.dim)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -913,6 +960,7 @@ struct ControlPanel: View {
         .padding(.bottom, safeBottom)
         .frame(height: height)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
         .environment(\.colorScheme, .dark)
         .sheet(isPresented: $about) { AboutView() }
         .sheet(isPresented: $transcript) { TranscriptSheet() }
@@ -953,23 +1001,31 @@ struct ControlPanel: View {
         }
     }
 
+    /// The scroll column takes the width the sheet proposes. Transport, pills, and
+    /// Lines stack at these sizes so a long label cannot widen the column past the phone.
     private var accessibilityColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             handle
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    clocks
-                    transport
-                    panelCaption
-                    windowRow
-                    CrewRow()
-                    secondaryRow
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        clocks
+                        transport
+                        panelCaption
+                        windowRow
+                        CrewRow()
+                        secondaryRow
+                    }
+                    .padding(.bottom, 8)
+                    .frame(width: geo.size.width, alignment: .leading)
+                    .clipped()
                 }
-                .padding(.bottom, 8)
+                .scrollBounceBehavior(.basedOnSize)
+                .accessibilityIdentifier("panel-scroll")
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .accessibilityIdentifier("panel-scroll")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var panelCaption: some View {
@@ -1019,27 +1075,55 @@ struct ControlPanel: View {
         let clocks = ClockMath.format(date: model.utc, epoch: model.timeline?.epoch ?? model.utc)
         let time = clocks.utc.replacingOccurrences(of: " UTC", with: "")
         return VStack(alignment: .leading, spacing: 2) {
-            Text(time)
-                .font(HybridFont.display(32, relativeTo: .largeTitle))
-                .monospacedDigit()
-                .foregroundStyle(HybridColor.cream)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .accessibilityHidden(true)
-            Text("\(clocks.utc) · \(clocks.met)")
-                .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
-                .foregroundStyle(HybridColor.dim)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .accessibilityIdentifier("mission-clock")
+            if dynamicTypeSize.isAccessibilitySize {
+                Text(time)
+                    .font(HybridFont.display(32, relativeTo: .largeTitle))
+                    .monospacedDigit()
+                    .foregroundStyle(HybridColor.cream)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityHidden(true)
+                Text("\(clocks.utc) · \(clocks.met)")
+                    .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
+                    .foregroundStyle(HybridColor.dim)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("mission-clock")
+            } else {
+                Text(time)
+                    .font(HybridFont.display(32, relativeTo: .largeTitle))
+                    .monospacedDigit()
+                    .foregroundStyle(HybridColor.cream)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .accessibilityHidden(true)
+                Text("\(clocks.utc) · \(clocks.met)")
+                    .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
+                    .foregroundStyle(HybridColor.dim)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .accessibilityIdentifier("mission-clock")
+            }
         }
     }
 
+    @ViewBuilder
     private var transport: some View {
-        HStack(spacing: 22) {
-            skip(label: "−15s", access: "Skip back 15 seconds", identifier: "skip-back", seconds: -PlaybackModel.skipInterval)
-            play
-            skip(label: "+15s", access: "Skip forward 15 seconds", identifier: "skip-forward", seconds: PlaybackModel.skipInterval)
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                skip(label: "−15s", access: "Skip back 15 seconds", identifier: "skip-back", seconds: -PlaybackModel.skipInterval)
+                play
+                skip(label: "+15s", access: "Skip forward 15 seconds", identifier: "skip-forward", seconds: PlaybackModel.skipInterval)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 22) {
+                skip(label: "−15s", access: "Skip back 15 seconds", identifier: "skip-back", seconds: -PlaybackModel.skipInterval)
+                play
+                skip(label: "+15s", access: "Skip forward 15 seconds", identifier: "skip-forward", seconds: PlaybackModel.skipInterval)
+            }
         }
     }
 
@@ -1066,21 +1150,43 @@ struct ControlPanel: View {
         Button {
             model.skip(by: seconds)
         } label: {
-            Text(label)
-                .font(HybridFont.text(15, relativeTo: .body))
-                .fontWeight(.semibold)
-                .foregroundStyle(HybridColor.cream)
-                .frame(minWidth: 44, minHeight: 44)
+            skipLabel(label)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(access)
         .accessibilityIdentifier(identifier)
     }
 
+    @ViewBuilder
+    private func skipLabel(_ label: String) -> some View {
+        let text = Text(label)
+            .font(HybridFont.text(15, relativeTo: .body))
+            .fontWeight(.semibold)
+            .foregroundStyle(HybridColor.cream)
+        if dynamicTypeSize.isAccessibilitySize {
+            text
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        } else {
+            text
+                .frame(minWidth: 44, minHeight: 44)
+        }
+    }
+
+    @ViewBuilder
     private var windowRow: some View {
-        HStack(spacing: 8) {
-            windowButton("Window 2", side: .nikon, identifier: "window-nikon")
-            windowButton("Window 3", side: .cab, identifier: "window-cab")
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                windowButton("Window 2", side: .nikon, identifier: "window-nikon")
+                windowButton("Window 3", side: .cab, identifier: "window-cab")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 8) {
+                windowButton("Window 2", side: .nikon, identifier: "window-nikon")
+                windowButton("Window 3", side: .cab, identifier: "window-cab")
+            }
         }
     }
 
@@ -1089,15 +1195,7 @@ struct ControlPanel: View {
         return Button {
             model.setWindow(side)
         } label: {
-            Text(title)
-                .font(HybridFont.text(13, relativeTo: .footnote))
-                .fontWeight(.medium)
-                .foregroundStyle(selected ? HybridColor.ink : HybridColor.dim)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 44)
-                .background {
-                    Capsule().fill(selected ? HybridColor.cream.opacity(0.92) : Color.white.opacity(0.06))
-                }
+            windowButtonLabel(title, selected: selected)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)
@@ -1105,16 +1203,72 @@ struct ControlPanel: View {
         .accessibilityAddTraits(selected ? .isSelected : AccessibilityTraits())
     }
 
+    @ViewBuilder
+    private func windowButtonLabel(_ title: String, selected: Bool) -> some View {
+        let text = Text(title)
+            .font(HybridFont.text(13, relativeTo: .footnote))
+            .fontWeight(.medium)
+            .foregroundStyle(selected ? HybridColor.ink : HybridColor.dim)
+        if dynamicTypeSize.isAccessibilitySize {
+            text
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .background {
+                    Capsule().fill(selected ? HybridColor.cream.opacity(0.92) : Color.white.opacity(0.06))
+                }
+        } else {
+            text
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+                .background {
+                    Capsule().fill(selected ? HybridColor.cream.opacity(0.92) : Color.white.opacity(0.06))
+                }
+        }
+    }
+
+    @ViewBuilder
     private var secondaryRow: some View {
-        HStack(spacing: 8) {
-            textButton("Lines", identifier: "lines-button") { transcript = true }
-            textButton("Moments", identifier: "moments-button") { moments = true }
-            textButton("About", identifier: "about-button") { about = true }
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                textButton("Lines", identifier: "lines-button") { transcript = true }
+                textButton("Moments", identifier: "moments-button") { moments = true }
+                textButton("About", identifier: "about-button") { about = true }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 8) {
+                textButton("Lines", identifier: "lines-button") { transcript = true }
+                textButton("Moments", identifier: "moments-button") { moments = true }
+                textButton("About", identifier: "about-button") { about = true }
+            }
         }
     }
 
     private func textButton(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
+            textButtonLabel(title)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityIdentifier(identifier)
+        .accessibilityLabel(title)
+    }
+
+    @ViewBuilder
+    private func textButtonLabel(_ title: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text(title)
+                .font(HybridFont.text(15, relativeTo: .subheadline))
+                .fontWeight(.semibold)
+                .foregroundStyle(HybridColor.cream)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        } else {
             ZStack {
                 Color.clear.frame(width: 44, height: 44)
                 Text(title)
@@ -1124,12 +1278,7 @@ struct ControlPanel: View {
                     .padding(.horizontal, 4)
             }
             .fixedSize()
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .accessibilityIdentifier(identifier)
-        .accessibilityLabel(title)
     }
 }
 
@@ -1660,8 +1809,9 @@ struct CreditLine: View {
         Text("Credit: NASA/Artemis II Crew")
             .font(HybridFont.text(11, relativeTo: .caption2))
             .foregroundStyle(HybridColor.cream)
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
+            .lineLimit(2)
+            .minimumScaleFactor(0.4)
+            .multilineTextAlignment(.leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.black.opacity(0.55), in: Capsule())

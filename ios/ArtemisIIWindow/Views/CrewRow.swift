@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CrewRow: View {
     @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var speaker: String? {
         LyricFocus.focus(
@@ -54,12 +55,12 @@ struct CrewRow: View {
                 }
                 .frame(minHeight: 44)
             }
-            .frame(minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             Text("Names only. No in-flight portrait is bundled.")
                 .font(HybridFont.text(10, relativeTo: .caption2))
                 .foregroundStyle(HybridColor.dim.opacity(0.75))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? CGFloat(0.5) : CGFloat(0.8))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("crew-note")
         }

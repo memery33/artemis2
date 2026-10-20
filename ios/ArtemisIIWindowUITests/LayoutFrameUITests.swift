@@ -148,18 +148,20 @@ final class LayoutFrameUITests: XCTestCase {
 
     /// AX3 is UICTContentSizeCategoryAccessibilityXL (not the Swift name AccessibilityExtraLarge).
     /// AX1 AccessibilityM, AX2 AccessibilityL, AX3 AccessibilityXL, AX4 AccessibilityXXL, AX5 AccessibilityXXXL.
-    /// The closed screen stays the phone's width, Controls is on screen, then play/pause is reachable.
+    /// The closed screen stays the phone's width. Once the panel is open, the scroll column
+    /// and every transport control stay inside that width.
     func testAccessibilityExtraLargeKeepsTheTransportReachable() {
         assertClosedScreenStaysOnThePhone(category: "UICTContentSizeCategoryAccessibilityXL")
     }
 
-    /// AX5, the largest Dynamic Type size. Same closed-screen contract as AX3.
+    /// AX5, the largest Dynamic Type size. Same closed-screen and open-panel contract as AX3.
     func testAccessibilityExtraExtraExtraLargeKeepsTheTransportReachable() {
         assertClosedScreenStaysOnThePhone(category: "UICTContentSizeCategoryAccessibilityXXXL")
     }
 
     /// Begin parks on the longest quote. The stage must stay the screen width, and Controls
-    /// must be hittable before the panel opens.
+    /// must be hittable before the panel opens. The open scroll column, transport, window
+    /// pills, and Lines then stay inside that same width.
     private func assertClosedScreenStaysOnThePhone(category: String) {
         let app = FlybyUILaunch.application([
             "-UIPreferredContentSizeCategoryName",
@@ -183,19 +185,57 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(open.isHittable)
         open.tap()
 
-        let toggle = app.buttons["playback-toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-        let settle = Date().addingTimeInterval(2)
-        while Date() < settle, !toggle.isHittable {
+        let scroll: XCUIElement = app.scrollViews["panel-scroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+        var previous: CGRect = .zero
+        var stable: Int = 0
+        let opened = Date().addingTimeInterval(2)
+        while Date() < opened, stable < 3 {
+            let frame: CGRect = scroll.frame
+            if frame.minX >= 0, frame.height > 1, abs(frame.minY - previous.minY) < 0.5 {
+                stable += 1
+            } else {
+                stable = 0
+            }
+            previous = frame
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
-        if !toggle.isHittable {
-            let scroll = app.scrollViews["panel-scroll"]
-            if scroll.waitForExistence(timeout: 2) {
-                scroll.swipeUp()
+        XCTAssertGreaterThanOrEqual(scroll.frame.minX, 0)
+        XCTAssertLessThanOrEqual(scroll.frame.width, app.frame.width + 0.5)
+        XCTAssertLessThanOrEqual(scroll.frame.maxX, app.frame.width + 0.5)
+
+        assertWithinWindow(app.staticTexts["mission-clock"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["skip-back"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["playback-toggle"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["skip-forward"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["window-nikon"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["window-cab"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["lines-button"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["moments-button"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["about-button"], app: app, scroll: scroll)
+    }
+
+    /// Scrolls the open panel until `element` is on screen, then requires it inside the window.
+    private func assertWithinWindow(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 8))
+        var attempts: Int = 0
+        while attempts < 12 {
+            let frame: CGRect = element.frame
+            let inView: Bool = frame.minY >= -0.5 && frame.maxY <= app.frame.maxY + 0.5
+            if inView, element.isHittable {
+                break
             }
+            if frame.minY < -0.5 {
+                break
+            }
+            let start: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+            let end: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48))
+            start.press(forDuration: 0.01, thenDragTo: end)
+            attempts += 1
         }
-        XCTAssertTrue(toggle.isHittable)
+        XCTAssertGreaterThanOrEqual(element.frame.minX, 0)
+        XCTAssertLessThanOrEqual(element.frame.maxX, app.frame.width + 0.5)
+        XCTAssertTrue(element.isHittable)
     }
 
     /// Lines, Moments, and About sit on the safe-area edge, and those controls are at least 44 by 44.
