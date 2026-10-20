@@ -100,22 +100,34 @@ final class TranscriptMarkupTests: XCTestCase {
 
     @MainActor
     func testAnnotationRunIsItalic() {
-        let styled = TranscriptMarkup.attributed(
+        let face: SwiftUI.Font = SwiftUI.Font.body
+        let speech: SwiftUI.Color = SwiftUI.Color.primary
+        let aside: SwiftUI.Color = SwiftUI.Color.secondary
+        let styled: AttributedString = TranscriptMarkup.attributed(
             "Need [[background voice]] out",
-            font: .body,
-            color: .primary,
-            annotationColor: .secondary
+            font: face,
+            color: speech,
+            annotationColor: aside
         )
-        XCTAssertEqual(String(styled.characters), "Need (background voice) out")
-        let runs = Array(styled.runs)
+        let visible: String = String(styled.characters)
+        XCTAssertEqual(visible, "Need (background voice) out")
+        let runs: [AttributedString.Runs.Run] = Array(styled.runs)
         XCTAssertEqual(runs.count, 3)
-        let intent = AttributeScopes.FoundationAttributes.InlinePresentationIntentAttribute.self
-        let ink = AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self
-        XCTAssertNil(runs[0][intent])
-        XCTAssertEqual(runs[1][intent], InlinePresentationIntent.emphasized)
-        XCTAssertEqual(String(runs[1].characters), "(background voice)")
-        XCTAssertNotNil(runs[1][ink])
-        XCTAssertNil(runs[2][intent])
+        let intentKey: AttributeScopes.FoundationAttributes.InlinePresentationIntentAttribute.Type =
+            AttributeScopes.FoundationAttributes.InlinePresentationIntentAttribute.self
+        let colorKey: AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.Type =
+            AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self
+        let speechIntent: InlinePresentationIntent? = runs[0][intentKey]
+        XCTAssertNil(speechIntent)
+        let asideIntent: InlinePresentationIntent? = runs[1][intentKey]
+        XCTAssertEqual(asideIntent, InlinePresentationIntent.emphasized)
+        let asideRange: Range<AttributedString.Index> = runs[1].range
+        let asideText: String = String(styled[asideRange].characters)
+        XCTAssertEqual(asideText, "(background voice)")
+        let asideColor: SwiftUI.Color? = runs[1][colorKey]
+        XCTAssertNotNil(asideColor)
+        let tailIntent: InlinePresentationIntent? = runs[2][intentKey]
+        XCTAssertNil(tailIntent)
     }
 
     private func words(_ text: String) -> [String] {
