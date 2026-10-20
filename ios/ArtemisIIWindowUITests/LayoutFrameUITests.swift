@@ -1,7 +1,7 @@
 import XCTest
 
-/// Portrait and landscape. On the globe screen the path, its caption, and the
-/// transport capsule stay on screen and clear of each other.
+/// The panel opens while audio is playing, a crater opens from a milestone,
+/// and the photograph never falls back to an empty black pane.
 @MainActor
 final class LayoutFrameUITests: XCTestCase {
     nonisolated override func setUp() {
@@ -19,132 +19,104 @@ final class LayoutFrameUITests: XCTestCase {
         super.tearDown()
     }
 
-    func testFramesStayInsideTheScreenInBothOrientations() {
+    func testPanelOpensWhileAudioPlaysAndACraterOpens() {
         let app = FlybyUILaunch.application()
         app.launch()
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
         begin.tap()
 
-        let path = element(named: "orion-path", in: app)
-        let caption = element(named: "globe-caption", in: app)
-        let capsule = element(named: "transport-capsule", in: app)
-        XCTAssertTrue(path.waitForExistence(timeout: 15))
-        XCTAssertTrue(caption.waitForExistence(timeout: 8))
-        XCTAssertTrue(capsule.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["playback-toggle"].waitForExistence(timeout: 8))
+        let caption = element(named: "window-caption", in: app)
+        XCTAssertTrue(caption.waitForExistence(timeout: 15))
+        XCTAssertLessThan(caption.frame.width, app.frame.width - 40)
+        XCTAssertLessThan(caption.frame.height, app.frame.height * 0.5)
+        assertNoBlackPane(in: app)
 
-        assertInside(path, screen: app.frame)
-        assertInside(caption, screen: app.frame)
-        assertInside(capsule, screen: app.frame)
-        XCTAssertFalse(path.frame.intersects(capsule.frame))
-        XCTAssertFalse(caption.frame.intersects(capsule.frame))
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 8))
+        open.tap()
 
-        let column = scroller("phone-column", in: app)
-        let note = element(named: "crew-note", in: app)
-        reveal(note, using: column)
-        assertInside(note, screen: app.frame)
-        XCTAssertTrue(note.label.contains("Hansen") || note.label.contains("portrait"))
-        XCTAssertFalse(note.frame.intersects(capsule.frame))
+        let toggle = app.buttons["playback-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        let playing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Pause"), object: toggle)
+        wait(for: [playing], timeout: 5)
+        XCTAssertEqual(toggle.label, "Pause")
 
-        XCUIDevice.shared.orientation = .landscapeLeft
-        let window = app.windows.firstMatch
+        let window = app.buttons["window-nikon"]
         XCTAssertTrue(window.waitForExistence(timeout: 8))
-        let screen = window.frame
-        XCTAssertTrue(path.waitForExistence(timeout: 8))
-        XCTAssertTrue(caption.waitForExistence(timeout: 8))
-        XCTAssertTrue(capsule.waitForExistence(timeout: 8))
-        assertInside(path, screen: screen)
-        assertInside(caption, screen: screen)
-        assertInside(capsule, screen: screen)
-        XCTAssertFalse(path.frame.intersects(capsule.frame))
-        XCTAssertFalse(caption.frame.intersects(capsule.frame))
-        XCTAssertFalse(app.scrollViews["landscape-rail"].exists)
-        let landscapeNote = element(named: "crew-note", in: app)
-        XCTAssertTrue(landscapeNote.waitForExistence(timeout: 8))
-        assertInside(landscapeNote, screen: screen)
-        XCTAssertFalse(landscapeNote.frame.intersects(path.frame))
-        XCTAssertFalse(landscapeNote.frame.intersects(capsule.frame))
-        XCTAssertGreaterThan(landscapeNote.frame.width, 160)
+        window.tap()
+        XCTAssertEqual(toggle.label, "Pause")
+
+        let crater = app.buttons["milestone-aristarchus"]
+        XCTAssertTrue(crater.waitForExistence(timeout: 8))
+        crater.tap()
+
+        let page = element(named: "crater-page", in: app)
+        XCTAssertTrue(page.waitForExistence(timeout: 8))
+        let why = element(named: "crater-why", in: app)
+        XCTAssertTrue(why.waitForExistence(timeout: 8))
+        XCTAssertTrue(why.label.contains("volcanic diversity"))
+        XCTAssertTrue(element(named: "about-this-data", in: app).waitForExistence(timeout: 8))
+        assertNoBlackPane(in: app)
     }
 
-    func testExhibitCardOpensASheet() {
+    /// Lines, Moments, and About sit on the safe-area edge, and those controls are at least 44 by 44.
+    func testAboutClearsTheHomeIndicatorAndControlsAre44Points() {
         let app = FlybyUILaunch.application()
         app.launch()
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
         begin.tap()
 
-        let column = scroller("phone-column", in: app)
-        let card = element(named: "exhibit-aristarchus-plateau", in: app)
-        XCTAssertTrue(card.waitForExistence(timeout: 15))
-        reveal(card, using: column)
-        card.tap()
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
 
-        let sheet = element(named: "exhibit-sheet", in: app)
-        XCTAssertTrue(sheet.waitForExistence(timeout: 8))
-        let source = app.staticTexts.containing(
-            NSPredicate(format: "label CONTAINS %@", "Science and Operational Focus for Aristarchus Plateau")
-        ).firstMatch
-        XCTAssertTrue(source.waitForExistence(timeout: 5))
+        let about = app.buttons["about-button"]
+        XCTAssertTrue(about.waitForExistence(timeout: 8))
+        let edge = element(named: "safe-area-bottom", in: app)
+        XCTAssertTrue(edge.waitForExistence(timeout: 8))
+        let minimumSide = 44 - 0.01
+        // XCUIElement does not resolve frame.size through NSPredicate, so poll the frame itself.
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            let frame = about.frame
+            if frame.width >= minimumSide, frame.height >= minimumSide { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        let inset = app.frame.maxY - edge.frame.maxY
+        XCTAssertGreaterThanOrEqual(inset, -0.01)
+        XCTAssertLessThanOrEqual(about.frame.maxY, app.frame.height - inset + 0.01)
+        assertSquareHitTarget(about, minimumSide: minimumSide)
+        assertSquareHitTarget(app.buttons["lines-button"], minimumSide: minimumSide)
+        assertSquareHitTarget(app.buttons["moments-button"], minimumSide: minimumSide)
+        for name in ["Wiseman", "Glover", "Koch", "Hansen"] {
+            assertSquareHitTarget(app.buttons["crew-\(name)"], minimumSide: minimumSide)
+        }
+    }
+
+    private func assertSquareHitTarget(_ element: XCUIElement, minimumSide: CGFloat) {
+        XCTAssertTrue(element.exists)
+        XCTAssertGreaterThanOrEqual(element.frame.width, minimumSide)
+        XCTAssertGreaterThanOrEqual(element.frame.height, minimumSide)
+    }
+
+    private func assertNoBlackPane(in app: XCUIApplication) {
+        let blocked = [
+            "No Window 2 frame",
+            "No Cab Cam frame",
+            "Times are not shifted to fill the gap"
+        ]
+        for phrase in blocked {
+            let match = app.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS %@", phrase)
+            ).firstMatch
+            XCTAssertFalse(match.exists, phrase)
+        }
     }
 
     private func element(named identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
-    }
-
-    private func scroller(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-        let typed = app.scrollViews[identifier]
-        if typed.waitForExistence(timeout: 5) {
-            return typed
-        }
-        let any = app.descendants(matching: .any)[identifier]
-        XCTAssertTrue(any.waitForExistence(timeout: 5))
-        return any
-    }
-
-    private func reveal(_ element: XCUIElement, using scroller: XCUIElement) {
-        for _ in 0..<12 {
-            if contains(element.frame, in: scroller.frame.insetBy(dx: -1, dy: -1)) {
-                return
-            }
-            let frame = element.frame
-            let bounds = scroller.frame
-            let start: CGVector
-            let end: CGVector
-            if frame.maxY > bounds.maxY + 1 {
-                start = CGVector(dx: 0.5, dy: 0.75)
-                end = CGVector(dx: 0.5, dy: 0.35)
-            } else if frame.minY < bounds.minY - 1 {
-                start = CGVector(dx: 0.5, dy: 0.35)
-                end = CGVector(dx: 0.5, dy: 0.75)
-            } else {
-                return
-            }
-            scroller.coordinate(withNormalizedOffset: start)
-                .press(forDuration: 0.05, thenDragTo: scroller.coordinate(withNormalizedOffset: end))
-        }
-    }
-
-    private func assertInside(
-        _ element: XCUIElement,
-        screen: CGRect,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let frame = element.frame
-        XCTAssertGreaterThanOrEqual(frame.minX, screen.minX - 1, file: file, line: line)
-        XCTAssertGreaterThanOrEqual(frame.minY, screen.minY - 1, file: file, line: line)
-        XCTAssertLessThanOrEqual(frame.maxX, screen.maxX + 1, "\(frame) outside \(screen)", file: file, line: line)
-        XCTAssertLessThanOrEqual(frame.maxY, screen.maxY + 1, "\(frame) outside \(screen)", file: file, line: line)
-    }
-
-    private func contains(_ frame: CGRect, in screen: CGRect) -> Bool {
-        frame.minX >= screen.minX - 1
-            && frame.minY >= screen.minY - 1
-            && frame.maxX <= screen.maxX + 1
-            && frame.maxY <= screen.maxY + 1
-            && frame.width > 1
-            && frame.height > 1
     }
 }

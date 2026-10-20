@@ -34,15 +34,18 @@ enum ClockMath {
         return String(format: "%02d:%02d:%02d %@", parts.hour, parts.minute, parts.second, name)
     }
 
-    /// Hours are not limited to 24. The guide's mission start is the epoch.
+    /// Days, hours, minutes, seconds, and milliseconds from the guide's mission start.
     static func metText(_ date: Date, epoch: Date) -> String {
-        let seconds = Int((date.timeIntervalSince(epoch)).rounded())
-        let sign = seconds < 0 ? "-" : ""
-        let absolute = abs(seconds)
-        let hours = absolute / 3600
-        let minutes = (absolute % 3600) / 60
-        let secs = absolute % 60
-        return String(format: "%@%d:%02d:%02d MET", sign, hours, minutes, secs)
+        let interval = date.timeIntervalSince(epoch)
+        let sign = interval < 0 ? "-" : ""
+        let millisTotal = Int((abs(interval) * 1000).rounded())
+        let days = millisTotal / 86_400_000
+        let dayRemainder = millisTotal % 86_400_000
+        let hours = dayRemainder / 3_600_000
+        let minutes = (dayRemainder % 3_600_000) / 60_000
+        let seconds = (dayRemainder % 60_000) / 1000
+        let millis = dayRemainder % 1000
+        return String(format: "%@%02d:%02d:%02d:%02d.%03d MET", sign, days, hours, minutes, seconds, millis)
     }
 
     private static func gregorian(_ date: Date, timeZone: TimeZone) -> (hour: Int, minute: Int, second: Int) {

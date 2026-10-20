@@ -84,6 +84,9 @@ targets:
     sources:
       - path: ArtemisIIWindowWidget
       - path: ArtemisIIWindow/LiveActivity/FlybyActivityAttributes.swift
+      - path: ArtemisIIWindow/Views/HybridType.swift
+      - path: ArtemisIIWindow/Fonts
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: ArtemisIIWindowWidget

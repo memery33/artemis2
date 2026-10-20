@@ -12,45 +12,54 @@ struct CrewRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
+                HStack(spacing: 6) {
                     ForEach(model.timeline?.crew ?? []) { member in
                         let speaking = speaker == member.id
                         let followed = model.crewID == member.id
                         Button {
                             model.follow(member)
                         } label: {
-                            VStack(spacing: 4) {
-                                Text(String(member.id.prefix(1)))
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 52, height: 52)
-                                    .background(Circle().fill(Color.white.opacity(speaking ? 0.22 : 0.06)))
-                                    .overlay {
-                                        Circle().strokeBorder(
-                                            Color(red: CrewTint.rgba(member.id).0, green: CrewTint.rgba(member.id).1, blue: CrewTint.rgba(member.id).2),
-                                            lineWidth: speaking || followed ? 3 : 1
-                                        )
-                                    }
-                                Text(member.id)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.white.opacity(followed ? 1 : 0.7))
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
+                            ZStack {
+                                Color.clear.frame(width: 44, height: 44)
+                                VStack(spacing: 2) {
+                                    Text(String(member.id.prefix(1)))
+                                        .font(HybridFont.display(14, relativeTo: .footnote))
+                                        .foregroundStyle(HybridColor.cream.opacity(0.9))
+                                        .frame(width: 32, height: 32)
+                                        .background(Circle().fill(Color.white.opacity(speaking ? 0.22 : 0.06)))
+                                        .overlay {
+                                            Circle().strokeBorder(
+                                                Color(red: CrewTint.rgba(member.id).0, green: CrewTint.rgba(member.id).1, blue: CrewTint.rgba(member.id).2),
+                                                lineWidth: speaking || followed ? 2 : 1
+                                            )
+                                        }
+                                    Text(member.id)
+                                        .font(HybridFont.text(10, relativeTo: .caption2))
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(HybridColor.dim.opacity(followed ? 1 : 0.8))
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: true)
+                                }
                             }
-                            .frame(minWidth: 64, minHeight: 44)
+                            .fixedSize()
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .contentShape(Rectangle())
                         .accessibilityLabel("Follow \(member.id)")
                         .accessibilityIdentifier("crew-\(member.id)")
                     }
                 }
+                .frame(minHeight: 44)
             }
-            Text("No separate in-flight portrait is bundled. The marks are the crew names on the timeline.")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.55))
-                .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 44)
+            Text("Names only. No in-flight portrait is bundled.")
+                .font(HybridFont.text(10, relativeTo: .caption2))
+                .foregroundStyle(HybridColor.dim.opacity(0.75))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("crew-note")
         }

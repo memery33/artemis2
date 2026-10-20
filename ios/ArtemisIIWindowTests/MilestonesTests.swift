@@ -226,22 +226,6 @@ final class MilestonesTests: XCTestCase {
         XCTAssertFalse(model.scrubbing)
     }
 
-    @MainActor
-    func testDiveOpensTheWindowAndSurfaceReturnsToTheMoon() throws {
-        let model = PlaybackModel()
-        XCTAssertNil(model.loadError)
-        XCTAssertFalse(model.immersed)
-        model.dive()
-        XCTAssertTrue(model.immersed)
-        model.surface()
-        XCTAssertFalse(model.immersed)
-        let timeline = try XCTUnwrap(model.timeline)
-        let pin = try XCTUnwrap(MilestoneList.derive(timeline).first { $0.id == "span:window.start" })
-        model.dive(to: pin)
-        XCTAssertTrue(model.immersed)
-        XCTAssertEqual(model.utc.timeIntervalSince(pin.date), 0, accuracy: 1)
-    }
-
     func testLyricsShowTheWholeLineAndItsNeighbors() throws {
         let track = "pcd3"
         let rows = timeline.lines.filter { $0.track == track }.sorted { $0.date < $1.date }
@@ -293,88 +277,13 @@ final class MilestonesTests: XCTestCase {
         XCTAssertEqual(model.utc, span.start)
     }
 
-    @MainActor
-    func testPathScrubKeepsPlayingAndDoesNotJumpToTheSpanEnd() throws {
-        let model = PlaybackModel()
-        let timeline = try XCTUnwrap(model.timeline)
-        let span = try XCTUnwrap(model.activeSpan)
-        model.playing = true
-        let target = span.start.addingTimeInterval(120)
-        model.beginPathScrub()
-        model.scrubPath(to: target)
-        XCTAssertTrue(model.scrubbing)
-        XCTAssertTrue(model.playing)
-        XCTAssertFalse(model.ended)
-        XCTAssertEqual(model.utc.timeIntervalSince(target), 0, accuracy: 0.5)
-        XCTAssertLessThan(model.utc, span.end.addingTimeInterval(-60))
-
-        let cab = try XCTUnwrap(timeline.cabRun)
-        let cabTime = cab.start.addingTimeInterval(45)
-        model.scrubPath(to: cabTime)
-        XCTAssertEqual(model.range, .cab)
-        XCTAssertEqual(model.utc.timeIntervalSince(cabTime), 0, accuracy: 0.5)
-        XCTAssertLessThan(model.utc, cab.end)
-        XCTAssertTrue(model.playing)
-        XCTAssertNotEqual(model.utc, span.end)
-        XCTAssertNotEqual(model.utc, cab.end)
-
-        model.scrubPath(to: span.start.addingTimeInterval(-3600))
-        XCTAssertEqual(model.utc.timeIntervalSince(cabTime), 0, accuracy: 0.5)
-
-        model.endPathScrub()
-        XCTAssertFalse(model.scrubbing)
-        XCTAssertNotNil(model.segment(at: model.utc))
-        XCTAssertGreaterThan(model.utc, cab.start)
-        XCTAssertLessThan(model.utc, cab.end)
-        XCTAssertNotEqual(model.utc, cab.end)
-        XCTAssertNotEqual(model.utc, span.end)
-        if !model.engineFailed {
-            XCTAssertTrue(model.playing)
-        }
-        XCTAssertFalse(model.ended)
-    }
-
-    @MainActor
-    func testReleasingAPathDragAtTheSpanEndShowsTheEndCard() throws {
-        let model = PlaybackModel()
-        let span = try XCTUnwrap(model.activeSpan)
-        model.playing = true
-        model.beginPathScrub()
-        model.scrubPath(to: span.end)
-        XCTAssertEqual(model.utc, span.end)
-        XCTAssertFalse(model.ended)
-        model.endPathScrub()
-        XCTAssertFalse(model.scrubbing)
-        XCTAssertTrue(model.ended)
-        XCTAssertEqual(model.utc, span.end)
-        XCTAssertFalse(model.playing)
-
+    func testLaunchArguments() {
         XCTAssertTrue(PlaybackModel.opensAtSpanEnd(["-seekToEnd"]))
         XCTAssertFalse(PlaybackModel.opensAtSpanEnd([]))
         XCTAssertFalse(RuntimeHost.allowsPlaybackServices(arguments: ["-XCTest"], unitTestHost: true))
         XCTAssertFalse(RuntimeHost.allowsPlaybackServices(arguments: ["-ui-tests", "-seekToEnd"], unitTestHost: false))
         XCTAssertTrue(RuntimeHost.allowsPlaybackServices(arguments: ["-ui-tests", "-allow-playback-session"], unitTestHost: true))
         XCTAssertTrue(RuntimeHost.allowsPlaybackServices(arguments: [], unitTestHost: false))
-    }
-
-    @MainActor
-    func testDiveOpensAtTheSelectedMoment() throws {
-        let model = PlaybackModel()
-        let span = try XCTUnwrap(model.activeSpan)
-        let moment = span.start.addingTimeInterval(90)
-        model.seek(to: moment)
-        model.playing = true
-        model.dive()
-        XCTAssertTrue(model.immersed)
-        XCTAssertFalse(model.ended)
-        XCTAssertEqual(model.utc.timeIntervalSince(moment), 0, accuracy: 0.5)
-        XCTAssertLessThan(model.utc, span.end)
-
-        let pin = try XCTUnwrap(MilestoneList.derive(try XCTUnwrap(model.timeline)).first { $0.id == "span:window.start" })
-        model.dive(to: pin)
-        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 0, accuracy: 0.5)
-        XCTAssertFalse(model.ended)
-        XCTAssertNotEqual(model.utc, span.end)
     }
 
     func testPhotoAccessLabelOmitsTheLiveGap() throws {

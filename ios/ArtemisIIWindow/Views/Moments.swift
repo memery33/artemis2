@@ -152,6 +152,12 @@ struct MomentsSheet: View {
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
+                        if milestone.id == "photo:\(Timeline.cabinID)" {
+                            Text("Photographed inside the cabin at this moment (art002e016183). The window keeps the view outside.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         Text(MilestoneSource.display(milestone.source))
                             .font(.caption2)
                             .foregroundStyle(.secondary)

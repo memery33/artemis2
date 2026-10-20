@@ -33,11 +33,37 @@ enum FlybyActivityCopy {
         clockFormatter.string(from: date)
     }
 
-    /// Lock-screen line. This is static text. It changes when playback pushes a new state, not by counting on its own.
-    /// A minutes-and-seconds `Text(timerInterval:)` renders as `--` and does not advance.
+    /// Lock-screen line. The card shows this string. It changes when playback pushes, not by counting.
     @MainActor
     static func lockScreenClock(_ date: Date) -> String {
         "at \(clock(date)) UTC"
+    }
+
+    /// UTC line and elapsed line from one mission instant. Elapsed is `utc - spanStart`.
+    /// Both playing and paused show this string. It does not tick on its own.
+    struct Reading: Equatable, Sendable {
+        var clock: String
+        var elapsedText: String
+    }
+
+    @MainActor
+    static func reading(utc: Date, spanStart: Date, phrase: String) -> Reading {
+        let elapsed = max(0, utc.timeIntervalSince(spanStart))
+        return Reading(clock: lockScreenClock(utc), elapsedText: elapsedLabel(elapsed, phrase: phrase))
+    }
+
+    /// `m:ss` plus the span phrase. Minutes are not zero-padded, so paused and playing match (`0:54`, not `00:54`).
+    /// `phrase` is `into the flyby` or `into the cab run`.
+    static func elapsedLabel(_ elapsed: TimeInterval, phrase: String) -> String {
+        let total = max(0, Int(elapsed.rounded(.down)))
+        return String(format: "%d:%02d", total / 60, total % 60) + " " + phrase
+    }
+
+    static func elapsedPhrase(range: MissionRange) -> String {
+        switch range {
+        case .flyby: return "into the flyby"
+        case .cab: return "into the cab run"
+        }
     }
 }
 
@@ -85,6 +111,11 @@ enum FlybyLiveActivity {
     static func install(_ replacement: any FlybyActivityClient) -> any FlybyActivityClient {
         let previous = client
         client = replacement
+        lastPushedAt = .distantPast
+        lastPushedState = nil
+        pending = nil
+        flushTask?.cancel()
+        flushTask = nil
         return previous
     }
 
@@ -185,11 +216,42 @@ enum FlybyLiveActivity {
     static func scheduleEndAllImmediately() -> Task<Void, Never> {
         let ending = client
         let ids = ending.identifiers()
+        lastPushedState = nil
+        pending = nil
+        flushTask?.cancel()
+        flushTask = nil
         return enqueue {
+            pending = nil
+            flushTask?.cancel()
+            flushTask = nil
+            lastPushedState = nil
             await ending.end(identifiers: ids)
         }
     }
 
+    /// Ceiling for ordinary pushes. Play, pause, a line or milestone change, the span end,
+    /// and a seek, skip, or other user-requested push pass `immediate` and skip this.
+    /// A non-immediate update inside the window is kept and sent when the window ends.
+    @MainActor private static let minimumPushInterval: TimeInterval = 1
+    @MainActor private static var lastPushedAt = Date.distantPast
+    @MainActor private static var lastPushedState: FlybyActivityAttributes.ContentState?
+    @MainActor private static var pending: DeferredActivity?
+    @MainActor private static var flushTask: Task<Void, Never>?
+
+    /// Latest update that arrived inside `minimumPushInterval` and was not immediate.
+    /// Flushed once that window has elapsed, including while playback is paused.
+    private struct DeferredActivity {
+        var state: FlybyActivityAttributes.ContentState
+        var staleDate: Date?
+        var now: @MainActor () -> Date
+        var onSent: (@MainActor () -> Void)?
+    }
+
+    /// `immediate` is play/pause, a line or milestone change, the span end, and a user-requested push.
+    /// An identical state is dropped. Anything else inside `minimumPushInterval` replaces `pending`
+    /// and is sent after the window, so the latest state still lands while paused.
+    /// `now` is the caller's clock, captured here so a test can move time without waiting.
+    /// `onSent` runs only after a request or update is actually handed to the client.
     @MainActor
     static func sync(
         arrived: Bool,
@@ -198,28 +260,119 @@ enum FlybyLiveActivity {
         nextMilestone: String,
         speaker: String,
         clock: String,
-        staleDate: Date?
+        elapsedText: String,
+        staleDate: Date?,
+        immediate: Bool,
+        now: @escaping @MainActor () -> Date = { Date() },
+        onSent: (@MainActor () -> Void)? = nil
     ) {
+        let stamp = now()
         enqueue {
             let state = FlybyActivityAttributes.ContentState(
                 progress: progress,
                 nextMilestone: nextMilestone,
                 speaker: speaker,
                 clock: clock,
-                playing: playing
+                playing: playing,
+                elapsedText: elapsedText
             )
             guard arrived else {
                 let ids = client.identifiers()
+                pending = nil
+                flushTask?.cancel()
+                flushTask = nil
+                lastPushedState = nil
                 await client.end(identifiers: ids)
                 return
             }
             if client.identifiers().isEmpty {
+                pending = nil
+                flushTask?.cancel()
+                flushTask = nil
                 guard playing else { return }
-                await client.request(state, staleDate: staleDate)
+                await publish(state, staleDate: staleDate, playing: playing, stamp: stamp, onSent: onSent)
                 return
             }
-            await client.update(state, staleDate: staleDate)
+            if lastPushedState == state {
+                pending = nil
+                flushTask?.cancel()
+                flushTask = nil
+                return
+            }
+            let elapsed = stamp.timeIntervalSince(lastPushedAt)
+            if !immediate, elapsed < minimumPushInterval {
+                pending = DeferredActivity(state: state, staleDate: staleDate, now: now, onSent: onSent)
+                armFlush(after: minimumPushInterval - elapsed)
+                return
+            }
+            pending = nil
+            flushTask?.cancel()
+            flushTask = nil
+            await publish(state, staleDate: staleDate, playing: playing, stamp: stamp, onSent: onSent)
         }
+    }
+
+    /// Sends the deferred update once `now` is past the 1 s window. Tests call this after moving the clock.
+    /// The unit-test host does not sleep; shipping code arms that sleep from `sync`.
+    @MainActor
+    static func flushPending() async {
+        await enqueue {
+            await deliverPending()
+        }.value
+    }
+
+    @MainActor
+    private static func armFlush(after delay: TimeInterval) {
+        guard !RuntimeHost.isUnitTestHost else { return }
+        flushTask?.cancel()
+        let nanos = UInt64(max(0.0, delay) * 1_000_000_000)
+        flushTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled else { return }
+            enqueue {
+                await deliverPending()
+            }
+        }
+    }
+
+    @MainActor
+    private static func deliverPending() async {
+        guard let waiting = pending else { return }
+        let stamp = waiting.now()
+        guard stamp.timeIntervalSince(lastPushedAt) >= minimumPushInterval else { return }
+        pending = nil
+        flushTask?.cancel()
+        flushTask = nil
+        guard waiting.state != lastPushedState else { return }
+        await publish(
+            waiting.state,
+            staleDate: waiting.staleDate,
+            playing: waiting.state.playing,
+            stamp: stamp,
+            onSent: waiting.onSent
+        )
+    }
+
+    @MainActor
+    private static func publish(
+        _ state: FlybyActivityAttributes.ContentState,
+        staleDate: Date?,
+        playing: Bool,
+        stamp: Date,
+        onSent: (@MainActor () -> Void)?
+    ) async {
+        if client.identifiers().isEmpty {
+            guard playing else { return }
+            lastPushedAt = stamp
+            lastPushedState = state
+            await client.request(state, staleDate: staleDate)
+            onSent?()
+            return
+        }
+        lastPushedAt = stamp
+        lastPushedState = state
+        await client.update(state, staleDate: staleDate)
+        onSent?()
     }
 
     @MainActor

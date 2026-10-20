@@ -14,57 +14,80 @@ struct FlybyWidgetBundle: WidgetBundle {
 struct FlybyLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FlybyActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(context.attributes.title)
-                    .font(.headline)
-                PausedMarker(playing: context.state.playing, font: .caption.weight(.semibold))
+                    .font(HybridFont.display(20, relativeTo: .headline))
+                    .foregroundStyle(HybridColor.cream)
+                PausedMarker(playing: context.state.playing, font: HybridFont.text(12, relativeTo: .caption))
                 ProgressView(value: context.state.progress)
+                    .tint(HybridColor.gold)
                     .accessibilityLabel("Flyby progress")
                 Text(context.state.nextMilestone)
-                    .font(.subheadline)
-                HStack {
+                    .font(HybridFont.text(15, relativeTo: .subheadline))
+                    .foregroundStyle(HybridColor.cream)
+                    .lineLimit(2)
+                HStack(alignment: .top) {
                     Text(context.state.speaker)
+                        .font(HybridFont.text(13, relativeTo: .caption))
+                        .foregroundStyle(HybridColor.gold)
                     Spacer()
-                    MissionClockText(state: context.state, font: .caption)
+                    MissionClockText(state: context.state, font: HybridFont.text(12, relativeTo: .caption), showsElapsed: true)
                 }
             }
-            .padding(12)
+            .padding(14)
+            .containerBackground(HybridColor.ground, for: .widget)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    MissionClockText(state: context.state, font: .caption)
+                    MissionClockText(state: context.state, font: HybridFont.text(12, relativeTo: .caption))
+                        .padding(.leading, 8)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(context.state.speaker)
-                        .font(.caption)
+                        .font(HybridFont.text(12, relativeTo: .caption))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(.trailing, 8)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading) {
-                        PausedMarker(playing: context.state.playing, font: .caption.weight(.semibold))
+                    VStack(alignment: .leading, spacing: 4) {
+                        PausedMarker(playing: context.state.playing, font: HybridFont.text(12, relativeTo: .caption))
                         ProgressView(value: context.state.progress)
+                            .tint(HybridColor.gold)
                         Text(context.state.nextMilestone)
-                            .font(.caption)
+                            .font(HybridFont.text(12, relativeTo: .caption))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
+                    .padding(.horizontal, 4)
                 }
             } compactLeading: {
-                MissionClockText(state: context.state, font: .caption2)
+                MissionClockText(state: context.state, font: HybridFont.text(11, relativeTo: .caption2))
             } compactTrailing: {
-                if let paused = FlybyActivityAttributes.pausedLabel(playing: context.state.playing) {
-                    Text(paused)
-                        .font(.caption2.weight(.semibold))
-                } else {
+                if context.state.playing {
                     Text(context.state.speaker)
-                        .font(.caption2)
+                        .font(HybridFont.text(11, relativeTo: .caption2))
+                } else {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .accessibilityLabel("Paused")
                 }
             } minimal: {
-                Text(String(context.state.speaker.prefix(1)))
-                    .font(.caption2)
+                if context.state.playing {
+                    Text(String(context.state.speaker.prefix(1)))
+                        .font(HybridFont.text(11, relativeTo: .caption2))
+                } else {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .accessibilityLabel("Paused")
+                }
             }
         }
     }
 }
 
-/// "Paused" on the Lock Screen and in the Dynamic Island while `playing` is false.
+/// "Paused" on the Lock Screen and in the expanded Dynamic Island while `playing` is false.
+/// The compact trailing slot uses a pause glyph instead of this word.
 private struct PausedMarker: View {
     var playing: Bool
     var font: Font
@@ -73,17 +96,40 @@ private struct PausedMarker: View {
         if let label = FlybyActivityAttributes.pausedLabel(playing: playing) {
             Text(label)
                 .font(font)
+                .fontWeight(.semibold)
+                .foregroundStyle(HybridColor.gold)
         }
     }
 }
 
-/// Absolute mission UTC. Static text, replaced when playback pushes a new state on play, pause, seek, speaker change, or span end, and at most every 15 seconds while playing. A forced push is not held for that 15-second cadence. A `Text(timerInterval:)` of minutes and seconds renders as `--` and does not advance.
+/// Absolute mission UTC and, on the Lock Screen, elapsed time. Both strings come from the last push.
+/// Neither is a timer: a ticking elapsed count ran ahead of the UTC line, then stuck at the span length.
+/// VoiceOver reads the same static strings.
 struct MissionClockText: View {
     var state: FlybyActivityAttributes.ContentState
     var font: Font
+    var showsElapsed: Bool = false
 
     var body: some View {
-        Text(state.clock)
-            .font(font.monospacedDigit())
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(state.clock)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            if showsElapsed, !state.elapsedText.isEmpty {
+                Text(state.elapsedText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+        }
+        .font(font.monospacedDigit())
+        .foregroundStyle(HybridColor.cream)
+        .multilineTextAlignment(.trailing)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        guard showsElapsed, !state.elapsedText.isEmpty else { return state.clock }
+        return "\(state.clock), \(state.elapsedText)"
     }
 }

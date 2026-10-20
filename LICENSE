@@ -30,3 +30,14 @@ ios/ArtemisIIWindow/Resources are NASA works and are not covered by the MIT
 license above. Credit the map to NASA/GSFC SVS, LROC, Arizona State University,
 Noah Petro (NASA/GSFC), and Ernie Wright. Credit the tables to NASA/JPL
 Horizons. This project is not a NASA product and is not endorsed by NASA.
+
+The bundled fonts are not covered by the MIT license above. They are used
+under the SIL Open Font License, Version 1.1. The full license text ships
+beside each family.
+
+Fraunces (Fraunces.ttf, Fraunces-Italic.ttf). Copyright 2018 The Fraunces
+Project Authors (https://github.com/undercasetype/Fraunces). See
+ios/ArtemisIIWindow/Fonts/Fraunces-OFL.txt.
+
+Inter (Inter.ttf). Copyright 2020 The Inter Project Authors
+(https://github.com/rsms/inter). See ios/ArtemisIIWindow/Fonts/Inter-OFL.txt.
