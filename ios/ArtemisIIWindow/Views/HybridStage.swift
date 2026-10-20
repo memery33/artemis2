@@ -64,12 +64,13 @@ struct HybridStage: View {
     /// Finger travel while the sheet is tracking. Zero once it snaps.
     @State private var dragTranslation: CGFloat = 0
     @State private var crater: CraterKind?
+    /// Window bottom inset. The geometry reader below ignores the safe area, so its own inset is always 0.
+    @State private var safeBottom: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
             let panelHeight = min(460, max(340, geo.size.height * 0.5))
             let pixels = ScreenImage.maxPixel(size: geo.size, scale: displayScale)
-            let safeBottom = geo.safeAreaInsets.bottom
             ZStack {
                 HybridColor.ground.ignoresSafeArea()
                 if crater == nil {
@@ -89,6 +90,15 @@ struct HybridStage: View {
                         self.crater = nil
                     }
                 }
+                safeAreaEdge
+                WindowSafeAreaReader { bottom in
+                    if bottom != safeBottom {
+                        safeBottom = bottom
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .animation(reduceMotion ? nil : .smooth(duration: 0.45), value: crater)
@@ -107,6 +117,21 @@ struct HybridStage: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+    }
+
+    /// One-point mark at the window's safe-area edge. The panel and the ruler use that same inset.
+    private var safeAreaEdge: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Color.clear
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement()
+                .accessibilityIdentifier("safe-area-bottom")
+                .accessibilityLabel("Safe area bottom")
+        }
+        .padding(.bottom, safeBottom)
+        .allowsHitTesting(false)
     }
 
     private func craterFrame(_ kind: CraterKind) -> Frame? {
@@ -831,6 +856,7 @@ struct ControlPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
             CrewRow()
             secondaryRow
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.leading, 20)
         .padding(.trailing, 8)
@@ -981,14 +1007,19 @@ struct ControlPanel: View {
 
     private func textButton(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(HybridFont.text(15, relativeTo: .subheadline))
-                .fontWeight(.semibold)
-                .foregroundStyle(HybridColor.cream)
-                .frame(minHeight: 44)
-                .padding(.horizontal, 4)
+            ZStack {
+                Color.clear.frame(width: 44, height: 44)
+                Text(title)
+                    .font(HybridFont.text(15, relativeTo: .subheadline))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(HybridColor.cream)
+                    .padding(.horizontal, 4)
+            }
+            .fixedSize()
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .accessibilityIdentifier(identifier)
         .accessibilityLabel(title)
     }
@@ -1436,6 +1467,57 @@ struct CraterPage: View {
 
 /// Small credit kept on every photograph. Its own element, so a crater page
 /// query can find `photo-credit` beside the picture.
+/// The stage ignores the safe area, so a geometry reader on it reports a zero bottom inset.
+/// This reads the window inset instead and reports it once the view is in a window.
+struct WindowSafeAreaReader: UIViewRepresentable {
+    var onBottom: @MainActor (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> Probe {
+        let view = Probe()
+        view.onBottom = onBottom
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ view: Probe, context: Context) {
+        view.onBottom = onBottom
+        view.report()
+    }
+
+    @MainActor
+    final class Probe: UIView {
+        var onBottom: (@MainActor (CGFloat) -> Void)?
+        private var reported: CGFloat = -1
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            report()
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            report()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            report()
+        }
+
+        func report() {
+            guard let window else { return }
+            let bottom = window.safeAreaInsets.bottom
+            guard bottom != reported else { return }
+            reported = bottom
+            let send = onBottom
+            Task { @MainActor in
+                send?(bottom)
+            }
+        }
+    }
+}
+
 struct CreditLine: View {
     var body: some View {
         Text("Credit: NASA/Artemis II Crew")

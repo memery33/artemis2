@@ -113,6 +113,9 @@ enum FlybyLiveActivity {
         client = replacement
         lastPushedAt = .distantPast
         lastPushedState = nil
+        pending = nil
+        flushTask?.cancel()
+        flushTask = nil
         return previous
     }
 
@@ -214,18 +217,41 @@ enum FlybyLiveActivity {
         let ending = client
         let ids = ending.identifiers()
         lastPushedState = nil
+        pending = nil
+        flushTask?.cancel()
+        flushTask = nil
         return enqueue {
+            pending = nil
+            flushTask?.cancel()
+            flushTask = nil
+            lastPushedState = nil
             await ending.end(identifiers: ids)
         }
     }
 
-    /// Ceiling for ordinary pushes. Play, pause, a line or milestone change, and the span end pass `immediate` and skip this.
+    /// Ceiling for ordinary pushes. Play, pause, a line or milestone change, the span end,
+    /// and a seek, skip, or other user-requested push pass `immediate` and skip this.
+    /// A non-immediate update inside the window is kept and sent when the window ends.
     @MainActor private static let minimumPushInterval: TimeInterval = 1
     @MainActor private static var lastPushedAt = Date.distantPast
     @MainActor private static var lastPushedState: FlybyActivityAttributes.ContentState?
+    @MainActor private static var pending: DeferredActivity?
+    @MainActor private static var flushTask: Task<Void, Never>?
 
-    /// `immediate` is only for play/pause, a line or milestone change, and the span end.
-    /// Everything else, including a frame decode after a memory warning, waits out `minimumPushInterval` and drops a repeat of the last state.
+    /// Latest update that arrived inside `minimumPushInterval` and was not immediate.
+    /// Flushed once that window has elapsed, including while playback is paused.
+    private struct DeferredActivity {
+        var state: FlybyActivityAttributes.ContentState
+        var staleDate: Date?
+        var now: @MainActor () -> Date
+        var onSent: (@MainActor () -> Void)?
+    }
+
+    /// `immediate` is play/pause, a line or milestone change, the span end, and a user-requested push.
+    /// An identical state is dropped. Anything else inside `minimumPushInterval` replaces `pending`
+    /// and is sent after the window, so the latest state still lands while paused.
+    /// `now` is the caller's clock, captured here so a test can move time without waiting.
+    /// `onSent` runs only after a request or update is actually handed to the client.
     @MainActor
     static func sync(
         arrived: Bool,
@@ -236,8 +262,11 @@ enum FlybyLiveActivity {
         clock: String,
         elapsedText: String,
         staleDate: Date?,
-        immediate: Bool
+        immediate: Bool,
+        now: @escaping @MainActor () -> Date = { Date() },
+        onSent: (@MainActor () -> Void)? = nil
     ) {
+        let stamp = now()
         enqueue {
             let state = FlybyActivityAttributes.ContentState(
                 progress: progress,
@@ -249,23 +278,101 @@ enum FlybyLiveActivity {
             )
             guard arrived else {
                 let ids = client.identifiers()
+                pending = nil
+                flushTask?.cancel()
+                flushTask = nil
                 lastPushedState = nil
                 await client.end(identifiers: ids)
                 return
             }
             if client.identifiers().isEmpty {
+                pending = nil
+                flushTask?.cancel()
+                flushTask = nil
                 guard playing else { return }
-                lastPushedAt = Date()
-                lastPushedState = state
-                await client.request(state, staleDate: staleDate)
+                await publish(state, staleDate: staleDate, playing: playing, stamp: stamp, onSent: onSent)
                 return
             }
-            if lastPushedState == state { return }
-            if !immediate, Date().timeIntervalSince(lastPushedAt) < minimumPushInterval { return }
-            lastPushedAt = Date()
-            lastPushedState = state
-            await client.update(state, staleDate: staleDate)
+            if lastPushedState == state {
+                pending = nil
+                flushTask?.cancel()
+                flushTask = nil
+                return
+            }
+            let elapsed = stamp.timeIntervalSince(lastPushedAt)
+            if !immediate, elapsed < minimumPushInterval {
+                pending = DeferredActivity(state: state, staleDate: staleDate, now: now, onSent: onSent)
+                armFlush(after: minimumPushInterval - elapsed)
+                return
+            }
+            pending = nil
+            flushTask?.cancel()
+            flushTask = nil
+            await publish(state, staleDate: staleDate, playing: playing, stamp: stamp, onSent: onSent)
         }
+    }
+
+    /// Sends the deferred update once `now` is past the 1 s window. Tests call this after moving the clock.
+    /// The unit-test host does not sleep; shipping code arms that sleep from `sync`.
+    @MainActor
+    static func flushPending() async {
+        await enqueue {
+            await deliverPending()
+        }.value
+    }
+
+    @MainActor
+    private static func armFlush(after delay: TimeInterval) {
+        guard !RuntimeHost.isUnitTestHost else { return }
+        flushTask?.cancel()
+        let nanos = UInt64(max(0.0, delay) * 1_000_000_000)
+        flushTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled else { return }
+            enqueue {
+                await deliverPending()
+            }
+        }
+    }
+
+    @MainActor
+    private static func deliverPending() async {
+        guard let waiting = pending else { return }
+        let stamp = waiting.now()
+        guard stamp.timeIntervalSince(lastPushedAt) >= minimumPushInterval else { return }
+        pending = nil
+        flushTask?.cancel()
+        flushTask = nil
+        guard waiting.state != lastPushedState else { return }
+        await publish(
+            waiting.state,
+            staleDate: waiting.staleDate,
+            playing: waiting.state.playing,
+            stamp: stamp,
+            onSent: waiting.onSent
+        )
+    }
+
+    @MainActor
+    private static func publish(
+        _ state: FlybyActivityAttributes.ContentState,
+        staleDate: Date?,
+        playing: Bool,
+        stamp: Date,
+        onSent: (@MainActor () -> Void)?
+    ) async {
+        if client.identifiers().isEmpty {
+            guard playing else { return }
+            lastPushedAt = stamp
+            lastPushedState = state
+            await client.request(state, staleDate: staleDate)
+            onSent?()
+            return
+        }
+        lastPushedAt = stamp
+        lastPushedState = state
+        await client.update(state, staleDate: staleDate)
+        onSent?()
     }
 
     @MainActor

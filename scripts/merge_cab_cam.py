@@ -114,7 +114,9 @@ LICENSES = [
         "shipped": True,
         "credit": f"NASA ID <id>, {CREDIT}",
         "usage": (
-            f"{GUIDELINES} Shipped stills are PDS browse PNGs from browse/fd06 (5568 by 3712) resized to a 2700-pixel long edge and saved as lossy WebP. "
+            f"{GUIDELINES} Shipped stills are PDS browse PNGs from browse/fd06 resized to a 2700-pixel long edge and saved as lossy WebP. "
+            "Nikon nkd5015 browse PNGs are 5568 by 3712. The five Z9 nkz9019 browse PNGs "
+            "(art002e016183, art002e016184, art002e016187, art002e016188, art002e016193) are 8256 by 5504. "
             "PDS4 labels carry no photographer field. The Data User Guide credits every still to NASA/Artemis II Crew."
         ),
     },

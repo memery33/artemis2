@@ -139,8 +139,6 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(early, 0, accuracy: 0.02)
         XCTAssertGreaterThan(later, early)
         XCTAssertEqual(near, 1, accuracy: 0.05)
-        XCTAssertFalse(FlybyPath.fadesInterface(at: samples[0].date, approach: approach.date))
-        XCTAssertTrue(FlybyPath.fadesInterface(at: approach.date, approach: approach.date))
     }
 
     func testExhibitCardsQuoteTheTargetingPlan() throws {

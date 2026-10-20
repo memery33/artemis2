@@ -536,6 +536,39 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertTrue(fake.identifiersStore.isEmpty)
     }
 
+    /// Unlocking after the wall clock has already passed the span end dismisses the activity.
+    /// The catch-up is the scene becoming active, not another background tick.
+    @MainActor
+    func testUnlockAfterWallTimePassedTheSpanEndEndsTheActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        model.playing = true
+        let parked = span.end.addingTimeInterval(-30)
+        model.utc = parked
+        let origin = Date(timeIntervalSince1970: 1_800_000_000)
+        model.wallNow = { origin }
+        model.setSceneActive(false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(model.utc, parked)
+        XCTAssertTrue(model.playing)
+        XCTAssertFalse(model.ended)
+
+        model.wallNow = { origin.addingTimeInterval(40) }
+        model.setSceneActive(true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(model.utc.timeIntervalSince(span.end), 0, accuracy: 0.001)
+        XCTAssertTrue(model.ended)
+        XCTAssertFalse(model.playing)
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
+    }
+
     /// A ruler dragged past the flyby end, released while playing, then locked,
     /// leaves the Live Activity up and the clock short of the span end.
     @MainActor
@@ -712,6 +745,158 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertTrue(model.playing)
         XCTAssertFalse(model.ended)
         XCTAssertLessThan(model.utc, span.end)
+    }
+
+    /// Identical states drop. A non-immediate update inside 1 s waits, then the flush sends it.
+    /// An immediate update in that same window goes out.
+    @MainActor
+    func testThrottleDropsIdenticalDefersAndLetsImmediateThrough() async {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        var now = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock: @MainActor () -> Date = { now }
+
+        func push(clockText: String, playing: Bool, immediate: Bool) {
+            FlybyLiveActivity.sync(
+                arrived: true,
+                playing: playing,
+                progress: 0.1,
+                nextMilestone: "End of this span",
+                speaker: "Wiseman",
+                clock: clockText,
+                elapsedText: "0:30 into the flyby",
+                staleDate: now.addingTimeInterval(60),
+                immediate: immediate,
+                now: clock
+            )
+        }
+
+        push(clockText: "at 19:33:30 UTC", playing: true, immediate: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.updatedPlaying.count, 1)
+        XCTAssertEqual(fake.lastState?.clock, "at 19:33:30 UTC")
+
+        push(clockText: "at 19:33:30 UTC", playing: true, immediate: false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.updatedPlaying.count, 1)
+
+        now = now.addingTimeInterval(0.4)
+        push(clockText: "at 19:33:31 UTC", playing: true, immediate: false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.updatedPlaying.count, 1)
+        XCTAssertEqual(fake.lastState?.clock, "at 19:33:30 UTC")
+
+        await FlybyLiveActivity.flushPending()
+        XCTAssertEqual(fake.updatedPlaying.count, 1)
+        XCTAssertEqual(fake.lastState?.clock, "at 19:33:30 UTC")
+
+        now = now.addingTimeInterval(0.7)
+        await FlybyLiveActivity.flushPending()
+        XCTAssertEqual(fake.updatedPlaying.count, 2)
+        XCTAssertEqual(fake.lastState?.clock, "at 19:33:31 UTC")
+        XCTAssertEqual(fake.lastState?.playing, true)
+
+        now = now.addingTimeInterval(0.2)
+        push(clockText: "at 19:33:32 UTC", playing: false, immediate: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.updatedPlaying.count, 3)
+        XCTAssertEqual(fake.lastState?.clock, "at 19:33:32 UTC")
+        XCTAssertEqual(fake.lastState?.playing, false)
+    }
+
+    /// While playing, the lock-screen strings go out again once the injected clock has moved 8 s.
+    @MainActor
+    func testPlayingPushesAgainAfterEightSeconds() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        var now = Date(timeIntervalSince1970: 1_800_000_000)
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.wallNow = { now }
+        model.playing = true
+        let timeline = try XCTUnwrap(model.timeline)
+        let quiet = try ISO8601.parse("2026-04-06T19:34:30Z")
+        let milestones = MilestoneList.derive(timeline)
+        let nextAtQuiet = FlybyActivityCopy.nextLabel(after: quiet, milestones: milestones)
+        XCTAssertEqual(nextAtQuiet, FlybyActivityCopy.nextLabel(after: quiet.addingTimeInterval(8), milestones: milestones))
+        let lines = timeline.lines
+        let speaker = LyricFocus.focus(at: quiet, track: model.trackID, lines: lines).current?.speaker
+        XCTAssertEqual(speaker, LyricFocus.focus(at: quiet.addingTimeInterval(8), track: model.trackID, lines: lines).current?.speaker)
+
+        model.seek(to: quiet)
+        await FlybyLiveActivity.finishQueuedWork()
+        let pushed = fake.updatedPlaying.count
+        XCTAssertGreaterThan(pushed, 0)
+        XCTAssertEqual(fake.lastState?.clock, "at 19:34:30 UTC")
+
+        model.advanceDisplayLinkForTest(to: 10_000)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.updatedPlaying.count, pushed)
+
+        now = now.addingTimeInterval(7)
+        model.advanceDisplayLinkForTest(to: 10_007)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.updatedPlaying.count, pushed)
+        XCTAssertEqual(fake.lastState?.clock, "at 19:34:30 UTC")
+
+        now = now.addingTimeInterval(1)
+        model.advanceDisplayLinkForTest(to: 10_008)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.updatedPlaying.count, pushed + 1)
+        XCTAssertEqual(fake.lastState?.clock, "at 19:34:38 UTC")
+        XCTAssertEqual(fake.lastState?.playing, true)
+    }
+
+    /// Pause, then +15 s inside the 1 s window. The card takes the new instant without waiting to be flushed.
+    @MainActor
+    func testPausedSeekLandsInsideTheThrottleWindow() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        var now = Date(timeIntervalSince1970: 1_800_000_000)
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.wallNow = { now }
+        model.playing = true
+        let span = try XCTUnwrap(model.activeSpan)
+        model.pause(user: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.lastState?.clock, "at 19:33:00 UTC")
+        XCTAssertEqual(fake.lastState?.playing, false)
+        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 0, accuracy: 0.001)
+
+        now = now.addingTimeInterval(0.4)
+        model.skip(by: 15)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.lastState?.clock, "at 19:33:15 UTC")
+        XCTAssertEqual(fake.lastState?.elapsedText, "0:15 into the flyby")
+        XCTAssertEqual(fake.lastState?.playing, false)
+        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 15, accuracy: 0.001)
+        XCTAssertFalse(model.playing)
+    }
+
+    /// A decode that finishes while paused may refresh Now Playing art. It must not push the Live Activity.
+    @MainActor
+    func testPausedDecodeDoesNotPushTheLiveActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.playing = true
+        model.pause(user: true)
+        await FlybyLiveActivity.finishQueuedWork()
+        let pushed = fake.updatedPlaying.count
+        let file = model.pair(for: model.window).current?.file ?? "images/art002e016184.webp"
+        model.noteFramesDecoded(file: file)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.updatedPlaying.count, pushed)
+        XCTAssertFalse(model.playing)
     }
 
     private static func solidImage(_ color: UIColor) -> UIImage {

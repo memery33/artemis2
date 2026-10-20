@@ -21,34 +21,40 @@ struct CrewRow: View {
                         Button {
                             model.follow(member)
                         } label: {
-                            VStack(spacing: 2) {
-                                Text(String(member.id.prefix(1)))
-                                    .font(HybridFont.display(14, relativeTo: .footnote))
-                                    .foregroundStyle(HybridColor.cream.opacity(0.9))
-                                    .frame(width: 32, height: 32)
-                                    .background(Circle().fill(Color.white.opacity(speaking ? 0.22 : 0.06)))
-                                    .overlay {
-                                        Circle().strokeBorder(
-                                            Color(red: CrewTint.rgba(member.id).0, green: CrewTint.rgba(member.id).1, blue: CrewTint.rgba(member.id).2),
-                                            lineWidth: speaking || followed ? 2 : 1
-                                        )
-                                    }
-                                Text(member.id)
-                                    .font(HybridFont.text(10, relativeTo: .caption2))
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(HybridColor.dim.opacity(followed ? 1 : 0.8))
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: true)
+                            ZStack {
+                                Color.clear.frame(width: 44, height: 44)
+                                VStack(spacing: 2) {
+                                    Text(String(member.id.prefix(1)))
+                                        .font(HybridFont.display(14, relativeTo: .footnote))
+                                        .foregroundStyle(HybridColor.cream.opacity(0.9))
+                                        .frame(width: 32, height: 32)
+                                        .background(Circle().fill(Color.white.opacity(speaking ? 0.22 : 0.06)))
+                                        .overlay {
+                                            Circle().strokeBorder(
+                                                Color(red: CrewTint.rgba(member.id).0, green: CrewTint.rgba(member.id).1, blue: CrewTint.rgba(member.id).2),
+                                                lineWidth: speaking || followed ? 2 : 1
+                                            )
+                                        }
+                                    Text(member.id)
+                                        .font(HybridFont.text(10, relativeTo: .caption2))
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(HybridColor.dim.opacity(followed ? 1 : 0.8))
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: true)
+                                }
                             }
-                            .frame(minWidth: 44, alignment: .top)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .fixedSize()
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .contentShape(Rectangle())
                         .accessibilityLabel("Follow \(member.id)")
                         .accessibilityIdentifier("crew-\(member.id)")
                     }
                 }
+                .frame(minHeight: 44)
             }
+            .frame(minHeight: 44)
             Text("Names only. No in-flight portrait is bundled.")
                 .font(HybridFont.text(10, relativeTo: .caption2))
                 .foregroundStyle(HybridColor.dim.opacity(0.75))

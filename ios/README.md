@@ -44,4 +44,4 @@ The status bar is hidden. The home indicator is not.
 
 ## Icon
 
-`Assets.xcassets/AppIcon.appiconset/Icon-1024.png` is a center crop of `demo/data/images/art002e016184.webp` (NASA ID art002e016184, Z9, 19:33:26.630Z). The source is 1200×800, so the 1024×1024 App Store slot scales that crop slightly. It is not a new photograph. The launch screen is black.
+`Assets.xcassets/AppIcon.appiconset/Icon-1024.png` is a center crop of the earlier 1200×800 derivation of `demo/data/images/art002e016184.webp` (NASA ID art002e016184, Z9, 19:33:26.630Z). The shipped frame is now a 2700-pixel long edge, and this icon was not rebuilt from it, so the 1024×1024 App Store slot is still that older crop. It is not a new photograph. The launch screen is black.

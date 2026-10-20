@@ -60,6 +60,45 @@ final class LayoutFrameUITests: XCTestCase {
         assertNoBlackPane(in: app)
     }
 
+    /// Lines, Moments, and About sit on the safe-area edge, and those controls are at least 44 by 44.
+    func testAboutClearsTheHomeIndicatorAndControlsAre44Points() {
+        let app = FlybyUILaunch.application()
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let about = app.buttons["about-button"]
+        XCTAssertTrue(about.waitForExistence(timeout: 8))
+        let edge = element(named: "safe-area-bottom", in: app)
+        XCTAssertTrue(edge.waitForExistence(timeout: 8))
+        let settled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "frame.size.height >= 44 AND frame.size.width >= 44"),
+            object: about
+        )
+        wait(for: [settled], timeout: 5)
+
+        let inset = app.frame.maxY - edge.frame.maxY
+        XCTAssertGreaterThanOrEqual(inset, 0)
+        XCTAssertLessThanOrEqual(about.frame.maxY, app.frame.height - inset + 0.5)
+        assertSquareHitTarget(about)
+        assertSquareHitTarget(app.buttons["lines-button"])
+        assertSquareHitTarget(app.buttons["moments-button"])
+        for name in ["Wiseman", "Glover", "Koch", "Hansen"] {
+            assertSquareHitTarget(app.buttons["crew-\(name)"])
+        }
+    }
+
+    private func assertSquareHitTarget(_ element: XCUIElement) {
+        XCTAssertTrue(element.exists)
+        XCTAssertGreaterThanOrEqual(element.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(element.frame.height, 44)
+    }
+
     private func assertNoBlackPane(in app: XCUIApplication) {
         let blocked = [
             "No Window 2 frame",

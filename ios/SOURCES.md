@@ -73,6 +73,10 @@ The frames on the glass are lossy WebP with a 2700 px long edge, written from th
 
 `https://pds-imaging.jpl.nasa.gov/api/data/atlas:pds4:artemis2:artemis2:/artemis2_crew_camera/browse/fd06/{nasa_id}_nkd5015_prc_v01.png`
 
+The five Z9 frames (art002e016183, art002e016184, art002e016187, art002e016188, art002e016193) come from the nkz9019 browse PNGs, 8256 by 5504, resized the same way:
+
+`https://pds-imaging.jpl.nasa.gov/api/data/atlas:pds4:artemis2:artemis2:/artemis2_crew_camera/browse/fd06/{nasa_id}_nkz9019_prc_v01.png`
+
 Cab Cam frames come from the browse-source JPEGs, 4000 by 3000:
 
 `https://pds-imaging.jpl.nasa.gov/api/data/atlas:pds4:artemis2:artemis2:/artemis2_orion_camera/browse_source/fd05/{nasa_id}_cab2_src_v01.jpg`

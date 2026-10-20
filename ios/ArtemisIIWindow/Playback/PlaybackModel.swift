@@ -702,8 +702,15 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// The view reads `frameCacheEpoch` and swaps in the bitmap once it is cached.
     /// A decode must not push the Live Activity. After a memory warning the artwork
     /// cache miss used to complete, force a push, and prefetch again, about once per frame.
-    func noteFramesDecoded(file _: String) {
+    /// While paused, the lock-screen artwork is filled in once this file's bitmap is cached.
+    func noteFramesDecoded(file: String) {
         frameCacheEpoch += 1
+        guard !playing, file == currentArtworkFile() else { return }
+        guard !skipsAudio, arrived else { return }
+        guard let image = MediaStore.cachedImage(file: file, small: true, maxPixel: 720) else { return }
+        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     private func currentArtworkFile() -> String {
@@ -1493,12 +1500,12 @@ final class PlaybackModel: NSObject, ObservableObject {
         let speakerChanged = speaker != lastActivitySpeaker
         let milestoneChanged = milestone != lastActivityMilestone
         let endedChanged = spanEnded != lastActivityEnded
-        let due = playing && Date().timeIntervalSince(lastActivityPush) >= Self.activityPushInterval
-        // Play, pause, a line or milestone, and the span end are immediate.
+        let due = playing && wallNow().timeIntervalSince(lastActivityPush) >= Self.activityPushInterval
+        // Play, pause, a line or milestone, the span end, and a seek or skip are immediate.
         // The 8 s cadence moves the static elapsed line. A frame decode is not a reason to push.
-        let immediate = playbackChanged || speakerChanged || milestoneChanged || endedChanged
+        // `lastActivityPush` moves only when a push is actually handed to ActivityKit.
+        let immediate = playbackChanged || speakerChanged || milestoneChanged || endedChanged || requested
         guard force || requested || becameMissing || immediate || due else { return }
-        lastActivityPush = Date()
         lastActivitySpeaker = speaker
         lastActivityMilestone = milestone
         lastActivityPlaying = playing
@@ -1518,7 +1525,12 @@ final class PlaybackModel: NSObject, ObservableObject {
             clock: reading.clock,
             elapsedText: reading.elapsedText,
             staleDate: FlybyActivityCopy.staleDate(playing: playing, utc: utc, spanEnd: span.end, rate: rate),
-            immediate: immediate
+            immediate: immediate,
+            now: { [weak self] in self?.wallNow() ?? Date() },
+            onSent: { [weak self] in
+                guard let self else { return }
+                self.lastActivityPush = self.wallNow()
+            }
         )
     }
 

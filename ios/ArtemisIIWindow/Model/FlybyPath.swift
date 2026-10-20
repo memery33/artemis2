@@ -266,11 +266,6 @@ enum FlybyPath {
         return min(1, max(0, (first.rangeKm - range) / span))
     }
 
-    /// True only in the second around the derived closest-approach time.
-    static func fadesInterface(at date: Date, approach: Date) -> Bool {
-        abs(date.timeIntervalSince(approach)) < 1
-    }
-
     private static func segment(containing date: Date, samples: [PathSample]) -> (Int, Int) {
         var low = 0
         var high = samples.count - 1
