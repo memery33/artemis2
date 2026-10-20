@@ -410,6 +410,140 @@ enum LunarSites {
     ]
 }
 
+/// A Closest approach tap lands on the nearest real frame or recording that
+/// already sits inside a playable span. The Horizons instant is not moved
+/// onto that photograph. The gap sentence is the same one the dive uses.
+struct ClosestApproachLanding: Equatable, Sendable {
+    var date: Date
+    var range: MissionRange
+    var trackID: String
+    var window: WindowSide
+    var frameID: String
+    /// Horizons clock, then `FrameSelection.clockOffset` against the photograph.
+    var gap: String
+
+    static func make(timeline: Timeline) -> ClosestApproachLanding? {
+        guard let approach = approach() else { return nil }
+        var best: Date?
+        var bestDistance = TimeInterval.greatestFiniteMagnitude
+        func consider(_ date: Date) {
+            guard span(containing: date, timeline: timeline) != nil else { return }
+            let distance = abs(date.timeIntervalSince(approach.date))
+            let replace: Bool
+            if let current = best {
+                replace = prefers(
+                    date,
+                    distance: distance,
+                    over: current,
+                    currentDistance: bestDistance,
+                    approach: approach.date
+                )
+            } else {
+                replace = true
+            }
+            if replace {
+                best = date
+                bestDistance = distance
+            }
+        }
+        for frame in timeline.frames where !frame.isCabinCard {
+            consider(frame.date)
+        }
+        for segment in timeline.segments {
+            consider(closestPoint(on: segment, to: approach.date))
+        }
+        guard let seek = best, let placed = span(containing: seek, timeline: timeline) else { return nil }
+        let side = window(at: seek, timeline: timeline)
+        let track = timeline.segments.min { lhs, rhs in
+            audioDistance(lhs, to: approach.date) < audioDistance(rhs, to: approach.date)
+        }?.track ?? (placed.range == .cab ? "pcd2" : "pcd3")
+        let shown = HybridFrames.shown(at: seek, side: side, timeline: timeline, span: placed.span)
+        let taken = shown?.date ?? seek
+        return ClosestApproachLanding(
+            date: seek,
+            range: placed.range,
+            trackID: track,
+            window: side,
+            frameID: shown?.nasaID ?? "",
+            gap: gap(approach: approach.date, taken: taken)
+        )
+    }
+
+    /// Shown when no bundled frame or recording falls inside a playable span.
+    /// Time and altitude come from the Horizons table, not a typed-in clock.
+    static func missingNote() -> String? {
+        guard let approach = approach() else { return nil }
+        let altitude = TrackMapGeometry.kilometers(approach.altitudeKm)
+        return "Closest approach \(ClockMath.utcText(approach.date)), \(altitude) km above the Moon. NASA/JPL Horizons. No crew recording at that moment."
+    }
+
+    private static func approach() -> ClosestApproach? {
+        FlybyEphemeris.bundled.flatMap {
+            FlybyPath.closestApproach($0.samples, radiusKm: $0.document.radiusKm)
+        }
+    }
+
+    private static func span(containing date: Date, timeline: Timeline) -> (range: MissionRange, span: TimeSpan)? {
+        if let cab = timeline.cabRun, date >= cab.start, date <= cab.end {
+            return (.cab, cab)
+        }
+        if date >= timeline.window.start, date <= timeline.window.end {
+            return (.flyby, timeline.window)
+        }
+        return nil
+    }
+
+    private static func closestPoint(on segment: Segment, to date: Date) -> Date {
+        if date < segment.start { return segment.start }
+        if date > segment.end { return segment.end }
+        return date
+    }
+
+    private static func audioDistance(_ segment: Segment, to date: Date) -> TimeInterval {
+        abs(closestPoint(on: segment, to: date).timeIntervalSince(date))
+    }
+
+    /// Cab Cam when the nearest still is a GoPro frame, so an hours-old Nikon
+    /// exposure is not left up in its place.
+    private static func window(at date: Date, timeline: Timeline) -> WindowSide {
+        let frames = timeline.frames.filter { !$0.isCabinCard }
+        guard let nearest = frames.min(by: { lhs, rhs in
+            prefers(
+                lhs.date,
+                distance: abs(lhs.date.timeIntervalSince(date)),
+                over: rhs.date,
+                currentDistance: abs(rhs.date.timeIntervalSince(date)),
+                approach: date
+            )
+        }) else {
+            return .nikon
+        }
+        return nearest.instrument == "cab2" ? .cab : .nikon
+    }
+
+    private static func prefers(
+        _ candidate: Date,
+        distance: TimeInterval,
+        over current: Date,
+        currentDistance: TimeInterval,
+        approach: Date
+    ) -> Bool {
+        if distance != currentDistance { return distance < currentDistance }
+        let candidateTaken = candidate <= approach
+        let currentTaken = current <= approach
+        if candidateTaken != currentTaken { return candidateTaken }
+        return candidate < current
+    }
+
+    private static func gap(approach: Date, taken: Date) -> String {
+        let clock = "\(ClockMath.utcText(approach)), NASA/JPL Horizons."
+        guard let offset = FrameSelection.clockOffset(now: approach, taken: taken) else {
+            return clock
+        }
+        return "\(clock) \(offset)"
+    }
+}
+
 enum MoonFrame {
     /// IAU MOON_ME body-fixed axes: +X at east-longitude 0 (the mean-Earth meridian),
     /// +Y toward 90° east, +Z north. The bundled Horizons table is already in this

@@ -185,6 +185,10 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(open.isHittable)
         open.tap()
 
+        let openedToggle: XCUIElement = app.buttons["playback-toggle"]
+        XCTAssertTrue(openedToggle.waitForExistence(timeout: 8))
+        XCTAssertTrue(openedToggle.isHittable)
+
         let scroll: XCUIElement = app.scrollViews["panel-scroll"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 8))
         var previous: CGRect = .zero
@@ -231,22 +235,73 @@ final class LayoutFrameUITests: XCTestCase {
         assertStackedMoments(app: app, scroll: scroll)
     }
 
-    /// Each moment's time sits above its name, inside the sheet, and the two do not overlap.
+    /// Each moment is one button. Time and name share that stop, so VoiceOver does not land twice.
     private func assertStackedMoments(app: XCUIApplication, scroll: XCUIElement) {
-        let names: [String] = ["milestone-aristarchus", "milestone-wiseman", "milestone-reiner", "milestone-approach"]
+        let rows: [(String, String)] = [
+            ("milestone-aristarchus", "Aristarchus"),
+            ("milestone-wiseman", "Aristarchus line"),
+            ("milestone-reiner", "Reiner Gamma"),
+            ("milestone-approach", "Closest approach"),
+        ]
         let panel: XCUIElement = app.descendants(matching: .any)["control-panel"]
         XCTAssertTrue(panel.waitForExistence(timeout: 4))
-        for name in names {
-            let time: XCUIElement = app.descendants(matching: .any)["\(name)-time"]
-            let title: XCUIElement = app.descendants(matching: .any)["\(name)-name"]
-            reveal(time, app: app, scroll: scroll)
-            reveal(title, app: app, scroll: scroll)
-            assertMomentPiece(time, app: app, panelTop: panel.frame.minY)
-            assertMomentPiece(title, app: app, panelTop: panel.frame.minY)
-            XCTAssertGreaterThanOrEqual(title.frame.minY, time.frame.maxY - 0.5)
-            let overlap: CGRect = time.frame.intersection(title.frame)
-            XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1)
+        for (name, title) in rows {
+            let row: XCUIElement = app.buttons[name]
+            reveal(row, app: app, scroll: scroll)
+            assertMomentPiece(row, app: app, panelTop: panel.frame.minY)
+            XCTAssertTrue(row.label.contains(title))
+            XCTAssertFalse(app.descendants(matching: .any)["\(name)-time"].exists)
+            XCTAssertFalse(app.descendants(matching: .any)["\(name)-name"].exists)
         }
+    }
+
+    /// Default type. The row seeks to the nearest real Cab Cam frame and labels the gap.
+    func testClosestApproachTapShowsTheLabeledGap() {
+        assertClosestApproachTap(category: nil)
+    }
+
+    /// AX3 is UICTContentSizeCategoryAccessibilityXL.
+    func testClosestApproachTapShowsTheLabeledGapAtAccessibility3() {
+        assertClosestApproachTap(category: "UICTContentSizeCategoryAccessibilityXL")
+    }
+
+    private func assertClosestApproachTap(category: String?) {
+        var arguments: [String] = []
+        if let category {
+            arguments.append("-UIPreferredContentSizeCategoryName")
+            arguments.append(category)
+        }
+        let app = FlybyUILaunch.application(arguments)
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let row = app.buttons["milestone-approach"]
+        if category != nil {
+            let scroll = app.scrollViews["panel-scroll"]
+            XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+            reveal(row, app: app, scroll: scroll)
+        } else {
+            XCTAssertTrue(row.waitForExistence(timeout: 8))
+        }
+        XCTAssertTrue(row.isHittable)
+        row.tap()
+
+        let gap = element(named: "approach-gap", in: app)
+        XCTAssertTrue(gap.waitForExistence(timeout: 8))
+        XCTAssertTrue(gap.label.contains("Photo taken 16 min 14 s before this clock. Not moved to match it."))
+        let clock = element(named: "mission-clock", in: app)
+        XCTAssertTrue(clock.waitForExistence(timeout: 8))
+        XCTAssertTrue(clock.label.contains("22:44:33"))
+        XCTAssertFalse(clock.label.contains("23:00:46"))
+        let frame = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "art002e041365")
+        ).firstMatch
+        XCTAssertTrue(frame.waitForExistence(timeout: 8))
     }
 
     private func reveal(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {

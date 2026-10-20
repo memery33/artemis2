@@ -257,6 +257,10 @@ struct TrackMapView: View {
                 Text("alt \(TrackMapGeometry.kilometers(live.altitudeKm)) km")
                     .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
                     .foregroundStyle(HybridColor.dim)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 168, alignment: .leading)
             }
             .padding(8)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

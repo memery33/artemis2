@@ -229,7 +229,10 @@ struct HybridStage: View {
                 // Accessibility sizes use a hard width and a height cap so a long word or
                 // a tall quote cannot stretch the stage past the phone.
                 let captionWidth: CGFloat = min(280, max(0, size.width - 40))
-                let captionHeight: CGFloat = max(0, size.height - 108 - 160)
+                let captionHeight: CGFloat = max(
+                    0,
+                    size.height - ClosedCaptionMetrics.bottomClearance - ClosedCaptionMetrics.topClearance
+                )
                 VStack {
                     Spacer()
                     HStack {
@@ -245,7 +248,7 @@ struct HybridStage: View {
                         Spacer(minLength: 20)
                     }
                     .padding(.leading, 20)
-                    .padding(.bottom, 108)
+                    .padding(.bottom, ClosedCaptionMetrics.bottomClearance)
                 }
             }
             if crater == nil, revealed >= 80, shownFrame != nil {
@@ -266,6 +269,15 @@ struct HybridStage: View {
                     }
                 }
             }
+            if crater == nil, let gap = model.approachGap {
+                VStack {
+                    approachCard(gap, width: min(320, max(0, size.width - 40)))
+                        .padding(.top, 12)
+                        .padding(.horizontal, 20)
+                    Spacer(minLength: 0)
+                }
+                .frame(width: size.width, height: size.height, alignment: .top)
+            }
             if crater == nil {
                 sheet(panelHeight: panelHeight, width: size.width, safeBottom: safeBottom)
                     .frame(width: size.width, alignment: .leading)
@@ -280,6 +292,30 @@ struct HybridStage: View {
         }
         .frame(width: size.width, height: size.height)
         .clipped()
+    }
+
+    private func approachCard(_ gap: String, width: CGFloat) -> some View {
+        Text(gap)
+            .font(
+                model.approachInformational
+                    ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
+                    : HybridFont.text(15, relativeTo: .subheadline)
+            )
+            .foregroundStyle(HybridColor.cream)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: width, alignment: .leading)
+            .padding(12)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.black.opacity(0.62))
+                    }
+            }
+            .accessibilityIdentifier("approach-gap")
+            .accessibilityLabel(gap)
     }
 
     private func sheet(panelHeight: CGFloat, width: CGFloat, safeBottom: CGFloat) -> some View {
@@ -343,8 +379,10 @@ struct HybridStage: View {
         UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay {
+                // 0.34 left cream type sitting on the bright lunar frames. The darker tint
+                // keeps the secondary clock readable without changing the type color.
                 UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous)
-                    .fill(Color.black.opacity(0.34))
+                    .fill(Color.black.opacity(0.58))
             }
             .overlay(alignment: .top) {
                 Rectangle()
@@ -360,14 +398,14 @@ struct HybridStage: View {
             Button {
                 setPanelOpen(true)
             } label: {
-                VStack(spacing: 8) {
+                VStack(spacing: ClosedCaptionMetrics.cueSpacing) {
                     Capsule()
                         .fill(HybridColor.cream.opacity(0.72))
-                        .frame(width: 36, height: 4)
+                        .frame(width: 36, height: ClosedCaptionMetrics.handleHeight)
                     cueProgress
-                        .frame(width: 148, height: 8)
+                        .frame(width: 148, height: ClosedCaptionMetrics.progressHeight)
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, ClosedCaptionMetrics.cueVerticalPadding)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
             }
@@ -376,7 +414,7 @@ struct HybridStage: View {
             .accessibilityIdentifier("open-panel")
             .accessibilityHint("Opens playback, the timeline, windows, and crew audio")
             .simultaneousGesture(panelDrag(panelHeight: panelHeight))
-            .padding(.bottom, 76)
+            .padding(.bottom, ClosedCaptionMetrics.controlsBottomInset)
         }
     }
 
@@ -853,11 +891,15 @@ struct DocumentaryCaption: View {
     var includeCredit: Bool
     var identifier: String = "window-caption"
 
-    /// Panel quotes stay at two lines. The closed caption keeps every line at the
-    /// default size. Accessibility sizes cap it at three so the stage stays on the phone.
+    /// Panel quotes stay at two lines at the default size. Accessibility sizes let the
+    /// open-panel italic quote grow with Dynamic Type; the column scrolls. The closed
+    /// caption at those sizes stays capped at three so the stage stays on the phone.
     /// The full line remains in Lines.
     private var quoteLineLimit: Int? {
         if compact {
+            if dynamicTypeSize.isAccessibilitySize {
+                return nil
+            }
             return 2
         }
         if dynamicTypeSize.isAccessibilitySize {
@@ -866,10 +908,14 @@ struct DocumentaryCaption: View {
         return nil
     }
 
-    /// Accessibility sizes, including the open panel, shrink the quote to the width they are given.
-    /// Default type keeps the natural size: the closed caption is uncapped, and the panel quote is two lines.
+    /// The open panel at an accessibility size uses the scaled italic face and wraps.
+    /// The closed caption at those sizes still shrinks into its cap. Default type
+    /// keeps the natural size: the closed caption is uncapped, and the panel quote is two lines.
     private var quoteUsesNaturalHeight: Bool {
-        !dynamicTypeSize.isAccessibilitySize
+        if compact, dynamicTypeSize.isAccessibilitySize {
+            return true
+        }
+        return !dynamicTypeSize.isAccessibilitySize
     }
 
     private var line: TranscriptLine? {
@@ -1373,13 +1419,25 @@ struct AccessibilityMomentList: View {
             }
             if let approach = approachDate {
                 let time = ClockMath.utcText(approach).replacingOccurrences(of: " UTC", with: "")
-                let playable = model.timeline.flatMap { HybridClock.playableApproach(timeline: $0) } != nil
-                if playable {
-                    momentRow(time: time, name: "Closest approach", identifier: "milestone-approach") {
-                        model.seek(to: approach, markEnd: false)
+                if let landing = model.timeline.flatMap({ ClosestApproachLanding.make(timeline: $0) }) {
+                    momentRow(
+                        time: time,
+                        name: "Closest approach",
+                        identifier: "milestone-approach",
+                        hint: landing.gap
+                    ) {
+                        model.showClosestApproach()
                     }
                 } else {
-                    momentLabel(time: time, name: "Closest approach", identifier: "milestone-approach")
+                    momentRow(
+                        time: time,
+                        name: "Closest approach",
+                        identifier: "milestone-approach",
+                        hint: ClosestApproachLanding.missingNote() ?? "No crew recording at closest approach",
+                        informational: true
+                    ) {
+                        model.showClosestApproach()
+                    }
                 }
             }
         }
@@ -1395,35 +1453,76 @@ struct AccessibilityMomentList: View {
         return FlybyPath.closestApproach(bundled.samples, radiusKm: bundled.document.radiusKm)?.date
     }
 
-    private func momentRow(time: String, name: String, identifier: String, action: @escaping () -> Void) -> some View {
-        momentLabel(time: time, name: name, identifier: identifier, action: action)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: action)
+    /// One VoiceOver stop. Playable rows are buttons. A closest-approach row that
+    /// has no recording is not a button; the hint carries the explanation.
+    @ViewBuilder
+    private func momentRow(
+        time: String,
+        name: String,
+        identifier: String,
+        hint: String? = nil,
+        informational: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        let label = momentLabel(time: time, name: name, informational: informational)
+        if informational {
+            label
+                .contentShape(Rectangle())
+                .onTapGesture(perform: action)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(time), \(name)")
+                .accessibilityIdentifier(identifier)
+                .modifier(MomentHint(hint: hint))
+        } else {
+            Button(action: action) {
+                label
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(time), \(name)")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier(identifier)
+            .modifier(MomentHint(hint: hint))
+        }
     }
 
-    private func momentLabel(time: String, name: String, identifier: String, action: (() -> Void)? = nil) -> some View {
+    private func momentLabel(time: String, name: String, informational: Bool) -> some View {
         VStack(alignment: .leading, spacing: lineGap) {
-            momentLine(time, identifier: "\(identifier)-time", action: action)
+            Text(time)
                 .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
-                .fontWeight(.semibold)
-            momentLine(name, identifier: "\(identifier)-name", action: action)
-                .font(HybridFont.text(15, relativeTo: .subheadline))
-                .fontWeight(.semibold)
+                .fontWeight(.regular)
+                .foregroundStyle(informational ? HybridColor.dim : HybridColor.cream)
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(name)
+                .font(nameFont(informational: informational))
+                .fontWeight(informational ? .regular : .bold)
+                .foregroundStyle(informational ? HybridColor.dim : HybridColor.cream)
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }
 
-    private func momentLine(_ text: String, identifier: String, action: (() -> Void)?) -> some View {
-        Text(text)
-            .foregroundStyle(HybridColor.cream)
-            .lineLimit(1)
-            .minimumScaleFactor(0.4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier(identifier)
-            .accessibilityAction(.default) {
-                action?()
-            }
+    private func nameFont(informational: Bool) -> Font {
+        let font = HybridFont.text(15, relativeTo: .subheadline)
+        return informational ? font.italic() : font
+    }
+}
+
+/// VoiceOver hint for one moment. Empty hints are left off so other rows stay quiet.
+private struct MomentHint: ViewModifier {
+    var hint: String?
+
+    func body(content: Content) -> some View {
+        if let hint, !hint.isEmpty {
+            content.accessibilityHint(hint)
+        } else {
+            content
+        }
     }
 }
 
@@ -1590,29 +1689,30 @@ struct FlybyRuler: View {
         return FlybyPath.closestApproach(bundled.samples, radiusKm: bundled.document.radiusKm)?.date
     }
 
-    /// Closest approach from the Horizons table. It sits after both playable spans,
-    /// so the mark is the real time and is not a seek to the end of the span.
+    /// Closest approach from the Horizons table. The tap opens the nearest real
+    /// frame and recording and labels the gap. With no media in either span, the
+    /// mark is a quieter note and the card explains the table.
     @ViewBuilder
     private func approachMark(_ date: Date) -> some View {
-        let playable = model.timeline.flatMap { HybridClock.playableApproach(timeline: $0) } != nil
-        if playable {
+        let time = ClockMath.utcText(date).replacingOccurrences(of: " UTC", with: "")
+        if let landing = model.timeline.flatMap({ ClosestApproachLanding.make(timeline: $0) }) {
             labelButton(
-                time: ClockMath.utcText(date).replacingOccurrences(of: " UTC", with: ""),
+                time: time,
                 name: "Closest approach",
-                now: isNow(date),
+                now: isNow(landing.date),
                 identifier: "milestone-approach"
             ) {
-                model.seek(to: date, markEnd: false)
+                model.showClosestApproach()
             }
+            .accessibilityHint(landing.gap)
         } else {
-            rulerLabel(
-                time: ClockMath.utcText(date).replacingOccurrences(of: " UTC", with: ""),
-                name: "Closest approach",
-                now: isNow(date)
-            )
-            .accessibilityElement(children: .ignore)
-            .accessibilityIdentifier("milestone-approach")
-            .accessibilityLabel("Closest approach, outside the flyby and the cab run")
+            rulerLabel(time: time, name: "Closest approach", now: false)
+                .contentShape(RulerHitShape())
+                .onTapGesture { model.showClosestApproach() }
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier("milestone-approach")
+                .accessibilityLabel("Closest approach")
+                .accessibilityHint(ClosestApproachLanding.missingNote() ?? "No crew recording at closest approach")
         }
     }
 
@@ -1933,6 +2033,25 @@ enum WindowSafeArea {
         }
         return 0
     }
+}
+
+/// Closed-caption clearance. The collapsed Controls strip is the cue plus its bottom inset.
+/// The caption used to stop 12 pt short of that strip, so the credit pill covered it.
+enum ClosedCaptionMetrics {
+    /// Room above the accessibility caption so it stays below the status bar.
+    static let topClearance: CGFloat = 160
+    /// Same inset as the collapsed Controls button.
+    static let controlsBottomInset: CGFloat = 76
+    static let handleHeight: CGFloat = 4
+    static let cueSpacing: CGFloat = 8
+    static let progressHeight: CGFloat = 8
+    static let cueVerticalPadding: CGFloat = 12
+    /// Handle, gap, progress, and the cue's vertical padding.
+    static var controlsStripHeight: CGFloat {
+        cueVerticalPadding + handleHeight + cueSpacing + progressHeight + cueVerticalPadding
+    }
+    /// Bottom of the credit sits on the top of the Controls strip.
+    static var bottomClearance: CGFloat { controlsBottomInset + controlsStripHeight }
 }
 
 /// The scrollable part of the sheet keeps its height. The home-indicator inset is added

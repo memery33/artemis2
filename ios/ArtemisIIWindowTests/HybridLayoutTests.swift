@@ -311,4 +311,33 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertFalse(milestones.contains { abs($0.timeIntervalSince(reiner)) < 0.001 })
         XCTAssertGreaterThanOrEqual(dates.count, 3)
     }
+
+    @MainActor
+    func testClosestApproachLandsOnTheNearestCabFrame() throws {
+        let model = PlaybackModel()
+        let timeline = try XCTUnwrap(model.timeline)
+        let landing = try XCTUnwrap(ClosestApproachLanding.make(timeline: timeline))
+        XCTAssertEqual(landing.frameID, "art002e041365")
+        XCTAssertEqual(landing.window, .cab)
+        XCTAssertEqual(landing.range, .cab)
+        XCTAssertEqual(landing.trackID, "pcd2")
+        XCTAssertEqual(
+            landing.gap,
+            "23:00:46 UTC, NASA/JPL Horizons. Photo taken 16 min 14 s before this clock. Not moved to match it."
+        )
+        let approach = HybridClock.approachDate(timeline: timeline)
+        XCTAssertGreaterThan(approach.timeIntervalSince(landing.date), 60)
+
+        model.showClosestApproach()
+        XCTAssertEqual(model.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+        XCTAssertEqual(model.window, .cab)
+        XCTAssertEqual(model.range, .cab)
+        XCTAssertEqual(model.approachGap, landing.gap)
+        XCTAssertFalse(model.approachInformational)
+        XCTAssertFalse(model.playing)
+        XCTAssertGreaterThan(approach.timeIntervalSince(model.utc), 60)
+
+        model.seek(to: timeline.window.start, markEnd: false)
+        XCTAssertNil(model.approachGap)
+    }
 }

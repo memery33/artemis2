@@ -66,6 +66,10 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var phoneImages = false
     /// Bumped when a prefetched frame lands in the cache. Views read this and stay cache-only.
     @Published private(set) var frameCacheEpoch = 0
+    /// Dive gap for the last Closest approach tap, or the Horizons note when no recording exists.
+    @Published var approachGap: String?
+    /// The gap is an explanation. The row is not offering a seek.
+    @Published var approachInformational = false
 
     /// Created on first use. The unit-test host never reads these, so it never builds an audio graph.
     private lazy var engine = AVAudioEngine()
@@ -353,6 +357,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func showCabRun() {
+        approachGap = nil
+        approachInformational = false
         guard timeline?.cabRun != nil else { return }
         if trackID != "pcd2" {
             trackID = "pcd2"
@@ -368,6 +374,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func showFlyby() {
+        approachGap = nil
+        approachInformational = false
         guard range != .flyby else { return }
         range = .flyby
         utc = timeline?.window.start ?? utc
@@ -386,8 +394,57 @@ final class PlaybackModel: NSObject, ObservableObject {
         refreshNowPlaying(force: true)
     }
 
+    /// Opens the nearest real frame and recording to Horizons closest approach.
+    /// The clock stays on that media. The gap sentence says how far the photograph
+    /// is from the Horizons instant, and the photograph is not moved onto it.
+    /// When nothing in a playable span is real, the row only explains that.
+    func showClosestApproach() {
+        guard let timeline else { return }
+        guard let landing = ClosestApproachLanding.make(timeline: timeline) else {
+            approachInformational = true
+            approachGap = ClosestApproachLanding.missingNote()
+            return
+        }
+        approachInformational = false
+        if landing.range != range {
+            range = landing.range
+            currentFile = nil
+            audioFile = nil
+        }
+        if landing.trackID != trackID {
+            trackID = landing.trackID
+            if timeline.crew.contains(where: { $0.id == crewID && $0.track == landing.trackID }) != true,
+               let member = timeline.crew.first(where: { $0.track == landing.trackID }) {
+                crewID = member.id
+            }
+            currentFile = nil
+            audioFile = nil
+        }
+        if window != landing.window {
+            setWindow(landing.window)
+        }
+        let audible = timeline.segments.contains { segment in
+            segment.track == landing.trackID && landing.date >= segment.start && landing.date < segment.end
+        }
+        holdUntil = nil
+        scrubbing = false
+        if audible {
+            playing = true
+        }
+        seek(to: landing.date, markEnd: false)
+        if audible, !ended {
+            engagePlayback()
+        } else {
+            playing = false
+        }
+        approachGap = landing.gap
+        approachInformational = false
+    }
+
     func seek(to date: Date, markEnd: Bool = true) {
         guard let span = activeSpan else { return }
+        approachGap = nil
+        approachInformational = false
         clearSilentClock()
         activityEvent = true
         utc = MissionClock.clamp(date, to: span)
@@ -498,6 +555,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     func beginScrub() {
         scrubbing = true
         lastWall = nil
+        approachGap = nil
+        approachInformational = false
         clearSilentClock()
     }
 
