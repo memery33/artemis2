@@ -22,10 +22,13 @@ struct FlybyLiveActivityWidget: Widget {
                 ProgressView(value: context.state.progress)
                     .tint(HybridColor.gold)
                     .accessibilityLabel("Flyby progress")
-                Text(context.state.nextMilestone)
-                    .font(HybridFont.text(15, relativeTo: .subheadline))
-                    .foregroundStyle(HybridColor.cream)
-                    .lineLimit(2)
+                TranscriptLineText(
+                    text: context.state.nextMilestone,
+                    font: HybridFont.text(15, relativeTo: .subheadline),
+                    color: HybridColor.cream,
+                    annotationColor: HybridColor.dim,
+                    lineLimit: 2
+                )
                 HStack(alignment: .top) {
                     Text(context.state.speaker)
                         .font(HybridFont.text(13, relativeTo: .caption))
@@ -54,10 +57,14 @@ struct FlybyLiveActivityWidget: Widget {
                         PausedMarker(playing: context.state.playing, font: HybridFont.text(12, relativeTo: .caption))
                         ProgressView(value: context.state.progress)
                             .tint(HybridColor.gold)
-                        Text(context.state.nextMilestone)
-                            .font(HybridFont.text(12, relativeTo: .caption))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                        TranscriptLineText(
+                            text: context.state.nextMilestone,
+                            font: HybridFont.text(12, relativeTo: .caption),
+                            color: .primary,
+                            annotationColor: .secondary,
+                            lineLimit: 1,
+                            minimumScaleFactor: 0.7
+                        )
                     }
                     .padding(.horizontal, 4)
                 }

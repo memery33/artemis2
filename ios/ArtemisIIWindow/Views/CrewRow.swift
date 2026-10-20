@@ -104,13 +104,15 @@ struct LyricLines: View {
                 .lineLimit(1)
                 .contentTransition(.identity)
             ScrollView(.vertical) {
-                Text(line.text)
-                    .font(prominent ? .title3.weight(.semibold) : .body)
-                    .foregroundStyle(.white.opacity(prominent ? 1 : 0.72))
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .contentTransition(.identity)
+                TranscriptLineText(
+                    text: line.text,
+                    font: prominent ? .title3.weight(.semibold) : .body,
+                    color: .white.opacity(prominent ? 1 : 0.72),
+                    annotationColor: .white.opacity(0.55)
+                )
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .contentTransition(.identity)
             }
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: prominent ? 132 : 88)
@@ -121,6 +123,6 @@ struct LyricLines: View {
         .clipped()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("subtitle-line")
-        .accessibilityLabel(line.text)
+        .accessibilityLabel(TranscriptMarkup.plain(line.text))
     }
 }

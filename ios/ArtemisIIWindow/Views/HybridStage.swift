@@ -816,11 +816,14 @@ struct DocumentaryCaption: View {
                     .font(HybridFont.text(11, relativeTo: .caption2))
                     .tracking(1.6)
                     .foregroundStyle(HybridColor.gold)
-                Text(line.text)
-                    .font(HybridFont.display(compact ? 15 : 28, relativeTo: compact ? .subheadline : .title2, italic: true))
-                    .foregroundStyle(HybridColor.cream)
-                    .lineLimit(compact ? 2 : nil)
-                    .fixedSize(horizontal: false, vertical: true)
+                TranscriptLineText(
+                    text: line.text,
+                    font: HybridFont.display(compact ? 15 : 28, relativeTo: compact ? .subheadline : .title2, italic: true),
+                    color: HybridColor.cream,
+                    annotationColor: HybridColor.dim,
+                    lineLimit: compact ? Optional(2) : nil
+                )
+                .fixedSize(horizontal: false, vertical: true)
             }
             if let frame {
                 Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
@@ -1330,10 +1333,13 @@ struct CraterPage: View {
                                 .accessibilityIdentifier("crater-why")
                         }
                         if let quote {
-                            Text(quote.text)
-                                .font(HybridFont.display(18, relativeTo: .body, italic: true))
-                                .foregroundStyle(HybridColor.cream)
-                                .fixedSize(horizontal: false, vertical: true)
+                            TranscriptLineText(
+                                text: quote.text,
+                                font: HybridFont.display(18, relativeTo: .body, italic: true),
+                                color: HybridColor.cream,
+                                annotationColor: HybridColor.dim
+                            )
+                            .fixedSize(horizontal: false, vertical: true)
                             Text("\(quote.speaker) · \(Stamp.clock(quote.utc)) UTC")
                                 .font(HybridFont.text(12, relativeTo: .caption))
                                 .foregroundStyle(HybridColor.dim)

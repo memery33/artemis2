@@ -85,6 +85,7 @@ targets:
       - path: ArtemisIIWindowWidget
       - path: ArtemisIIWindow/LiveActivity/FlybyActivityAttributes.swift
       - path: ArtemisIIWindow/Views/HybridType.swift
+      - path: ArtemisIIWindow/Model/TranscriptMarkup.swift
       - path: ArtemisIIWindow/Fonts
         buildPhase: resources
     settings:

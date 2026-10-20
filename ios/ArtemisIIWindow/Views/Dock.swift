@@ -12,8 +12,7 @@ struct TranscriptSheet: View {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return tracked }
         return tracked.filter { line in
-            line.text.localizedCaseInsensitiveContains(needle)
-                || line.speaker.localizedCaseInsensitiveContains(needle)
+            TranscriptMarkup.matchesSearch(text: line.text, speaker: line.speaker, needle: needle)
         }
     }
 
@@ -28,10 +27,12 @@ struct TranscriptSheet: View {
                         Text("\(line.speaker) · \(Stamp.clock(line.utc)) UTC")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text(line.text)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .multilineTextAlignment(.leading)
+                        TranscriptLineText(
+                            text: line.text,
+                            font: .body,
+                            color: .primary,
+                            annotationColor: .secondary
+                        )
                     }
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
