@@ -98,11 +98,13 @@ struct LyricLines: View {
     private func verse(_ line: TranscriptLine, prominent: Bool) -> some View {
         let tint = CrewTint.rgba(line.speaker)
         return VStack(alignment: .leading, spacing: 2) {
-            Text(line.speaker)
-                .font(prominent ? .caption.weight(.semibold) : .caption2)
-                .foregroundStyle(Color(red: tint.0, green: tint.1, blue: tint.2).opacity(prominent ? 1 : 0.55))
-                .lineLimit(1)
-                .contentTransition(.identity)
+            if let name = SpeakerLabel.display(line.speaker) {
+                Text(name)
+                    .font(prominent ? .caption.weight(.semibold) : .caption2)
+                    .foregroundStyle(Color(red: tint.0, green: tint.1, blue: tint.2).opacity(prominent ? 1 : 0.55))
+                    .lineLimit(1)
+                    .contentTransition(.identity)
+            }
             ScrollView(.vertical) {
                 TranscriptLineText(
                     text: line.text,

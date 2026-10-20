@@ -24,7 +24,7 @@ struct TranscriptSheet: View {
                     dismiss()
                 }) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("\(line.speaker) · \(Stamp.clock(line.utc)) UTC")
+                        Text(SpeakerLabel.heading(speaker: line.speaker, clock: "\(Stamp.clock(line.utc)) UTC"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         TranscriptLineText(

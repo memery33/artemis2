@@ -130,6 +130,28 @@ final class TranscriptMarkupTests: XCTestCase {
         XCTAssertNil(tailIntent)
     }
 
+    func testLetterlessSpeakerIsOmittedFromTheHeading() throws {
+        XCTAssertEqual(SpeakerLabel.heading(speaker: "", clock: "19:34:11 UTC"), "19:34:11 UTC")
+        XCTAssertEqual(SpeakerLabel.heading(speaker: "   ", clock: "19:34:11 UTC"), "19:34:11 UTC")
+        XCTAssertEqual(SpeakerLabel.heading(speaker: "`", clock: "19:35:05 UTC"), "19:35:05 UTC")
+        XCTAssertEqual(SpeakerLabel.heading(speaker: "Hansen", clock: "19:33:39 UTC"), "Hansen · 19:33:39 UTC")
+        XCTAssertNil(SpeakerLabel.display(""))
+        XCTAssertNil(SpeakerLabel.display("   "))
+        XCTAssertNil(SpeakerLabel.display("`"))
+        XCTAssertEqual(SpeakerLabel.display("Hansen"), "Hansen")
+        XCTAssertEqual(SpeakerLabel.display("  SCIENCE  "), "SCIENCE")
+
+        let blank = try XCTUnwrap(timeline.lines.first { $0.utc == "2026-04-06T19:34:11.958Z" })
+        XCTAssertEqual(blank.speaker, "")
+        XCTAssertEqual(SpeakerLabel.heading(speaker: blank.speaker, clock: "19:34:11 UTC"), "19:34:11 UTC")
+
+        let tick = try XCTUnwrap(timeline.lines.first { $0.utc == "2026-04-06T19:35:05.017Z" })
+        XCTAssertEqual(tick.speaker, "`")
+        XCTAssertEqual(tick.text, "[[rapid shutter clicks]]")
+        XCTAssertNil(SpeakerLabel.display(tick.speaker))
+        XCTAssertEqual(SpeakerLabel.heading(speaker: tick.speaker, clock: "19:35:05 UTC"), "19:35:05 UTC")
+    }
+
     private func words(_ text: String) -> [String] {
         var words: [String] = []
         var word = ""

@@ -178,7 +178,12 @@ enum MilestoneList {
         for name in names {
             let token = properNoun(name)
             guard let line = lines.first(where: { containsWord($0.element.text, word: token) })?.element else { continue }
-            let speaker = line.speaker.isEmpty ? "" : "\(line.speaker): "
+            let speaker: String
+            if let name = SpeakerLabel.display(line.speaker) {
+                speaker = "\(name): "
+            } else {
+                speaker = ""
+            }
             rows.append(Milestone(
                 id: "quote:\(name)",
                 utc: line.utc,

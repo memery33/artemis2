@@ -1501,7 +1501,13 @@ final class PlaybackModel: NSObject, ObservableObject {
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
         let milestone = FlybyActivityCopy.nextLabel(after: utc, milestones: milestones)
-        let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID
+        let currentSpeaker: String? = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker
+        let speaker: String
+        if let currentSpeaker {
+            speaker = SpeakerLabel.display(currentSpeaker) ?? ""
+        } else {
+            speaker = crewID
+        }
         let spanEnded = utc >= span.end
         let requested = activityEvent
         activityEvent = false

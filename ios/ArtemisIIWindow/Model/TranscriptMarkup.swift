@@ -1,5 +1,24 @@
 import SwiftUI
 
+/// A speaker visitors can read. Empty, whitespace, and a token with no letters are no speaker.
+/// The stray backtick in the bundled transcript stays stored; it is not a name.
+enum SpeakerLabel {
+    static func display(_ raw: String) -> String? {
+        let trimmed: String = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasLetter: Bool = trimmed.contains { (character: Character) -> Bool in
+            character.isLetter
+        }
+        guard hasLetter else { return nil }
+        return trimmed
+    }
+
+    /// Lines header. The time stands alone when there is no readable speaker.
+    static func heading(speaker: String, clock: String) -> String {
+        guard let name: String = display(speaker) else { return clock }
+        return "\(name) · \(clock)"
+    }
+}
+
 /// Display reading of a stored transcript line.
 /// `[[note]]` and `[note]` are non-speech. The stored line is not rewritten.
 enum TranscriptMarkup {

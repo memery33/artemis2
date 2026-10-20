@@ -812,10 +812,12 @@ struct DocumentaryCaption: View {
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 6 : 8) {
             if let line {
-                Text(line.speaker.uppercased())
-                    .font(HybridFont.text(11, relativeTo: .caption2))
-                    .tracking(1.6)
-                    .foregroundStyle(HybridColor.gold)
+                if let name = SpeakerLabel.display(line.speaker) {
+                    Text(name.uppercased())
+                        .font(HybridFont.text(11, relativeTo: .caption2))
+                        .tracking(1.6)
+                        .foregroundStyle(HybridColor.gold)
+                }
                 TranscriptLineText(
                     text: line.text,
                     font: HybridFont.display(compact ? 15 : 28, relativeTo: compact ? .subheadline : .title2, italic: true),
@@ -1340,7 +1342,7 @@ struct CraterPage: View {
                                 annotationColor: HybridColor.dim
                             )
                             .fixedSize(horizontal: false, vertical: true)
-                            Text("\(quote.speaker) · \(Stamp.clock(quote.utc)) UTC")
+                            Text(SpeakerLabel.heading(speaker: quote.speaker, clock: "\(Stamp.clock(quote.utc)) UTC"))
                                 .font(HybridFont.text(12, relativeTo: .caption))
                                 .foregroundStyle(HybridColor.dim)
                         }
