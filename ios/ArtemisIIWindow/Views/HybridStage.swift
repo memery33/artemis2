@@ -58,6 +58,7 @@ struct HybridStage: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.displayScale) private var displayScale
     @Namespace private var flight
     @State private var panelOpen = false
     /// Finger travel while the sheet is tracking. Zero once it snaps.
@@ -67,17 +68,23 @@ struct HybridStage: View {
     var body: some View {
         GeometryReader { geo in
             let panelHeight = min(460, max(340, geo.size.height * 0.5))
+            let pixels = ScreenImage.maxPixel(size: geo.size, scale: displayScale)
             ZStack {
                 HybridColor.ground.ignoresSafeArea()
                 if crater == nil {
-                    flightPhoto
+                    flightPhoto(maxPixel: pixels)
                         .matchedGeometryEffect(id: "flyby-photo", in: flight)
                 }
                 vignette
                 chrome(panelHeight: panelHeight, size: geo.size)
                     .modifier(ApproachChrome())
                 if let crater {
-                    CraterPage(kind: crater, frame: craterFrame(crater), namespace: flight) {
+                    CraterPage(
+                        kind: crater,
+                        frame: craterFrame(crater),
+                        namespace: flight,
+                        maxPixel: pixels
+                    ) {
                         self.crater = nil
                     }
                 }
@@ -85,21 +92,20 @@ struct HybridStage: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .animation(reduceMotion ? nil : .smooth(duration: 0.45), value: crater)
             .defersSystemGestures(on: .bottom)
+            .task(id: shownFrame?.file) {
+                guard let frame = shownFrame else { return }
+                model.prefetch(frame, maxPixel: pixels)
+                if let upcoming = HybridFrames.upcomingWindowTwo(after: model.utc, frames: model.timeline?.frames ?? []) {
+                    model.prefetch(upcoming, maxPixel: pixels)
+                }
+            }
+            .task(id: crater?.id) {
+                guard let crater, let frame = craterFrame(crater) else { return }
+                model.prefetch(frame, maxPixel: pixels)
+            }
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
-        .task(id: shownFrame?.file) {
-            guard let frame = shownFrame else { return }
-            let pixels = ScreenImage.maxPixel
-            model.prefetch(frame, maxPixel: pixels)
-            if let upcoming = HybridFrames.upcomingWindowTwo(after: model.utc, frames: model.timeline?.frames ?? []) {
-                model.prefetch(upcoming, maxPixel: pixels)
-            }
-        }
-        .task(id: crater?.id) {
-            guard let crater, let frame = craterFrame(crater) else { return }
-            model.prefetch(frame, maxPixel: ScreenImage.maxPixel)
-        }
     }
 
     private func craterFrame(_ kind: CraterKind) -> Frame? {
@@ -110,8 +116,8 @@ struct HybridStage: View {
         HybridFrames.shown(at: model.utc, side: model.window, timeline: model.timeline, span: model.activeSpan)
     }
 
-    private var flightPhoto: some View {
-        StableFramePhoto(frame: shownFrame, maxPixel: ScreenImage.maxPixel) { image, frame in
+    private func flightPhoto(maxPixel: CGFloat) -> some View {
+        StableFramePhoto(frame: shownFrame, maxPixel: maxPixel) { image, frame in
             let place = HybridFrames.placement(frame)
             let photo = placed(image, place)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1174,6 +1180,7 @@ struct CraterPage: View {
     var kind: CraterKind
     var frame: Frame?
     var namespace: Namespace.ID
+    var maxPixel: CGFloat
     var onClose: () -> Void
     @State private var showsData = false
 
@@ -1264,7 +1271,7 @@ struct CraterPage: View {
     private var header: some View {
         ZStack(alignment: .bottom) {
             HybridColor.ground
-            StableFramePhoto(frame: frame, maxPixel: ScreenImage.maxPixel) { image, shown in
+            StableFramePhoto(frame: frame, maxPixel: maxPixel) { image, shown in
                 let place = HybridFrames.placement(shown)
                 PlacedPhoto(
                     image: image,

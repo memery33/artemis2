@@ -1446,12 +1446,12 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     func photo(_ frame: Frame, maxPixel: CGFloat) -> UIImage? {
         _ = frameCacheEpoch
-        let cap = maxPixel > 1 ? maxPixel : ScreenImage.maxPixel
+        let cap = maxPixel > 1 ? maxPixel : 1600
         return MediaStore.cachedImage(file: frame.file, small: phoneImages, maxPixel: cap)
     }
 
     func prefetch(_ frame: Frame, maxPixel: CGFloat) {
-        let cap = maxPixel > 1 ? maxPixel : ScreenImage.maxPixel
+        let cap = maxPixel > 1 ? maxPixel : 1600
         MediaStore.prefetch(file: frame.file, small: phoneImages, maxPixel: cap) { [weak self] in
             self?.noteFramesDecoded(file: frame.file)
         }
@@ -1470,15 +1470,12 @@ final class PlaybackModel: NSObject, ObservableObject {
 }
 
 /// Decode cap for a full-bleed frame. The file on disk is larger than the glass.
+/// `size` is the glass in points; `scale` is the display scale from the view.
 enum ScreenImage {
-    static func maxPixel(bounds: CGSize, scale: CGFloat) -> CGFloat {
-        let edge = max(bounds.width, bounds.height) * max(scale, 1)
+    static func maxPixel(size: CGSize, scale: CGFloat) -> CGFloat {
+        let edge = max(size.width, size.height) * max(scale, 1)
         guard edge.isFinite, edge >= 200 else { return 1600 }
         return min(3000, ceil(edge))
-    }
-
-    static var maxPixel: CGFloat {
-        maxPixel(bounds: UIScreen.main.bounds, scale: UIScreen.main.scale)
     }
 }
 

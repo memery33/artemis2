@@ -54,6 +54,7 @@ struct RootView: View {
 
 struct GateView: View {
     @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.displayScale) private var displayScale
 
     /// Cab Cam 2 at 22:36:03. The Moon sits on the right of this wide frame.
     private var hero: Frame? {
@@ -69,9 +70,18 @@ struct GateView: View {
     }
 
     var body: some View {
+        GeometryReader { geo in
+            let pixels = ScreenImage.maxPixel(size: geo.size, scale: displayScale)
+            gate(pixels: pixels)
+        }
+        .ignoresSafeArea()
+        .preferredColorScheme(.dark)
+    }
+
+    private func gate(pixels: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
             HybridColor.ground.ignoresSafeArea()
-            if let hero, let image = model.photo(hero, maxPixel: ScreenImage.maxPixel) {
+            if let hero, let image = model.photo(hero, maxPixel: pixels) {
                 PlacedPhoto(image: image, objectX: 0.34, objectY: 0.42)
                     .ignoresSafeArea()
                     .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
@@ -144,14 +154,13 @@ struct GateView: View {
             .padding(.bottom, 48)
             .frame(maxWidth: 360, alignment: .leading)
         }
-        .preferredColorScheme(.dark)
         .task(id: hero?.nasaID) {
             guard let hero else { return }
             RuntimeHost.noteSceneBecameActive()
             for _ in 0..<40 {
                 if Task.isCancelled { return }
-                model.prefetch(hero, maxPixel: ScreenImage.maxPixel)
-                if model.photo(hero, maxPixel: ScreenImage.maxPixel) != nil { return }
+                model.prefetch(hero, maxPixel: pixels)
+                if model.photo(hero, maxPixel: pixels) != nil { return }
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
         }

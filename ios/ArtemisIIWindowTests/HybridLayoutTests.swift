@@ -145,14 +145,14 @@ final class HybridLayoutTests: XCTestCase {
         let height: CGFloat = 700
         let tick = RulerMetrics.y(fraction: 0.42, height: height)
         XCTAssertEqual(RulerLabelLayout.timeCenter(tick: tick, height: height), tick, accuracy: 0.01)
-        XCTAssertEqual(RulerLabelLayout.timeLine, 44)
+        XCTAssertEqual(RulerLabelLayout.timeLine, 44, accuracy: 0.001)
     }
 
     func testDecodeCapIsTheScreenAndNotTheFile() {
-        XCTAssertEqual(ScreenImage.maxPixel(bounds: CGSize(width: 402, height: 874), scale: 3), 2622)
-        XCTAssertEqual(ScreenImage.maxPixel(bounds: CGSize(width: 440, height: 956), scale: 3), 2868)
-        XCTAssertEqual(ScreenImage.maxPixel(bounds: CGSize(width: 2000, height: 2000), scale: 3), 3000)
-        XCTAssertEqual(ScreenImage.maxPixel(bounds: .zero, scale: 1), 1600)
+        XCTAssertEqual(ScreenImage.maxPixel(size: CGSize(width: 402, height: 874), scale: 3), 2622, accuracy: 0.001)
+        XCTAssertEqual(ScreenImage.maxPixel(size: CGSize(width: 440, height: 956), scale: 3), 2868, accuracy: 0.001)
+        XCTAssertEqual(ScreenImage.maxPixel(size: CGSize(width: 2000, height: 2000), scale: 3), 3000, accuracy: 0.001)
+        XCTAssertEqual(ScreenImage.maxPixel(size: .zero, scale: 1), 1600, accuracy: 0.001)
     }
 
     @MainActor

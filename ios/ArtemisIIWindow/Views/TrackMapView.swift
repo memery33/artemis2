@@ -323,7 +323,7 @@ struct TrackMapView: View {
             let text = context.resolve(
                 Text(letter)
                     .font(.system(size: strong ? 9 : 7, weight: .bold))
-                    .foregroundColor(color)
+                    .foregroundStyle(color)
             )
             context.draw(text, at: point, anchor: .center)
         }
