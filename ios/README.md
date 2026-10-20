@@ -38,10 +38,10 @@ Spatial is off unless the listener turns it on. The switch is stored at `artemis
 
 ## Layout
 
-iPhone only, including an open iPhone Duo. The open fold is a regular-width (or at least 840 pt wide) screen, aspect 1.2–1.6, height at least 520 pt, width at most 1200 pt. A phone on its side fails the height test and keeps the phone layout. The phone reads the `.720.webp` sibling. The open fold reads the shipped frame. Window 2 draws a 1.58 rounded bezel because no empty straight-on interior is in the bundle. Window 3 is the 4:3 Cab Cam frame with no bezel drawn over it. The cabin Z9 `art002e016183` is a card for 9 seconds, not a picture on the glass.
+iPhone only, including an open iPhone Duo. The open fold is a regular-width (or at least 840 pt wide) screen, aspect 1.2–1.6, height at least 520 pt, width at most 1200 pt. A phone on its side fails the height test and keeps the phone layout. The phone reads the `.720.webp` sibling. The open fold reads the shipped frame. Window 2 draws a 1.58 rounded bezel because no empty straight-on interior is in the bundle. Window 3 is the 4:3 Cab Cam frame with no bezel drawn over it. Window 2 and the crater pages draw only `nkd5015` frames. The five Z9 files stay in the bundle and are not drawn on that glass. `art002e016183` is the cabin still; tapping its Moments row seeks to its capture time and the window keeps the Nikon frame.
 
 The status bar is hidden. The home indicator is not.
 
 ## Icon
 
-`Assets.xcassets/AppIcon.appiconset/Icon-1024.png` is a center crop of the earlier 1200×800 derivation of `demo/data/images/art002e016184.webp` (NASA ID art002e016184, Z9, 19:33:26.630Z). The shipped frame is now a 2700-pixel long edge, and this icon was not rebuilt from it, so the 1024×1024 App Store slot is still that older crop. It is not a new photograph. The launch screen is black.
+`Assets.xcassets/AppIcon.appiconset/Icon-1024.png` is a center crop of the earlier 1200×800 derivation of `demo/data/images/art002e016184.webp` (NASA ID art002e016184, Z9, 19:33:26.630Z). That bundled WebP is now a 2700-pixel long edge, and this icon was not rebuilt from it, so the 1024×1024 App Store slot is still that older crop. The Z9 file is not a picture on the window. It is not a new photograph. The launch screen is black.

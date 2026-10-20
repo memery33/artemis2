@@ -76,27 +76,32 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(about.waitForExistence(timeout: 8))
         let edge = element(named: "safe-area-bottom", in: app)
         XCTAssertTrue(edge.waitForExistence(timeout: 8))
+        let minimumSide = 44 - 0.01
         let settled = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "frame.size.height >= 44 AND frame.size.width >= 44"),
+            predicate: NSPredicate(
+                format: "frame.size.height >= %f AND frame.size.width >= %f",
+                minimumSide,
+                minimumSide
+            ),
             object: about
         )
         wait(for: [settled], timeout: 5)
 
         let inset = app.frame.maxY - edge.frame.maxY
-        XCTAssertGreaterThanOrEqual(inset, 0)
-        XCTAssertLessThanOrEqual(about.frame.maxY, app.frame.height - inset + 0.5)
-        assertSquareHitTarget(about)
-        assertSquareHitTarget(app.buttons["lines-button"])
-        assertSquareHitTarget(app.buttons["moments-button"])
+        XCTAssertGreaterThanOrEqual(inset, -0.01)
+        XCTAssertLessThanOrEqual(about.frame.maxY, app.frame.height - inset + 0.01)
+        assertSquareHitTarget(about, minimumSide: minimumSide)
+        assertSquareHitTarget(app.buttons["lines-button"], minimumSide: minimumSide)
+        assertSquareHitTarget(app.buttons["moments-button"], minimumSide: minimumSide)
         for name in ["Wiseman", "Glover", "Koch", "Hansen"] {
-            assertSquareHitTarget(app.buttons["crew-\(name)"])
+            assertSquareHitTarget(app.buttons["crew-\(name)"], minimumSide: minimumSide)
         }
     }
 
-    private func assertSquareHitTarget(_ element: XCUIElement) {
+    private func assertSquareHitTarget(_ element: XCUIElement, minimumSide: CGFloat) {
         XCTAssertTrue(element.exists)
-        XCTAssertGreaterThanOrEqual(element.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(element.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(element.frame.width, minimumSide)
+        XCTAssertGreaterThanOrEqual(element.frame.height, minimumSide)
     }
 
     private func assertNoBlackPane(in app: XCUIApplication) {

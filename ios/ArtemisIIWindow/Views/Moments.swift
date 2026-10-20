@@ -152,6 +152,12 @@ struct MomentsSheet: View {
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
+                        if milestone.id == "photo:\(Timeline.cabinID)" {
+                            Text("Names that Z9 file. It is not the picture on the window.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         Text(MilestoneSource.display(milestone.source))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
