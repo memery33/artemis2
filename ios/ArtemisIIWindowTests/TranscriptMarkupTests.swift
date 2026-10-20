@@ -109,11 +109,13 @@ final class TranscriptMarkupTests: XCTestCase {
         XCTAssertEqual(String(styled.characters), "Need (background voice) out")
         let runs = Array(styled.runs)
         XCTAssertEqual(runs.count, 3)
-        XCTAssertNil(runs[0].inlinePresentationIntent)
-        XCTAssertEqual(runs[1].inlinePresentationIntent, .italic)
+        let intent = AttributeScopes.FoundationAttributes.InlinePresentationIntentAttribute.self
+        let ink = AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self
+        XCTAssertNil(runs[0][intent])
+        XCTAssertEqual(runs[1][intent], InlinePresentationIntent.emphasized)
         XCTAssertEqual(String(runs[1].characters), "(background voice)")
-        XCTAssertNotNil(runs[1].foregroundColor)
-        XCTAssertNil(runs[2].inlinePresentationIntent)
+        XCTAssertNotNil(runs[1][ink])
+        XCTAssertNil(runs[2][intent])
     }
 
     private func words(_ text: String) -> [String] {

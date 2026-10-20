@@ -61,30 +61,46 @@ enum TranscriptMarkup {
     }
 
     /// Speech uses `font` and `color`. An annotation is italic, in `annotationColor`, wrapped as `(note)`.
+    /// Attributes are written out as SwiftUI and Foundation keys. The widget and the app both compile this file,
+    /// and a bare `part.font` / `part.foregroundColor` / `.italic` lookup is ambiguous there.
     @MainActor
     static func attributed(
         _ source: String,
-        font: Font,
-        color: Color,
-        annotationColor: Color
+        font: SwiftUI.Font,
+        color: SwiftUI.Color,
+        annotationColor: SwiftUI.Color
     ) -> AttributedString {
         var result = AttributedString()
         for run in runs(source) {
             switch run.kind {
             case .speech:
-                var part = AttributedString(run.text)
-                part.font = font
-                part.foregroundColor = color
-                result.append(part)
+                result.append(styled(run.text, font: font, color: color, intent: nil))
             case .annotation:
-                var part = AttributedString("(\(run.text))")
-                part.font = font.italic()
-                part.foregroundColor = annotationColor
-                part.inlinePresentationIntent = .italic
-                result.append(part)
+                let face: SwiftUI.Font = font.italic()
+                let intent: InlinePresentationIntent = InlinePresentationIntent.emphasized
+                result.append(styled("(\(run.text))", font: face, color: annotationColor, intent: intent))
             }
         }
         return result
+    }
+
+    @MainActor
+    private static func styled(
+        _ text: String,
+        font: SwiftUI.Font,
+        color: SwiftUI.Color,
+        intent: InlinePresentationIntent?
+    ) -> AttributedString {
+        var part = AttributedString(text)
+        let face: SwiftUI.Font = font
+        let ink: SwiftUI.Color = color
+        part[AttributeScopes.SwiftUIAttributes.FontAttribute.self] = face
+        part[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = ink
+        if let intent {
+            let presentation: InlinePresentationIntent = intent
+            part[AttributeScopes.FoundationAttributes.InlinePresentationIntentAttribute.self] = presentation
+        }
+        return part
     }
 
     private struct Marker {
