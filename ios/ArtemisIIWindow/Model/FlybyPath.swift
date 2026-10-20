@@ -411,15 +411,15 @@ enum LunarSites {
 }
 
 /// A Closest approach tap lands on the nearest real frame or recording that
-/// already sits inside a playable span. The Horizons instant is not moved
-/// onto that photograph. The gap sentence is the same one the dive uses.
+/// already sits inside a playable span. The card names the Horizons instant,
+/// the altitude, and how long before that the photograph was taken.
 struct ClosestApproachLanding: Equatable, Sendable {
     var date: Date
     var range: MissionRange
     var trackID: String
     var window: WindowSide
     var frameID: String
-    /// Horizons clock, then `FrameSelection.clockOffset` against the photograph.
+    /// Horizons clock and altitude, then the gap to the nearest crew photo.
     var gap: String
 
     static func make(timeline: Timeline) -> ClosestApproachLanding? {
@@ -465,7 +465,7 @@ struct ClosestApproachLanding: Equatable, Sendable {
             trackID: track,
             window: side,
             frameID: shown?.nasaID ?? "",
-            gap: gap(approach: approach.date, taken: taken)
+            gap: gap(approach: approach, taken: taken)
         )
     }
 
@@ -473,8 +473,7 @@ struct ClosestApproachLanding: Equatable, Sendable {
     /// Time and altitude come from the Horizons table, not a typed-in clock.
     static func missingNote() -> String? {
         guard let approach = approach() else { return nil }
-        let altitude = TrackMapGeometry.kilometers(approach.altitudeKm)
-        return "Closest approach \(ClockMath.utcText(approach.date)), \(altitude) km above the Moon. NASA/JPL Horizons. No crew recording at that moment."
+        return "\(headline(approach)) No crew recording at that moment."
     }
 
     private static func approach() -> ClosestApproach? {
@@ -535,12 +534,31 @@ struct ClosestApproachLanding: Equatable, Sendable {
         return candidate < current
     }
 
-    private static func gap(approach: Date, taken: Date) -> String {
-        let clock = "\(ClockMath.utcText(approach)), NASA/JPL Horizons."
-        guard let offset = FrameSelection.clockOffset(now: approach, taken: taken) else {
-            return clock
+    private static func gap(approach: ClosestApproach, taken: Date) -> String {
+        let sentence = headline(approach)
+        let delta = approach.date.timeIntervalSince(taken)
+        if abs(delta) < 2 { return sentence }
+        let phrase = FrameSelection.spanPhrase(abs(delta))
+        if delta > 0 {
+            return "\(sentence) The nearest crew photo was taken \(phrase) earlier."
         }
-        return "\(clock) \(offset)"
+        return "\(sentence) The nearest crew photo was taken \(phrase) later."
+    }
+
+    /// Whole kilometers. 6,545.22 km from the vertex is the sourced 6,545 km.
+    private static func headline(_ approach: ClosestApproach) -> String {
+        let altitude = surfaceKilometers(approach.altitudeKm)
+        return "Closest approach: \(ClockMath.utcText(approach.date)), \(altitude) km above the surface (NASA/JPL Horizons)."
+    }
+
+    private static func surfaceKilometers(_ altitudeKm: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        formatter.roundingMode = .halfUp
+        let whole = altitudeKm.rounded()
+        return formatter.string(from: NSNumber(value: whole)) ?? String(format: "%.0f", whole)
     }
 }
 

@@ -165,6 +165,7 @@ struct HybridStage: View {
             let photo = placed(image, place)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
+                .accessibilityElement(children: .ignore)
                 .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
                 .accessibilityAddTraits(.isImage)
             ZStack {
@@ -173,11 +174,12 @@ struct HybridStage: View {
                     .opacity(0.32)
                     .blendMode(.screen)
                     .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 if let kind = CraterKind(targetID: frame.targetID) {
                     Button {
                         crater = kind
                     } label: {
-                        photo
+                        photo.accessibilityHidden(true)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("open-crater")
@@ -224,32 +226,7 @@ struct HybridStage: View {
         let revealed = panelHeight - shift
         return ZStack {
             if crater == nil, revealed < 80, shownFrame != nil {
-                // Default type: max width 280 and no line cap. The longest quote is 414 pt
-                // and the Controls handle stays at the bottom of the screen.
-                // Accessibility sizes use a hard width and a height cap so a long word or
-                // a tall quote cannot stretch the stage past the phone.
-                let captionWidth: CGFloat = min(280, max(0, size.width - 40))
-                let captionHeight: CGFloat = max(
-                    0,
-                    size.height - ClosedCaptionMetrics.bottomClearance - ClosedCaptionMetrics.topClearance
-                )
-                VStack {
-                    Spacer()
-                    HStack {
-                        if dynamicTypeSize.isAccessibilitySize {
-                            DocumentaryCaption(compact: false, includeCredit: true)
-                                .frame(width: captionWidth, alignment: .leading)
-                                .frame(maxHeight: captionHeight, alignment: .top)
-                                .clipped()
-                        } else {
-                            DocumentaryCaption(compact: false, includeCredit: true)
-                                .frame(maxWidth: 280, alignment: .leading)
-                        }
-                        Spacer(minLength: 20)
-                    }
-                    .padding(.leading, 20)
-                    .padding(.bottom, ClosedCaptionMetrics.bottomClearance)
-                }
+                closedCaption(size: size)
             }
             if crater == nil, revealed >= 80, shownFrame != nil {
                 VStack {
@@ -269,7 +246,9 @@ struct HybridStage: View {
                     }
                 }
             }
-            if crater == nil, let gap = model.approachGap {
+            // While the panel is open the caption is off the stage, so the card can sit at the top.
+            // The closed stage reserves that same card's height above the caption.
+            if crater == nil, revealed >= 80, let gap = model.approachGap {
                 VStack {
                     approachCard(gap, width: min(320, max(0, size.width - 40)))
                         .padding(.top, 12)
@@ -292,6 +271,52 @@ struct HybridStage: View {
         }
         .frame(width: size.width, height: size.height)
         .clipped()
+    }
+
+    /// Closed caption. With the closest-approach card up, the card keeps its height and the
+    /// caption is offered only the space under it, at every Dynamic Type size.
+    @ViewBuilder
+    private func closedCaption(size: CGSize) -> some View {
+        let captionWidth: CGFloat = min(280, max(0, size.width - 40))
+        let captionHeight: CGFloat = max(
+            0,
+            size.height - ClosedCaptionMetrics.bottomClearance - ClosedCaptionMetrics.topClearance
+        )
+        if let gap = model.approachGap {
+            ApproachColumn(spacing: 12) {
+                approachCard(gap, width: min(320, max(0, size.width - 40)))
+                    .padding(.top, 12)
+                DocumentaryCaption(compact: false, includeCredit: true, fitOfferedHeight: true)
+                    .frame(maxWidth: captionWidth, maxHeight: .infinity, alignment: .bottomLeading)
+                    .clipped()
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, 20)
+            .padding(.bottom, ClosedCaptionMetrics.bottomClearance)
+            .frame(width: size.width, height: size.height, alignment: .top)
+        } else {
+            // Default type: max width 280 and no line cap. The longest quote is 414 pt
+            // and the Controls handle stays at the bottom of the screen.
+            // Accessibility sizes use a hard width and a height cap so a long word or
+            // a tall quote cannot stretch the stage past the phone.
+            VStack {
+                Spacer()
+                HStack {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        DocumentaryCaption(compact: false, includeCredit: true)
+                            .frame(width: captionWidth, alignment: .leading)
+                            .frame(maxHeight: captionHeight, alignment: .top)
+                            .clipped()
+                    } else {
+                        DocumentaryCaption(compact: false, includeCredit: true)
+                            .frame(maxWidth: 280, alignment: .leading)
+                    }
+                    Spacer(minLength: 20)
+                }
+                .padding(.leading, 20)
+                .padding(.bottom, ClosedCaptionMetrics.bottomClearance)
+            }
+        }
     }
 
     private func approachCard(_ gap: String, width: CGFloat) -> some View {
@@ -327,7 +352,8 @@ struct HybridStage: View {
             .background { panelFill }
             .overlay(alignment: .topLeading) {
                 Color.clear
-                    .frame(width: 4, height: 4)
+                    .frame(width: 44, height: 44)
+                    .allowsHitTesting(false)
                     .accessibilityElement()
                     .accessibilityIdentifier("control-panel")
                     .accessibilityLabel("Controls")
@@ -890,12 +916,18 @@ struct DocumentaryCaption: View {
     var compact: Bool
     var includeCredit: Bool
     var identifier: String = "window-caption"
+    /// Closed caption sharing the stage with the closest-approach card. It shrinks into
+    /// the height it is offered instead of drawing through the card.
+    var fitOfferedHeight: Bool = false
 
     /// Panel quotes stay at two lines at the default size. Accessibility sizes let the
     /// open-panel italic quote grow with Dynamic Type; the column scrolls. The closed
     /// caption at those sizes stays capped at three so the stage stays on the phone.
     /// The full line remains in Lines.
     private var quoteLineLimit: Int? {
+        if fitOfferedHeight {
+            return 3
+        }
         if compact {
             if dynamicTypeSize.isAccessibilitySize {
                 return nil
@@ -912,6 +944,9 @@ struct DocumentaryCaption: View {
     /// The closed caption at those sizes still shrinks into its cap. Default type
     /// keeps the natural size: the closed caption is uncapped, and the panel quote is two lines.
     private var quoteUsesNaturalHeight: Bool {
+        if fitOfferedHeight {
+            return false
+        }
         if compact, dynamicTypeSize.isAccessibilitySize {
             return true
         }
@@ -959,13 +994,31 @@ struct DocumentaryCaption: View {
     }
 
     /// One line at every size. Accessibility sizes scale the word instead of breaking it.
+    /// The closed caption sits on the photograph, so the name is cream on dark glass.
+    /// Gold on a bright frame fails contrast.
     @ViewBuilder
     private func speakerName(_ name: String) -> some View {
         let text = Text(name.uppercased())
             .font(HybridFont.text(11, relativeTo: .caption2))
             .tracking(1.6)
-            .foregroundStyle(HybridColor.gold)
-        if dynamicTypeSize.isAccessibilitySize {
+            .foregroundStyle(compact ? HybridColor.gold : HybridColor.cream)
+        if !compact {
+            text
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.black.opacity(0.55))
+                        }
+                }
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, alignment: .leading)
+                .accessibilityIdentifier("speaker-name")
+        } else if dynamicTypeSize.isAccessibilitySize {
             text
                 .lineLimit(1)
                 .minimumScaleFactor(0.4)
@@ -1168,13 +1221,13 @@ struct ControlPanel: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(clocks.utc)
                         .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
-                        .foregroundStyle(HybridColor.dim)
+                        .foregroundStyle(HybridColor.cream)
                         .lineLimit(1)
                         .minimumScaleFactor(0.3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(clocks.met)
                         .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
-                        .foregroundStyle(HybridColor.dim)
+                        .foregroundStyle(HybridColor.cream)
                         .lineLimit(1)
                         .minimumScaleFactor(0.3)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1545,12 +1598,10 @@ struct FlybyRuler: View {
                 tickLayer(height: height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     .allowsHitTesting(false)
-                labelColumn(height: height, width: geo.size.width)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .overlay(alignment: .trailing) {
+                // 44 pt wide. The labels sit above this strip, so a mark keeps its tap.
                 Color.clear
-                    .frame(width: 28)
+                    .frame(width: 44)
+                    .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .gesture(scrub(height: height))
                     .accessibilityElement()
@@ -1559,6 +1610,8 @@ struct FlybyRuler: View {
                     .accessibilityAdjustableAction { direction in
                         model.accessibilityAdjust(direction)
                     }
+                labelColumn(height: height, width: geo.size.width)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -1654,9 +1707,13 @@ struct FlybyRuler: View {
         let centerX = width - gutter - labelWidth / 2
         let tick = y(date, height: height)
         // The time line, not the name under it, is centered on the tick.
-        let centerY = RulerLabelLayout.timeCenter(tick: tick, height: height, safeArea: safeBottom)
+        // The hit target is 44 pt and hangs below that line.
+        let timeCenter = RulerLabelLayout.timeCenter(tick: tick, height: height, safeArea: safeBottom)
+        let hit = RulerLabelLayout.timeLine
+        let centerY = timeCenter + (hit - RulerLabelLayout.timeBand) / 2
         return label()
-            .frame(width: labelWidth, alignment: .trailing)
+            .frame(width: labelWidth, height: hit, alignment: .topTrailing)
+            .contentShape(Rectangle())
             .position(x: centerX, y: centerY)
     }
 
@@ -1730,6 +1787,7 @@ struct FlybyRuler: View {
             .fontWeight(.semibold)
             .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
             .frame(maxWidth: .infinity, minHeight: RulerLabelLayout.timeBand, alignment: .trailing)
+            .frame(maxWidth: .infinity, minHeight: RulerLabelLayout.timeLine, alignment: .top)
             .overlay(alignment: .topTrailing) {
                 Text(name)
                     .font(HybridFont.text(11, relativeTo: .caption2))
@@ -1770,6 +1828,7 @@ struct FlybyRuler: View {
 
 struct CraterPage: View {
     @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var kind: CraterKind
     var frame: Frame?
     var namespace: Namespace.ID
@@ -1799,6 +1858,13 @@ struct CraterPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
+                    if dynamicTypeSize.isAccessibilitySize {
+                        OrionReadout(date: frame?.date ?? model.utc, fillsWidth: true)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("orion-readout")
+                    }
                     VStack(alignment: .leading, spacing: 16) {
                         Text(kind.kicker.uppercased())
                             .font(HybridFont.text(11, relativeTo: .caption2))
@@ -1880,7 +1946,9 @@ struct CraterPage: View {
                 .frame(maxWidth: .infinity)
                 .clipped()
                 .matchedGeometryEffect(id: "flyby-photo", in: namespace)
+                .accessibilityElement(children: .ignore)
                 .accessibilityLabel(FrameSelection.photoAccessLabel(shown))
+                .accessibilityAddTraits(.isImage)
             }
             LinearGradient(
                 colors: [.clear, HybridColor.ground.opacity(0.2), HybridColor.ground],
@@ -1890,7 +1958,11 @@ struct CraterPage: View {
             .frame(height: 180)
             .frame(maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(false)
-            TrackMapView(date: frame?.date ?? model.utc, emphasized: kind.siteID)
+            TrackMapView(
+                date: frame?.date ?? model.utc,
+                emphasized: kind.siteID,
+                showsReadout: !dynamicTypeSize.isAccessibilitySize
+            )
                 .frame(maxWidth: .infinity, maxHeight: 168)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 28)
@@ -2032,6 +2104,33 @@ enum WindowSafeArea {
             }
         }
         return 0
+    }
+}
+
+/// Card on top, caption in whatever height remains. The caption is not offered the card's rect.
+private struct ApproachColumn: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        guard let card = subviews.first else { return }
+        let width = bounds.width
+        let cardSize = card.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let cardHeight = min(max(0, cardSize.height), bounds.height)
+        card.place(
+            at: CGPoint(x: bounds.minX, y: bounds.minY),
+            proposal: ProposedViewSize(width: width, height: cardHeight)
+        )
+        guard subviews.count > 1 else { return }
+        let captionY = bounds.minY + cardHeight + spacing
+        let captionHeight = max(0, bounds.maxY - captionY)
+        subviews[1].place(
+            at: CGPoint(x: bounds.minX, y: captionY),
+            proposal: ProposedViewSize(width: width, height: captionHeight)
+        )
     }
 }
 

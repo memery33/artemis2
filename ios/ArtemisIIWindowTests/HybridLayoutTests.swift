@@ -312,6 +312,14 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(dates.count, 3)
     }
 
+    func testOrionReadoutKeepsTheFigureWithItsUnit() {
+        let line = OrionReadout.unbroken("alt 13,864.77 km")
+        XCTAssertFalse(line.contains(" "))
+        XCTAssertTrue(line.contains("13,\u{2060}864.\u{2060}77"))
+        XCTAssertTrue(line.hasSuffix("\u{00A0}km"))
+        XCTAssertTrue(line.contains("\u{00A0}"))
+    }
+
     @MainActor
     func testClosestApproachLandsOnTheNearestCabFrame() throws {
         let model = PlaybackModel()
@@ -321,10 +329,17 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertEqual(landing.window, .cab)
         XCTAssertEqual(landing.range, .cab)
         XCTAssertEqual(landing.trackID, "pcd2")
+        let approachPoint = try XCTUnwrap(FlybyEphemeris.bundled.flatMap {
+            FlybyPath.closestApproach($0.samples, radiusKm: $0.document.radiusKm)
+        })
+        XCTAssertEqual(ClockMath.utcText(approachPoint.date), "23:00:46 UTC")
+        XCTAssertEqual(Int(approachPoint.altitudeKm.rounded()), 6545)
         XCTAssertEqual(
             landing.gap,
-            "23:00:46 UTC, NASA/JPL Horizons. Photo taken 16 min 14 s before this clock. Not moved to match it."
+            "Closest approach: 23:00:46 UTC, 6,545 km above the surface (NASA/JPL Horizons). The nearest crew photo was taken 16 min 14 s earlier."
         )
+        XCTAssertFalse(landing.gap.contains("this clock"))
+        XCTAssertFalse(landing.gap.contains("Not moved"))
         let approach = HybridClock.approachDate(timeline: timeline)
         XCTAssertGreaterThan(approach.timeIntervalSince(landing.date), 60)
 

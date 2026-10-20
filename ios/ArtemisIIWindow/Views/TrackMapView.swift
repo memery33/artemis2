@@ -177,6 +177,8 @@ enum TrackMapImage {
 struct TrackMapView: View {
     var date: Date
     var emphasized: String?
+    /// Accessibility sizes move the readout into the crater page scroll. The 168 pt map clips it.
+    var showsReadout: Bool = true
 
     var body: some View {
         let bundled = FlybyEphemeris.bundled
@@ -202,7 +204,13 @@ struct TrackMapView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
                     .overlay(alignment: .topLeading) { compass }
-                    .overlay(alignment: corner.alignment) { orionReadout(bundled: bundled) }
+                    .overlay(alignment: corner.alignment) {
+                        if showsReadout {
+                            OrionReadout(date: date, fillsWidth: false)
+                                .fixedSize(horizontal: true, vertical: true)
+                                .padding(8)
+                        }
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -237,37 +245,6 @@ struct TrackMapView: View {
         .padding(6)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private func orionReadout(bundled: (document: FlybyDocument, samples: [PathSample])?) -> some View {
-        if let bundled, let live = TrackMapGeometry.place(
-            at: date,
-            samples: bundled.samples,
-            radiusKm: bundled.document.radiusKm
-        ) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("ORION")
-                    .font(HybridFont.text(9, relativeTo: .caption2))
-                    .tracking(1.4)
-                    .foregroundStyle(HybridColor.gold)
-                Text("\(TrackMapGeometry.kilometers(live.rangeKm)) km")
-                    .font(HybridFont.text(12, relativeTo: .caption).monospacedDigit())
-                    .foregroundStyle(HybridColor.cream)
-                Text("alt \(TrackMapGeometry.kilometers(live.altitudeKm)) km")
-                    .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
-                    .foregroundStyle(HybridColor.dim)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 168, alignment: .leading)
-            }
-            .padding(8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .environment(\.colorScheme, .dark)
-            .padding(8)
-            .allowsHitTesting(false)
-        }
     }
 
     private func mapCanvas(bundled: (document: FlybyDocument, samples: [PathSample])?, rect: CGRect) -> some View {
@@ -331,5 +308,63 @@ struct TrackMapView: View {
             )
             context.draw(text, at: point, anchor: .center)
         }
+    }
+}
+
+/// Range and altitude, each kept with its unit. On the map the card hugs the text.
+/// In the crater column it uses the width it is offered and the page scrolls, so an
+/// accessibility size cannot clip ORION or split a figure.
+struct OrionReadout: View {
+    var date: Date
+    var fillsWidth: Bool = false
+
+    var body: some View {
+        let bundled = FlybyEphemeris.bundled
+        let live = bundled.flatMap {
+            TrackMapGeometry.place(at: date, samples: $0.samples, radiusKm: $0.document.radiusKm)
+        }
+        if let live {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("ORION")
+                    .font(HybridFont.text(9, relativeTo: .caption2))
+                    .tracking(1.4)
+                    .foregroundStyle(HybridColor.gold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+                figure(TrackMapGeometry.kilometers(live.rangeKm), unit: "km", style: .range)
+                figure("alt \(TrackMapGeometry.kilometers(live.altitudeKm))", unit: "km", style: .altitude)
+            }
+            .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
+            .padding(8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .environment(\.colorScheme, .dark)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private enum FigureStyle {
+        case range
+        case altitude
+    }
+
+    private func figure(_ value: String, unit: String, style: FigureStyle) -> some View {
+        let font = style == .range
+            ? HybridFont.text(12, relativeTo: .caption).monospacedDigit()
+            : HybridFont.text(11, relativeTo: .caption2).monospacedDigit()
+        let color = style == .range ? HybridColor.cream : HybridColor.dim
+        return Text(Self.unbroken("\(value) \(unit)"))
+            .font(font)
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.3)
+            .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
+    }
+
+    /// Spaces, grouping commas, and the decimal stay on one line with the unit.
+    static func unbroken(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: " ", with: "\u{00A0}")
+            .replacingOccurrences(of: ",", with: ",\u{2060}")
+            .replacingOccurrences(of: ".", with: ".\u{2060}")
     }
 }

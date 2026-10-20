@@ -115,7 +115,7 @@ struct CrewRow: View {
     private func note(lineLimit: Int, scale: CGFloat) -> some View {
         Text("Names only. No in-flight portrait is bundled.")
             .font(HybridFont.text(10, relativeTo: .caption2))
-            .foregroundStyle(HybridColor.dim.opacity(0.75))
+            .foregroundStyle(dynamicTypeSize.isAccessibilitySize ? HybridColor.dim.opacity(0.75) : HybridColor.cream)
             .lineLimit(lineLimit)
             .minimumScaleFactor(scale)
             .frame(maxWidth: .infinity, alignment: .leading)
