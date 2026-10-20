@@ -97,7 +97,7 @@ struct AboutView: View {
                         Text(pointing.note)
                             .font(HybridFont.text(13, relativeTo: .footnote))
                     }
-                    Text("The app icon is a center crop of NASA ID art002e016184, a real Z9 frame from 19:33:26 UTC. That file is not a picture on the window. It is not a new photograph.")
+                    Text("App icon cropped from art002e016184, a cabin photo (NASA/Artemis II Crew).")
                         .font(HybridFont.text(13, relativeTo: .footnote))
                     Text("Orion Window plays one clock: the crew recording, the Window 2 and Window 3 photographs, and a crater map of the track. The flyby and the cab run are separate spans. The span and spatial switches are on this screen.")
                         .font(HybridFont.text(13, relativeTo: .footnote))
