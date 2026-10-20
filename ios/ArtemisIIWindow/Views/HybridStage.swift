@@ -116,6 +116,7 @@ struct HybridStage: View {
                 .accessibilityHidden(true)
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
             .animation(reduceMotion ? nil : .smooth(duration: 0.45), value: crater)
             .defersSystemGestures(on: .bottom)
             .task(id: shownFrame?.file) {
@@ -130,6 +131,7 @@ struct HybridStage: View {
                 model.prefetch(frame, maxPixel: pixels)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
     }
@@ -222,11 +224,24 @@ struct HybridStage: View {
         let revealed = panelHeight - shift
         return ZStack {
             if crater == nil, revealed < 80, shownFrame != nil {
+                // Default type: max width 280 and no line cap. The longest quote is 414 pt
+                // and the Controls handle stays at the bottom of the screen.
+                // Accessibility sizes use a hard width and a height cap so a long word or
+                // a tall quote cannot stretch the stage past the phone.
+                let captionWidth: CGFloat = min(280, max(0, size.width - 40))
+                let captionHeight: CGFloat = max(0, size.height - 108 - 160)
                 VStack {
                     Spacer()
                     HStack {
-                        DocumentaryCaption(compact: false, includeCredit: true)
-                            .frame(maxWidth: 280, alignment: .leading)
+                        if dynamicTypeSize.isAccessibilitySize {
+                            DocumentaryCaption(compact: false, includeCredit: true)
+                                .frame(width: captionWidth, alignment: .leading)
+                                .frame(maxHeight: captionHeight, alignment: .top)
+                                .clipped()
+                        } else {
+                            DocumentaryCaption(compact: false, includeCredit: true)
+                                .frame(maxWidth: 280, alignment: .leading)
+                        }
                         Spacer(minLength: 20)
                     }
                     .padding(.leading, 20)
@@ -246,6 +261,7 @@ struct HybridStage: View {
             }
             if crater == nil {
                 sheet(panelHeight: panelHeight, safeBottom: safeBottom)
+                    .frame(width: size.width)
                     .offset(y: shift)
                 // Stay mounted for the whole drag. Removing it mid-gesture
                 // cancelled the swipe after the sheet had risen about 90 pt.
@@ -256,6 +272,7 @@ struct HybridStage: View {
             }
         }
         .frame(width: size.width, height: size.height)
+        .clipped()
     }
 
     private func sheet(panelHeight: CGFloat, safeBottom: CGFloat) -> some View {
@@ -803,9 +820,29 @@ struct PlacedPhoto: View {
 
 struct DocumentaryCaption: View {
     @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var compact: Bool
     var includeCredit: Bool
     var identifier: String = "window-caption"
+
+    /// Panel quotes stay at two lines. The closed caption keeps every line at the
+    /// default size. Accessibility sizes cap it at three so the stage stays on the phone.
+    /// The full line remains in Lines.
+    private var quoteLineLimit: Int? {
+        if compact {
+            return 2
+        }
+        if dynamicTypeSize.isAccessibilitySize {
+            return 3
+        }
+        return nil
+    }
+
+    /// Closed caption at an accessibility size may shrink to the width and height it is given.
+    /// Everywhere else the quote keeps its natural size.
+    private var quoteUsesNaturalHeight: Bool {
+        compact || !dynamicTypeSize.isAccessibilitySize
+    }
 
     private var line: TranscriptLine? {
         LyricFocus.focus(at: model.utc, track: model.trackID, lines: model.timeline?.lines ?? []).current
@@ -833,14 +870,17 @@ struct DocumentaryCaption: View {
                     // are the tallest quote that leaves the clock and the transport fully
                     // visible above the window pills. The longest bundled line is ten lines
                     // at that width, so a taller cap would push the pills into Lines.
-                    lineLimit: compact ? Optional(2) : nil
+                    lineLimit: quoteLineLimit,
+                    minimumScaleFactor: quoteUsesNaturalHeight ? CGFloat(1) : CGFloat(0.5)
                 )
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: quoteUsesNaturalHeight)
             }
             if let frame {
                 Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
                     .font(HybridFont.text(12, relativeTo: .caption))
                     .foregroundStyle(HybridColor.dim)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if includeCredit {
@@ -1620,6 +1660,8 @@ struct CreditLine: View {
         Text("Credit: NASA/Artemis II Crew")
             .font(HybridFont.text(11, relativeTo: .caption2))
             .foregroundStyle(HybridColor.cream)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.black.opacity(0.55), in: Capsule())

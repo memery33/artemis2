@@ -148,11 +148,22 @@ final class LayoutFrameUITests: XCTestCase {
 
     /// AX3 is UICTContentSizeCategoryAccessibilityXL (not the Swift name AccessibilityExtraLarge).
     /// AX1 AccessibilityM, AX2 AccessibilityL, AX3 AccessibilityXL, AX4 AccessibilityXXL, AX5 AccessibilityXXXL.
-    /// Begin parks on the longest quote. Play/pause stays reachable; scroll only if it is not.
+    /// The closed screen stays the phone's width, Controls is on screen, then play/pause is reachable.
     func testAccessibilityExtraLargeKeepsTheTransportReachable() {
+        assertClosedScreenStaysOnThePhone(category: "UICTContentSizeCategoryAccessibilityXL")
+    }
+
+    /// AX5, the largest Dynamic Type size. Same closed-screen contract as AX3.
+    func testAccessibilityExtraExtraExtraLargeKeepsTheTransportReachable() {
+        assertClosedScreenStaysOnThePhone(category: "UICTContentSizeCategoryAccessibilityXXXL")
+    }
+
+    /// Begin parks on the longest quote. The stage must stay the screen width, and Controls
+    /// must be hittable before the panel opens.
+    private func assertClosedScreenStaysOnThePhone(category: String) {
         let app = FlybyUILaunch.application([
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityXL",
+            category,
             "-seekLineUTC",
             "2026-04-06T19:47:31.641Z",
         ])
@@ -163,6 +174,13 @@ final class LayoutFrameUITests: XCTestCase {
 
         let open = app.buttons["open-panel"]
         XCTAssertTrue(open.waitForExistence(timeout: 15))
+        let screenShot = XCUIScreen.main.screenshot().image
+        let screenWidth: CGFloat = screenShot.size.width
+        XCTAssertEqual(app.frame.width, screenWidth, accuracy: 1.5)
+        XCTAssertEqual(open.frame.width, app.frame.width, accuracy: 1.5)
+        XCTAssertGreaterThanOrEqual(open.frame.minX, -0.5)
+        XCTAssertLessThanOrEqual(open.frame.maxY, app.frame.maxY + 0.5)
+        XCTAssertTrue(open.isHittable)
         open.tap()
 
         let toggle = app.buttons["playback-toggle"]
