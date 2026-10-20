@@ -114,7 +114,9 @@ LICENSES = [
         "shipped": True,
         "credit": f"NASA ID <id>, {CREDIT}",
         "usage": (
-            f"{GUIDELINES} Shipped stills are Atlas browse derivatives resized to a 1200-pixel long edge. "
+            f"{GUIDELINES} Shipped stills are PDS browse PNGs from browse/fd06 resized to a 2700-pixel long edge and saved as lossy WebP. "
+            "Nikon nkd5015 browse PNGs are 5568 by 3712. The five Z9 nkz9019 browse PNGs "
+            "(art002e016183, art002e016184, art002e016187, art002e016188, art002e016193) are 8256 by 5504. "
             "PDS4 labels carry no photographer field. The Data User Guide credits every still to NASA/Artemis II Crew."
         ),
     },
@@ -126,7 +128,7 @@ LICENSES = [
         "credit": f"NASA ID <id>, {CREDIT}",
         "usage": (
             f"{GUIDELINES} Cab Cam 2 is a GoPro HERO4 Black mounted inside Window 3 (Data User Guide §3.3.1). "
-            "Shipped files are full browse JPEGs from browse_source/fd05 (the labels say flight day 6), not :md mask derivatives. "
+            "Shipped files are browse_source JPEGs from browse_source/fd05 (4000 by 3000; the labels say flight day 6) resized to a 2700-pixel long edge and saved as lossy WebP, not :md mask derivatives. "
             "Times are label start_date_time values and match the JPEG DateTime. No photographer is named. "
             "Frames stay on those times; they are not shifted into the flyby window."
         ),
