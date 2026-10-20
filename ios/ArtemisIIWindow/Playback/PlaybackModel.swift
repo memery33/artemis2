@@ -176,8 +176,10 @@ final class PlaybackModel: NSObject, ObservableObject {
             }
             return
         }
-        if let stamp = Self.openingLineUTC(ProcessInfo.processInfo.arguments),
-           let line = timeline?.lines.first(where: { $0.utc == stamp }) {
+        let launchArguments: [String] = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("-ui-tests"),
+           let stamp: String = Self.openingLineUTC(launchArguments),
+           let line: TranscriptLine = timeline?.lines.first(where: { $0.utc == stamp }) {
             if line.track != trackID {
                 trackID = line.track
                 if timeline?.crew.contains(where: { $0.id == crewID && $0.track == line.track }) != true,
@@ -221,7 +223,9 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     /// UI tests pass `-seekLineUTC` and a transcript `utc` so Begin parks on that line.
     /// Playback stays paused, so a long quote does not scroll away before the panel is measured.
+    /// Ignored unless `-ui-tests` is present, so a normal launch cannot park on a line.
     nonisolated static func openingLineUTC(_ arguments: [String]) -> String? {
+        guard arguments.contains("-ui-tests") else { return nil }
         guard let flag = arguments.firstIndex(of: "-seekLineUTC") else { return nil }
         let valueIndex: Int = flag + 1
         guard valueIndex < arguments.count else { return nil }

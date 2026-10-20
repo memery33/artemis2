@@ -126,6 +126,58 @@ final class LayoutFrameUITests: XCTestCase {
             XCTAssertLessThanOrEqual(text.frame.maxY, window.frame.minY + 0.5)
         }
         XCTAssertLessThanOrEqual(window.frame.maxY, lines.frame.minY + 0.5)
+        let frameLine = caption.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "art002e")).firstMatch
+        XCTAssertTrue(frameLine.waitForExistence(timeout: 8))
+        // The quote is Fraunces Italic 15. The frame line is Inter 12. Their line boxes
+        // are 19 pt and 15 pt, so one quote line is 19/15 of the measured frame line.
+        let frameDeadline = Date().addingTimeInterval(5)
+        var frameHeight: CGFloat = frameLine.frame.height
+        while Date() < frameDeadline, frameHeight <= 1 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            frameHeight = frameLine.frame.height
+        }
+        XCTAssertGreaterThan(frameHeight, 1)
+        let quoteLine: CGFloat = frameHeight * CGFloat(19) / CGFloat(15)
+        let twoLines: CGFloat = quoteLine * CGFloat(2) + CGFloat(8)
+        XCTAssertGreaterThan(quote.frame.height, 1)
+        XCTAssertLessThanOrEqual(quote.frame.height, twoLines)
+        let toggle = app.buttons["playback-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        XCTAssertTrue(toggle.isHittable)
+    }
+
+    /// AX3 is UICTContentSizeCategoryAccessibilityXL (not the Swift name AccessibilityExtraLarge).
+    /// AX1 AccessibilityM, AX2 AccessibilityL, AX3 AccessibilityXL, AX4 AccessibilityXXL, AX5 AccessibilityXXXL.
+    /// Begin parks on the longest quote. Play/pause stays reachable; scroll only if it is not.
+    func testAccessibilityExtraLargeKeepsTheTransportReachable() {
+        let app = FlybyUILaunch.application([
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXL",
+            "-seekLineUTC",
+            "2026-04-06T19:47:31.641Z",
+        ])
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let toggle = app.buttons["playback-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        let settle = Date().addingTimeInterval(2)
+        while Date() < settle, !toggle.isHittable {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        if !toggle.isHittable {
+            let scroll = app.scrollViews["panel-scroll"]
+            if scroll.waitForExistence(timeout: 2) {
+                scroll.swipeUp()
+            }
+        }
+        XCTAssertTrue(toggle.isHittable)
     }
 
     /// Lines, Moments, and About sit on the safe-area edge, and those controls are at least 44 by 44.

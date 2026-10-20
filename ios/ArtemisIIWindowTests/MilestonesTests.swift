@@ -281,11 +281,12 @@ final class MilestonesTests: XCTestCase {
         XCTAssertTrue(PlaybackModel.opensAtSpanEnd(["-seekToEnd"]))
         XCTAssertFalse(PlaybackModel.opensAtSpanEnd([]))
         XCTAssertEqual(
-            PlaybackModel.openingLineUTC(["-seekLineUTC", "2026-04-06T19:47:31.641Z"]),
+            PlaybackModel.openingLineUTC(["-ui-tests", "-seekLineUTC", "2026-04-06T19:47:31.641Z"]),
             "2026-04-06T19:47:31.641Z"
         )
-        XCTAssertNil(PlaybackModel.openingLineUTC(["-seekLineUTC"]))
-        XCTAssertNil(PlaybackModel.openingLineUTC(["-seekLineUTC", "-seekToEnd"]))
+        XCTAssertNil(PlaybackModel.openingLineUTC(["-seekLineUTC", "2026-04-06T19:47:31.641Z"]))
+        XCTAssertNil(PlaybackModel.openingLineUTC(["-ui-tests", "-seekLineUTC"]))
+        XCTAssertNil(PlaybackModel.openingLineUTC(["-ui-tests", "-seekLineUTC", "-seekToEnd"]))
         XCTAssertNil(PlaybackModel.openingLineUTC([]))
         XCTAssertFalse(RuntimeHost.allowsPlaybackServices(arguments: ["-XCTest"], unitTestHost: true))
         XCTAssertFalse(RuntimeHost.allowsPlaybackServices(arguments: ["-ui-tests", "-seekToEnd"], unitTestHost: false))

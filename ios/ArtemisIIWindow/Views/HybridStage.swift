@@ -855,6 +855,7 @@ struct DocumentaryCaption: View {
 
 struct ControlPanel: View {
     @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var height: CGFloat
     var safeBottom: CGFloat
     var onClose: () -> Void
@@ -866,29 +867,7 @@ struct ControlPanel: View {
     @State private var suppressCloseTap = false
 
     var body: some View {
-        // One column, top to bottom: clock, quote, window pills, crew, Lines.
-        // The quote used to live in the clock scroller, so a wrapped line drew
-        // through the pills, which stay put. It now sits directly above them and
-        // grows upward. Spacing is 8 so a two-line quote, the clock, and the
-        // transport all fit in the 437 pt sheet on a 402×874 phone.
-        VStack(alignment: .leading, spacing: 8) {
-            handle
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    clocks
-                    transport
-                }
-            }
-            .scrollBounceBehavior(.basedOnSize)
-            DocumentaryCaption(compact: true, includeCredit: false, identifier: "panel-caption")
-                .fixedSize(horizontal: false, vertical: true)
-            windowRow
-                .fixedSize(horizontal: false, vertical: true)
-            CrewRow()
-                .fixedSize(horizontal: false, vertical: true)
-            secondaryRow
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        column
         .padding(.leading, 20)
         .padding(.trailing, 8)
         .padding(.bottom, safeBottom)
@@ -898,6 +877,64 @@ struct ControlPanel: View {
         .sheet(isPresented: $about) { AboutView() }
         .sheet(isPresented: $transcript) { TranscriptSheet() }
         .sheet(isPresented: $moments) { MomentsSheet() }
+    }
+
+    /// Default type pins the quote above the window pills so a wrap cannot draw through them.
+    /// Accessibility sizes (AX1–AX5) scale that quote, the pills, the crew row, and Lines
+    /// past the 437 pt sheet, which used to collapse the clock scroller and hide play/pause.
+    /// Those sizes put the whole column in one scroller, with the clock and transport first,
+    /// so play/pause stays on screen and the rows below can scroll.
+    @ViewBuilder
+    private var column: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            accessibilityColumn
+        } else {
+            standardColumn
+        }
+    }
+
+    private var standardColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            handle
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    clocks
+                    transport
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            panelCaption
+            windowRow
+                .fixedSize(horizontal: false, vertical: true)
+            CrewRow()
+                .fixedSize(horizontal: false, vertical: true)
+            secondaryRow
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var accessibilityColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            handle
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    clocks
+                    transport
+                    panelCaption
+                    windowRow
+                    CrewRow()
+                    secondaryRow
+                }
+                .padding(.bottom, 8)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .accessibilityIdentifier("panel-scroll")
+        }
+    }
+
+    private var panelCaption: some View {
+        DocumentaryCaption(compact: true, includeCredit: false, identifier: "panel-caption")
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var handle: some View {
