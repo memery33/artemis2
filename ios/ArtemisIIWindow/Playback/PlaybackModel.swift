@@ -106,6 +106,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     private static let activityPushInterval: TimeInterval = 8
     /// Unit tests set this so the shipping activity policy runs without the audio graph or Now Playing.
     var postsLiveActivityWhileSkippingAudio = false
+    /// Replaces the paused Now Playing write. Nil uses MediaPlayer, which the unit-test host skips.
+    var pausedArtworkWriter: (@MainActor (UIImage) -> Void)?
     /// Set with the scene. The background span-end path reads it when the unit-test host has no display link.
     private var displayClockPaused = false
     /// Wall clock for the silent tail. Shipping code reads `Date`. Tests move this so `backgroundTick` can be stepped.
@@ -703,21 +705,28 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// A decode must not push the Live Activity. After a memory warning the artwork
     /// cache miss used to complete, force a push, and prefetch again, about once per frame.
     /// While paused, the lock-screen artwork is filled in once this file's bitmap is cached.
+    /// Tests set `pausedArtworkWriter` so the assignment can be seen without MediaPlayer.
     func noteFramesDecoded(file: String) {
         frameCacheEpoch += 1
-        guard !playing, file == currentArtworkFile() else { return }
-        guard !skipsAudio, arrived else { return }
+        guard !playing, file == nowPlayingFile(), arrived else { return }
         guard let image = MediaStore.cachedImage(file: file, small: true, maxPixel: 720) else { return }
+        if let pausedArtworkWriter {
+            pausedArtworkWriter(image)
+            return
+        }
+        guard !skipsAudio else { return }
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
-    private func currentArtworkFile() -> String {
-        if let frame = pair(for: window).current {
-            return frame.file
-        }
-        return "images/art002e016184.webp"
+    /// The file on the glass. Now Playing uses this, not the Z9 frame a window list might pair.
+    func nowPlayingFile() -> String {
+        shownOnGlass()?.file ?? "images/art002e009611.webp"
+    }
+
+    private func shownOnGlass() -> Frame? {
+        HybridFrames.shown(at: utc, side: window, timeline: timeline, span: activeSpan)
     }
 
     private func reloadAtCurrentTime() {
@@ -1541,7 +1550,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func artworkID() -> String {
-        pair(for: window).current?.nasaID ?? ""
+        shownOnGlass()?.nasaID ?? ""
     }
 
     func pair(for side: WindowSide) -> FramePair {
@@ -1572,7 +1581,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func artworkImage() -> UIImage? {
-        let file = currentArtworkFile()
+        let file = nowPlayingFile()
         if let image = MediaStore.cachedImage(file: file, small: true, maxPixel: 720) {
             return image
         }
@@ -1686,11 +1695,18 @@ enum MediaStore {
 
     /// Lands a decoded frame. Tests use it to prove a memory warning keeps the bitmap on screen.
     static func stage(image: UIImage, file: String, maxPixel: CGFloat) {
-        let key = cacheKey(file: file, small: false, maxPixel: maxPixel)
+        stage(image: image, file: file, small: false, maxPixel: maxPixel)
+    }
+
+    /// `small` stores the 720 px Now Playing bitmap. The full-size stage also pins that bitmap.
+    static func stage(image: UIImage, file: String, small: Bool, maxPixel: CGFloat) {
+        let key = cacheKey(file: file, small: small, maxPixel: maxPixel)
         let name = key as String
         let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 1
         cache.setObject(image, forKey: key, cost: cost)
-        rememberDisplayed(name, image)
+        if !small {
+            rememberDisplayed(name, image)
+        }
     }
 
     /// Decodes off the main thread and stores the image on the main actor.

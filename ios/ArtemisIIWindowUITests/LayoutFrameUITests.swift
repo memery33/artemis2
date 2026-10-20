@@ -60,6 +60,37 @@ final class LayoutFrameUITests: XCTestCase {
         assertNoBlackPane(in: app)
     }
 
+    /// The speaker line and the quote both stay on screen, above the pinned row.
+    func testPanelCaptionStaysAboveTheFold() {
+        let app = FlybyUILaunch.application()
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let caption = element(named: "panel-caption", in: app)
+        XCTAssertTrue(caption.waitForExistence(timeout: 8))
+        let lines = app.buttons["lines-button"]
+        XCTAssertTrue(lines.waitForExistence(timeout: 8))
+        let deadline = Date().addingTimeInterval(5)
+        var texts = caption.staticTexts.allElementsBoundByIndex
+        while Date() < deadline, texts.count < 2 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            texts = caption.staticTexts.allElementsBoundByIndex
+        }
+        XCTAssertGreaterThanOrEqual(texts.count, 2)
+        for text in texts {
+            XCTAssertGreaterThan(text.frame.height, 1)
+            XCTAssertGreaterThanOrEqual(text.frame.minY, 0)
+            XCTAssertLessThanOrEqual(text.frame.maxY, app.frame.height)
+            XCTAssertLessThanOrEqual(text.frame.maxY, lines.frame.minY + 0.5)
+        }
+    }
+
     /// Lines, Moments, and About sit on the safe-area edge, and those controls are at least 44 by 44.
     func testAboutClearsTheHomeIndicatorAndControlsAre44Points() {
         let app = FlybyUILaunch.application()
@@ -86,7 +117,7 @@ final class LayoutFrameUITests: XCTestCase {
         }
 
         let inset = app.frame.maxY - edge.frame.maxY
-        XCTAssertGreaterThanOrEqual(inset, -0.01)
+        XCTAssertGreaterThanOrEqual(inset, 20)
         XCTAssertLessThanOrEqual(about.frame.maxY, app.frame.height - inset + 0.01)
         assertSquareHitTarget(about, minimumSide: minimumSide)
         assertSquareHitTarget(app.buttons["lines-button"], minimumSide: minimumSide)
