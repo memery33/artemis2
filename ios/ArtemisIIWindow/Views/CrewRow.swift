@@ -23,7 +23,7 @@ struct CrewRow: View {
                         } label: {
                             VStack(spacing: 4) {
                                 Text(String(member.id.prefix(1)))
-                                    .font(.title3.weight(.semibold))
+                                    .font(HybridFont.display(20, relativeTo: .title3))
                                     .foregroundStyle(.white)
                                     .frame(width: 52, height: 52)
                                     .background(Circle().fill(Color.white.opacity(speaking ? 0.22 : 0.06)))
@@ -34,7 +34,8 @@ struct CrewRow: View {
                                         )
                                     }
                                 Text(member.id)
-                                    .font(.caption.weight(.semibold))
+                                    .font(HybridFont.text(12, relativeTo: .caption))
+                                    .fontWeight(.semibold)
                                     .foregroundStyle(.white.opacity(followed ? 1 : 0.7))
                                     .lineLimit(1)
                                     .fixedSize(horizontal: true, vertical: false)
@@ -48,7 +49,7 @@ struct CrewRow: View {
                 }
             }
             Text("No separate in-flight portrait is bundled. The marks are the crew names on the timeline.")
-                .font(.caption2)
+                .font(HybridFont.text(11, relativeTo: .caption2))
                 .foregroundStyle(.white.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)

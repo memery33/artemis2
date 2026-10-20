@@ -72,3 +72,13 @@ At 2026-04-06 19:40 UT, Horizons prints `SunSub-LON` 306.562535° and `SunSub-LA
 NASA SVS CGI Moon Kit, ID 4720, file `lroc_color_2k.jpg`, 2048 by 1024, centered on 0° longitude with east to the right. https://svs.gsfc.nasa.gov/4720/
 
 SceneKit shows that image center toward +Z. The moon node is yawed +90° about Y so +Z lands on MOON_ME +X (0° east). A −90° yaw would put the prime meridian on −X, which is 180° longitude.
+
+`ArtemisIIWindow/Resources/lroc-track.jpg` is a 1400 by 663 reprojection of that same file for the crater map. Columns run from 340° E to 150° E and rows from 48° N to 42° S, so the observation and the approach to closest approach stay on one strip. It is not a new photograph.
+
+## Type
+
+`ArtemisIIWindow/Fonts/Fraunces.ttf` and `Fraunces-Italic.ttf`. Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces). Licensed under the SIL Open Font License, Version 1.1. The license text is `Fraunces-OFL.txt` beside the files.
+
+`ArtemisIIWindow/Fonts/Inter.ttf`. Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter). Licensed under the SIL Open Font License, Version 1.1. The license text is `Inter-OFL.txt` beside the file.
+
+Fraunces is the display face. Inter is the text face. Both are registered as `UIAppFonts` in the app and the Live Activity extension.

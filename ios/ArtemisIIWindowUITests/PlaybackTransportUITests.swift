@@ -1,6 +1,6 @@
 import XCTest
 
-/// The dock play control is the same pause and resume as the lock screen.
+/// Play, pause, and the 15 second skips live in the frosted panel.
 @MainActor
 final class PlaybackTransportUITests: XCTestCase {
     nonisolated override func setUp() {
@@ -24,6 +24,10 @@ final class PlaybackTransportUITests: XCTestCase {
         let begin = app.buttons["Begin Flyby"]
         XCTAssertTrue(begin.waitForExistence(timeout: 15))
         begin.tap()
+
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
 
         let toggle = app.buttons["playback-toggle"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 15))

@@ -464,11 +464,14 @@ final class PlaybackModel: NSObject, ObservableObject {
         utc = MissionClock.clamp(date, to: span)
     }
 
-    func endScrub() {
+    /// `markEnd` is false while the flyby ruler is exploring the coast past the
+    /// observation window. Releasing there must not end the Live Activity.
+    /// The launch argument and an explicit seek to the span end still do.
+    func endScrub(markEnd: Bool = true) {
         guard scrubbing else { return }
         scrubbing = false
         lastWall = nil
-        seek(to: utc)
+        seek(to: utc, markEnd: markEnd)
     }
 
     /// Path drag. Playback stays running unless the finger lands on the span end.

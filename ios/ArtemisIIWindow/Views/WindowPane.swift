@@ -255,8 +255,8 @@ struct WindowPane: View {
 struct CreditLine: View {
     var body: some View {
         Text("Credit: NASA/Artemis II Crew")
-            .font(.caption2)
-            .foregroundStyle(.white.opacity(0.82))
+            .font(HybridFont.text(11, relativeTo: .caption2))
+            .foregroundStyle(HybridColor.cream.opacity(0.82))
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("photo-credit")
     }
@@ -457,8 +457,8 @@ struct ClockReadout: View {
             Spacer(minLength: 4)
             Text(clocks.met)
         }
-        .font(.caption.monospacedDigit())
-        .foregroundStyle(.white)
+        .font(HybridFont.text(12, relativeTo: .caption).monospacedDigit())
+        .foregroundStyle(HybridColor.cream)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("mission-clock")
     }
