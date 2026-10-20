@@ -73,6 +73,12 @@ struct HybridStage: View {
     }
 
     private static func seededSafeBottom() -> CGFloat {
+        // SwiftUI runs View.body on the main actor. RootView.body builds StageView,
+        // and StageView.body is the only caller of HybridStage(), so this init is
+        // already on main. WindowSafeArea.bottom reads UIApplication and is
+        // @MainActor; this init is not, so the read goes through assumeIsolated.
+        // That check is the guarantee: the closure runs only when the caller is
+        // on the main actor, and it traps if this init is ever reached off main.
         MainActor.assumeIsolated { WindowSafeArea.bottom }
     }
 

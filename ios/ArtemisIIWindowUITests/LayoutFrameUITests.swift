@@ -60,7 +60,9 @@ final class LayoutFrameUITests: XCTestCase {
         assertNoBlackPane(in: app)
     }
 
-    /// The speaker line and the quote both stay on screen, above the pinned row.
+    /// The speaker line and the quote both stay on screen, above the Window 2 control.
+    /// That control sits at the top of the pinned row, so a caption that has
+    /// scrolled under it cannot pass by still sitting above the Lines button.
     func testPanelCaptionStaysAboveTheFold() {
         let app = FlybyUILaunch.application()
         app.launch()
@@ -74,8 +76,8 @@ final class LayoutFrameUITests: XCTestCase {
 
         let caption = element(named: "panel-caption", in: app)
         XCTAssertTrue(caption.waitForExistence(timeout: 8))
-        let lines = app.buttons["lines-button"]
-        XCTAssertTrue(lines.waitForExistence(timeout: 8))
+        let window = app.buttons["window-nikon"]
+        XCTAssertTrue(window.waitForExistence(timeout: 8))
         let deadline = Date().addingTimeInterval(5)
         var texts = caption.staticTexts.allElementsBoundByIndex
         while Date() < deadline, texts.count < 2 {
@@ -87,7 +89,7 @@ final class LayoutFrameUITests: XCTestCase {
             XCTAssertGreaterThan(text.frame.height, 1)
             XCTAssertGreaterThanOrEqual(text.frame.minY, 0)
             XCTAssertLessThanOrEqual(text.frame.maxY, app.frame.height)
-            XCTAssertLessThanOrEqual(text.frame.maxY, lines.frame.minY + 0.5)
+            XCTAssertLessThanOrEqual(text.frame.maxY, window.frame.minY + 0.5)
         }
     }
 

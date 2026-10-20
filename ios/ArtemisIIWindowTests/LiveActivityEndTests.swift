@@ -972,6 +972,29 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertNotEqual(model.nowPlayingFile(), "images/art002e016184.webp")
     }
 
+    /// A speaker with no letters is pushed as an empty string. The backtick line
+    /// at 19:35:05.017Z is that case; the activity must not fall back to the crew id.
+    @MainActor
+    func testLetterlessSpeakerReachesTheLiveActivityAsEmpty() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.playing = true
+        let timeline = try XCTUnwrap(model.timeline)
+        let line = try XCTUnwrap(timeline.lines.first { $0.utc == "2026-04-06T19:35:05.017Z" })
+        XCTAssertEqual(line.track, model.trackID)
+        XCTAssertEqual(line.speaker, "`")
+        XCTAssertNil(SpeakerLabel.display(line.speaker))
+        model.seek(to: line.date)
+        await FlybyLiveActivity.finishQueuedWork()
+        let state = try XCTUnwrap(fake.lastState)
+        XCTAssertEqual(state.speaker, "")
+        XCTAssertFalse(fake.updatedPlaying.isEmpty)
+    }
+
     private static func solidImage(_ color: UIColor) -> UIImage {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
         return renderer.image { context in

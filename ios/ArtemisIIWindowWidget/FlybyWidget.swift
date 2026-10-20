@@ -92,6 +92,10 @@ struct FlybyLiveActivityWidget: Widget {
                     Image(systemName: "pause.fill")
                         .font(.system(size: 11, weight: .semibold))
                         .accessibilityLabel("Paused")
+                } else {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11, weight: .semibold))
+                        .accessibilityLabel("Playing")
                 }
             }
         }
