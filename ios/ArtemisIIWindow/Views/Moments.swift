@@ -147,11 +147,13 @@ struct MomentsSheet: View {
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
-                        Text(milestone.label)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                        TranscriptLineText(
+                            text: milestone.label,
+                            font: .body,
+                            color: .primary,
+                            annotationColor: .secondary
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
                         if milestone.id == "photo:\(Timeline.cabinID)" {
                             Text("Photographed inside the cabin at this moment (art002e016183). The window keeps the view outside.")
                                 .font(.caption2)

@@ -114,6 +114,7 @@ enum FlybyLiveActivity {
         lastPushedAt = .distantPast
         lastPushedState = nil
         pending = nil
+        armedFlushDelay = nil
         flushTask?.cancel()
         flushTask = nil
         return previous
@@ -237,6 +238,8 @@ enum FlybyLiveActivity {
     @MainActor private static var lastPushedState: FlybyActivityAttributes.ContentState?
     @MainActor private static var pending: DeferredActivity?
     @MainActor private static var flushTask: Task<Void, Never>?
+    /// Delay of the latest flush arm. Tests read it. Shipping code still sleeps that long.
+    @MainActor static var armedFlushDelay: TimeInterval?
 
     /// Latest update that arrived inside `minimumPushInterval` and was not immediate.
     /// Flushed once that window has elapsed, including while playback is paused.
@@ -323,6 +326,7 @@ enum FlybyLiveActivity {
 
     @MainActor
     private static func armFlush(after delay: TimeInterval) {
+        armedFlushDelay = delay
         guard !RuntimeHost.isUnitTestHost else { return }
         flushTask?.cancel()
         let nanos = UInt64(max(0.0, delay) * 1_000_000_000)
@@ -339,7 +343,11 @@ enum FlybyLiveActivity {
     private static func deliverPending() async {
         guard let waiting = pending else { return }
         let stamp = waiting.now()
-        guard stamp.timeIntervalSince(lastPushedAt) >= minimumPushInterval else { return }
+        let elapsed = stamp.timeIntervalSince(lastPushedAt)
+        guard elapsed >= minimumPushInterval else {
+            armFlush(after: minimumPushInterval - elapsed)
+            return
+        }
         pending = nil
         flushTask?.cancel()
         flushTask = nil

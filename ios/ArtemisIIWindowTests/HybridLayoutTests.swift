@@ -108,7 +108,7 @@ final class HybridLayoutTests: XCTestCase {
 
         let height: CGFloat = 480
         XCTAssertEqual(RulerMetrics.y(fraction: 0, height: height), RulerMetrics.topInset)
-        XCTAssertEqual(RulerMetrics.y(fraction: 1, height: height), height - RulerMetrics.bottomInset)
+        XCTAssertEqual(RulerMetrics.y(fraction: 1, height: height), height - RulerMetrics.bottomInset(safeArea: 0))
         let y = RulerMetrics.y(fraction: fraction, height: height)
         XCTAssertEqual(RulerMetrics.fraction(y: y, height: height), fraction, accuracy: 0.00001)
         let fromY = try XCTUnwrap(
@@ -221,12 +221,27 @@ final class HybridLayoutTests: XCTestCase {
             )
         }
         XCTAssertEqual(RulerMetrics.y(fraction: 0, height: height), RulerMetrics.topInset, accuracy: 0.01)
-        XCTAssertEqual(RulerMetrics.y(fraction: 1, height: height), height - RulerMetrics.bottomInset, accuracy: 0.01)
+        XCTAssertEqual(RulerMetrics.y(fraction: 1, height: height), height - RulerMetrics.bottomInset(safeArea: 0), accuracy: 0.01)
         XCTAssertEqual(RulerLabelLayout.timeLine, 44, accuracy: 0.001)
         let safe: CGFloat = 34
         let approach = RulerMetrics.y(fraction: 1, height: height, safeArea: safe)
-        XCTAssertEqual(approach, height - RulerMetrics.bottomInset - safe, accuracy: 0.01)
+        XCTAssertEqual(approach, height - RulerMetrics.bottomInset(safeArea: safe), accuracy: 0.01)
         XCTAssertEqual(RulerLabelLayout.timeCenter(tick: approach, height: height, safeArea: safe), approach, accuracy: 0.01)
+        let nameBottom = RulerLabelLayout.nameTop(center: approach) + RulerLabelLayout.nameLine
+        XCTAssertLessThanOrEqual(nameBottom, height - safe)
+    }
+
+    func testSheetHeightGivesTheCaptionItsInsetBack() {
+        let screen: CGFloat = 874
+        let safe: CGFloat = 34
+        let content = PanelMetrics.contentHeight(screenHeight: screen)
+        XCTAssertEqual(content, 437, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(content, 460)
+        XCTAssertGreaterThanOrEqual(content, 340)
+        XCTAssertEqual(PanelMetrics.sheetHeight(screenHeight: screen, safeBottom: safe) - safe, content, accuracy: 0.001)
+        XCTAssertEqual(PanelMetrics.contentHeight(screenHeight: 600), 340, accuracy: 0.001)
+        XCTAssertEqual(PanelMetrics.sheetHeight(screenHeight: 1000, safeBottom: safe), 460 + safe, accuracy: 0.001)
+        XCTAssertEqual(PanelMetrics.sheetHeight(screenHeight: screen, safeBottom: 0), content, accuracy: 0.001)
     }
 
     @MainActor

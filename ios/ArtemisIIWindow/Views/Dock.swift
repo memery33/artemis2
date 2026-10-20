@@ -12,8 +12,7 @@ struct TranscriptSheet: View {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return tracked }
         return tracked.filter { line in
-            line.text.localizedCaseInsensitiveContains(needle)
-                || line.speaker.localizedCaseInsensitiveContains(needle)
+            TranscriptMarkup.matchesSearch(text: line.text, speaker: line.speaker, needle: needle)
         }
     }
 
@@ -25,13 +24,15 @@ struct TranscriptSheet: View {
                     dismiss()
                 }) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("\(line.speaker) · \(Stamp.clock(line.utc)) UTC")
+                        Text(SpeakerLabel.heading(speaker: line.speaker, clock: "\(Stamp.clock(line.utc)) UTC"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text(line.text)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .multilineTextAlignment(.leading)
+                        TranscriptLineText(
+                            text: line.text,
+                            font: .body,
+                            color: .primary,
+                            annotationColor: .secondary
+                        )
                     }
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
@@ -97,7 +98,7 @@ struct AboutView: View {
                         Text(pointing.note)
                             .font(HybridFont.text(13, relativeTo: .footnote))
                     }
-                    Text("App icon cropped from art002e016184, a cabin photo (NASA/Artemis II Crew).")
+                    Text("App icon cropped from art002e016184, a Z9 frame from inside the cabin, toward a window (NASA/Artemis II Crew).")
                         .font(HybridFont.text(13, relativeTo: .footnote))
                     Text("Orion Window plays one clock: the crew recording, the Window 2 and Window 3 photographs, and a crater map of the track. The flyby and the cab run are separate spans. The span and spatial switches are on this screen.")
                         .font(HybridFont.text(13, relativeTo: .footnote))

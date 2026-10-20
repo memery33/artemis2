@@ -22,14 +22,19 @@ struct FlybyLiveActivityWidget: Widget {
                 ProgressView(value: context.state.progress)
                     .tint(HybridColor.gold)
                     .accessibilityLabel("Flyby progress")
-                Text(context.state.nextMilestone)
-                    .font(HybridFont.text(15, relativeTo: .subheadline))
-                    .foregroundStyle(HybridColor.cream)
-                    .lineLimit(2)
+                TranscriptLineText(
+                    text: context.state.nextMilestone,
+                    font: HybridFont.text(15, relativeTo: .subheadline),
+                    color: HybridColor.cream,
+                    annotationColor: HybridColor.dim,
+                    lineLimit: 2
+                )
                 HStack(alignment: .top) {
-                    Text(context.state.speaker)
-                        .font(HybridFont.text(13, relativeTo: .caption))
-                        .foregroundStyle(HybridColor.gold)
+                    if let name = SpeakerLabel.display(context.state.speaker) {
+                        Text(name)
+                            .font(HybridFont.text(13, relativeTo: .caption))
+                            .foregroundStyle(HybridColor.gold)
+                    }
                     Spacer()
                     MissionClockText(state: context.state, font: HybridFont.text(12, relativeTo: .caption), showsElapsed: true)
                 }
@@ -43,43 +48,58 @@ struct FlybyLiveActivityWidget: Widget {
                         .padding(.leading, 8)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.speaker)
-                        .font(HybridFont.text(12, relativeTo: .caption))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .padding(.trailing, 8)
+                    if let name = SpeakerLabel.display(context.state.speaker) {
+                        Text(name)
+                            .font(HybridFont.text(12, relativeTo: .caption))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .padding(.trailing, 8)
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 4) {
                         PausedMarker(playing: context.state.playing, font: HybridFont.text(12, relativeTo: .caption))
                         ProgressView(value: context.state.progress)
                             .tint(HybridColor.gold)
-                        Text(context.state.nextMilestone)
-                            .font(HybridFont.text(12, relativeTo: .caption))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                        TranscriptLineText(
+                            text: context.state.nextMilestone,
+                            font: HybridFont.text(12, relativeTo: .caption),
+                            color: .primary,
+                            annotationColor: .secondary,
+                            lineLimit: 1,
+                            minimumScaleFactor: 0.7
+                        )
                     }
                     .padding(.horizontal, 4)
                 }
             } compactLeading: {
                 MissionClockText(state: context.state, font: HybridFont.text(11, relativeTo: .caption2))
             } compactTrailing: {
-                if context.state.playing {
-                    Text(context.state.speaker)
+                if context.state.playing, let name = SpeakerLabel.display(context.state.speaker) {
+                    Text(name)
                         .font(HybridFont.text(11, relativeTo: .caption2))
-                } else {
+                } else if !context.state.playing {
                     Image(systemName: "pause.fill")
                         .font(.system(size: 11, weight: .semibold))
                         .accessibilityLabel("Paused")
+                } else {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11, weight: .semibold))
+                        .accessibilityLabel("Playing")
                 }
             } minimal: {
-                if context.state.playing {
-                    Text(String(context.state.speaker.prefix(1)))
+                if context.state.playing, let name = SpeakerLabel.display(context.state.speaker) {
+                    let initial: String = String(name.prefix(1))
+                    Text(initial)
                         .font(HybridFont.text(11, relativeTo: .caption2))
-                } else {
+                } else if !context.state.playing {
                     Image(systemName: "pause.fill")
                         .font(.system(size: 11, weight: .semibold))
                         .accessibilityLabel("Paused")
+                } else {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11, weight: .semibold))
+                        .accessibilityLabel("Playing")
                 }
             }
         }

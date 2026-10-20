@@ -60,6 +60,246 @@ final class LayoutFrameUITests: XCTestCase {
         assertNoBlackPane(in: app)
     }
 
+    /// The speaker line and the quote both stay on screen, above the Window 2 control.
+    /// That control sits at the top of the pinned row, so a caption that has
+    /// scrolled under it cannot pass by still sitting above the Lines button.
+    func testPanelCaptionStaysAboveTheFold() {
+        let app = FlybyUILaunch.application()
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let caption = element(named: "panel-caption", in: app)
+        XCTAssertTrue(caption.waitForExistence(timeout: 8))
+        let window = app.buttons["window-nikon"]
+        XCTAssertTrue(window.waitForExistence(timeout: 8))
+        let deadline = Date().addingTimeInterval(5)
+        var texts = caption.staticTexts.allElementsBoundByIndex
+        while Date() < deadline, texts.count < 2 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            texts = caption.staticTexts.allElementsBoundByIndex
+        }
+        XCTAssertGreaterThanOrEqual(texts.count, 2)
+        for text in texts {
+            XCTAssertGreaterThan(text.frame.height, 1)
+            XCTAssertGreaterThanOrEqual(text.frame.minY, 0)
+            XCTAssertLessThanOrEqual(text.frame.maxY, app.frame.height)
+            XCTAssertLessThanOrEqual(text.frame.maxY, window.frame.minY + 0.5)
+        }
+    }
+
+    /// The longest bundled line is Hansen at 19:47:31.641Z. Begin parks there, paused.
+    /// The panel shows two lines of it, still above Window 2, and the pills stay above Lines.
+    func testLongestQuoteStaysAboveTheWindowPills() {
+        let app = FlybyUILaunch.application(["-seekLineUTC", "2026-04-06T19:47:31.641Z"])
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let caption = element(named: "panel-caption", in: app)
+        XCTAssertTrue(caption.waitForExistence(timeout: 8))
+        let quote = caption.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "most prominent ray")).firstMatch
+        XCTAssertTrue(quote.waitForExistence(timeout: 8))
+        let window = app.buttons["window-nikon"]
+        XCTAssertTrue(window.waitForExistence(timeout: 8))
+        let lines = app.buttons["lines-button"]
+        XCTAssertTrue(lines.waitForExistence(timeout: 8))
+        let deadline = Date().addingTimeInterval(5)
+        var texts = caption.staticTexts.allElementsBoundByIndex
+        while Date() < deadline, texts.count < 2 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            texts = caption.staticTexts.allElementsBoundByIndex
+        }
+        XCTAssertGreaterThanOrEqual(texts.count, 2)
+        for text in texts {
+            XCTAssertGreaterThan(text.frame.height, 1)
+            XCTAssertLessThanOrEqual(text.frame.maxY, window.frame.minY + 0.5)
+        }
+        XCTAssertLessThanOrEqual(window.frame.maxY, lines.frame.minY + 0.5)
+        let frameLine = caption.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "art002e")).firstMatch
+        XCTAssertTrue(frameLine.waitForExistence(timeout: 8))
+        // The quote is Fraunces Italic 15. The frame line is Inter 12. Their line boxes
+        // are 19 pt and 15 pt, so one quote line is 19/15 of the measured frame line.
+        let frameDeadline = Date().addingTimeInterval(5)
+        var frameHeight: CGFloat = frameLine.frame.height
+        while Date() < frameDeadline, frameHeight <= 1 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            frameHeight = frameLine.frame.height
+        }
+        XCTAssertGreaterThan(frameHeight, 1)
+        let quoteLine: CGFloat = frameHeight * CGFloat(19) / CGFloat(15)
+        let twoLines: CGFloat = quoteLine * CGFloat(2) + CGFloat(8)
+        XCTAssertGreaterThan(quote.frame.height, 1)
+        XCTAssertLessThanOrEqual(quote.frame.height, twoLines)
+        let toggle = app.buttons["playback-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        XCTAssertTrue(toggle.isHittable)
+    }
+
+    /// AX3 is UICTContentSizeCategoryAccessibilityXL (not the Swift name AccessibilityExtraLarge).
+    /// AX1 AccessibilityM, AX2 AccessibilityL, AX3 AccessibilityXL, AX4 AccessibilityXXL, AX5 AccessibilityXXXL.
+    /// The closed screen stays the phone's width. Once the panel is open, the scroll column
+    /// fills that width, and the transport, speaker, crew, and moment labels stay inside it.
+    func testAccessibilityExtraLargeKeepsTheTransportReachable() {
+        assertClosedScreenStaysOnThePhone(category: "UICTContentSizeCategoryAccessibilityXL")
+    }
+
+    /// AX5, the largest Dynamic Type size. Same closed-screen and open-panel contract as AX3.
+    func testAccessibilityExtraExtraExtraLargeKeepsTheTransportReachable() {
+        assertClosedScreenStaysOnThePhone(category: "UICTContentSizeCategoryAccessibilityXXXL")
+    }
+
+    /// Begin parks on the longest quote. The stage must stay the screen width, and Controls
+    /// must be hittable before the panel opens. The open scroll column, transport, window
+    /// pills, and Lines then stay inside that same width.
+    private func assertClosedScreenStaysOnThePhone(category: String) {
+        let app = FlybyUILaunch.application([
+            "-UIPreferredContentSizeCategoryName",
+            category,
+            "-seekLineUTC",
+            "2026-04-06T19:47:31.641Z",
+        ])
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        let screenShot = XCUIScreen.main.screenshot().image
+        let screenWidth: CGFloat = screenShot.size.width
+        XCTAssertEqual(app.frame.width, screenWidth, accuracy: 1.5)
+        XCTAssertEqual(open.frame.width, app.frame.width, accuracy: 1.5)
+        XCTAssertGreaterThanOrEqual(open.frame.minX, -0.5)
+        XCTAssertLessThanOrEqual(open.frame.maxY, app.frame.maxY + 0.5)
+        XCTAssertTrue(open.isHittable)
+        open.tap()
+
+        let scroll: XCUIElement = app.scrollViews["panel-scroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+        var previous: CGRect = .zero
+        var stable: Int = 0
+        let opened = Date().addingTimeInterval(2)
+        while Date() < opened, stable < 3 {
+            let frame: CGRect = scroll.frame
+            if frame.minX >= 0, frame.height > 1, abs(frame.minY - previous.minY) < 0.5 {
+                stable += 1
+            } else {
+                stable = 0
+            }
+            previous = frame
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertGreaterThanOrEqual(scroll.frame.minX, 0)
+        XCTAssertLessThanOrEqual(scroll.frame.width, app.frame.width + 0.5)
+        XCTAssertLessThanOrEqual(scroll.frame.maxX, app.frame.width + 0.5)
+        XCTAssertGreaterThanOrEqual(scroll.frame.width, app.frame.width - 48)
+
+        let clock: XCUIElement = app.descendants(matching: .any)["mission-clock"]
+        assertWithinWindow(clock, app: app, scroll: scroll)
+        XCTAssertTrue(clock.label.contains("UTC"))
+        XCTAssertTrue(clock.label.contains("MET"))
+        XCTAssertFalse(clock.label.contains("…"))
+
+        assertWithinWindow(app.buttons["skip-back"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["playback-toggle"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["skip-forward"], app: app, scroll: scroll)
+
+        let speaker: XCUIElement = app.staticTexts["speaker-name"]
+        assertWithinWindow(speaker, app: app, scroll: scroll)
+        XCTAssertEqual(speaker.label, "HANSEN")
+        XCTAssertLessThanOrEqual(speaker.frame.height, speaker.frame.width)
+
+        assertWithinWindow(app.buttons["window-nikon"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["window-cab"], app: app, scroll: scroll)
+        for name in ["Wiseman", "Glover", "Koch", "Hansen"] {
+            assertWithinWindow(app.buttons["crew-\(name)"], app: app, scroll: scroll)
+        }
+        assertWithinWindow(app.buttons["lines-button"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["moments-button"], app: app, scroll: scroll)
+        assertWithinWindow(app.buttons["about-button"], app: app, scroll: scroll)
+        assertStackedMoments(app: app, scroll: scroll)
+    }
+
+    /// Each moment's time sits above its name, inside the sheet, and the two do not overlap.
+    private func assertStackedMoments(app: XCUIApplication, scroll: XCUIElement) {
+        let names: [String] = ["milestone-aristarchus", "milestone-wiseman", "milestone-reiner", "milestone-approach"]
+        let panel: XCUIElement = app.descendants(matching: .any)["control-panel"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 4))
+        for name in names {
+            let time: XCUIElement = app.descendants(matching: .any)["\(name)-time"]
+            let title: XCUIElement = app.descendants(matching: .any)["\(name)-name"]
+            reveal(time, app: app, scroll: scroll)
+            reveal(title, app: app, scroll: scroll)
+            assertMomentPiece(time, app: app, panelTop: panel.frame.minY)
+            assertMomentPiece(title, app: app, panelTop: panel.frame.minY)
+            XCTAssertGreaterThanOrEqual(title.frame.minY, time.frame.maxY - 0.5)
+            let overlap: CGRect = time.frame.intersection(title.frame)
+            XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1)
+        }
+    }
+
+    private func reveal(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 8))
+        var attempts: Int = 0
+        while attempts < 16 {
+            let frame: CGRect = element.frame
+            let inColumn: Bool = frame.minY >= scroll.frame.minY - 0.5 && frame.maxY <= app.frame.maxY - 4 && frame.height > 1
+            if inColumn {
+                break
+            }
+            if frame.minY < scroll.frame.minY - 0.5 {
+                break
+            }
+            let start: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+            let end: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48))
+            start.press(forDuration: 0.01, thenDragTo: end)
+            attempts += 1
+        }
+    }
+
+    private func assertMomentPiece(_ element: XCUIElement, app: XCUIApplication, panelTop: CGFloat) {
+        let frame: CGRect = element.frame
+        XCTAssertGreaterThan(frame.width, 1)
+        XCTAssertGreaterThan(frame.height, 1)
+        XCTAssertGreaterThanOrEqual(frame.minX, 0)
+        XCTAssertLessThanOrEqual(frame.maxX, app.frame.width + 0.5)
+        XCTAssertGreaterThanOrEqual(frame.minY, panelTop - 0.5)
+    }
+
+    /// Scrolls the open panel until `element` is on screen, then requires it inside the window.
+    private func assertWithinWindow(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 8))
+        var attempts: Int = 0
+        while attempts < 16 {
+            let frame: CGRect = element.frame
+            let inView: Bool = frame.minY >= -0.5 && frame.maxY <= app.frame.maxY + 0.5
+            if inView, element.isHittable {
+                break
+            }
+            if frame.minY < -0.5 {
+                break
+            }
+            let start: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+            let end: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48))
+            start.press(forDuration: 0.01, thenDragTo: end)
+            attempts += 1
+        }
+        XCTAssertGreaterThanOrEqual(element.frame.minX, 0)
+        XCTAssertLessThanOrEqual(element.frame.maxX, app.frame.width + 0.5)
+        XCTAssertTrue(element.isHittable)
+    }
+
     /// Lines, Moments, and About sit on the safe-area edge, and those controls are at least 44 by 44.
     func testAboutClearsTheHomeIndicatorAndControlsAre44Points() {
         let app = FlybyUILaunch.application()
@@ -86,7 +326,7 @@ final class LayoutFrameUITests: XCTestCase {
         }
 
         let inset = app.frame.maxY - edge.frame.maxY
-        XCTAssertGreaterThanOrEqual(inset, -0.01)
+        XCTAssertGreaterThanOrEqual(inset, 20)
         XCTAssertLessThanOrEqual(about.frame.maxY, app.frame.height - inset + 0.01)
         assertSquareHitTarget(about, minimumSide: minimumSide)
         assertSquareHitTarget(app.buttons["lines-button"], minimumSide: minimumSide)

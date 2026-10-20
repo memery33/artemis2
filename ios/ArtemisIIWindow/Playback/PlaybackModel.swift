@@ -106,6 +106,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     private static let activityPushInterval: TimeInterval = 8
     /// Unit tests set this so the shipping activity policy runs without the audio graph or Now Playing.
     var postsLiveActivityWhileSkippingAudio = false
+    /// Replaces the paused Now Playing write. Nil uses MediaPlayer, which the unit-test host skips.
+    var pausedArtworkWriter: (@MainActor (UIImage) -> Void)?
     /// Set with the scene. The background span-end path reads it when the unit-test host has no display link.
     private var displayClockPaused = false
     /// Wall clock for the silent tail. Shipping code reads `Date`. Tests move this so `backgroundTick` can be stepped.
@@ -174,6 +176,27 @@ final class PlaybackModel: NSObject, ObservableObject {
             }
             return
         }
+        let launchArguments: [String] = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("-ui-tests"),
+           let stamp: String = Self.openingLineUTC(launchArguments),
+           let line: TranscriptLine = timeline?.lines.first(where: { $0.utc == stamp }) {
+            if line.track != trackID {
+                trackID = line.track
+                if timeline?.crew.contains(where: { $0.id == crewID && $0.track == line.track }) != true,
+                   let member = timeline?.crew.first(where: { $0.track == line.track }) {
+                    crewID = member.id
+                }
+            }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                arrived = true
+                utc = line.date
+                ended = false
+                playing = false
+            }
+            return
+        }
         guard !RuntimeHost.isUnitTestHost else {
             arrived = true
             return
@@ -196,6 +219,19 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// Playing from that instant would rewind to the span start.
     nonisolated static func opensAtSpanEnd(_ arguments: [String]) -> Bool {
         arguments.contains("-seekToEnd")
+    }
+
+    /// UI tests pass `-seekLineUTC` and a transcript `utc` so Begin parks on that line.
+    /// Playback stays paused, so a long quote does not scroll away before the panel is measured.
+    /// Ignored unless `-ui-tests` is present, so a normal launch cannot park on a line.
+    nonisolated static func openingLineUTC(_ arguments: [String]) -> String? {
+        guard arguments.contains("-ui-tests") else { return nil }
+        guard let flag = arguments.firstIndex(of: "-seekLineUTC") else { return nil }
+        let valueIndex: Int = flag + 1
+        guard valueIndex < arguments.count else { return nil }
+        let stamp: String = arguments[valueIndex]
+        guard !stamp.isEmpty, !stamp.hasPrefix("-") else { return nil }
+        return stamp
     }
 
     /// `fromHold` reschedules the real file at the offset saved across an interruption.
@@ -703,21 +739,28 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// A decode must not push the Live Activity. After a memory warning the artwork
     /// cache miss used to complete, force a push, and prefetch again, about once per frame.
     /// While paused, the lock-screen artwork is filled in once this file's bitmap is cached.
+    /// Tests set `pausedArtworkWriter` so the assignment can be seen without MediaPlayer.
     func noteFramesDecoded(file: String) {
         frameCacheEpoch += 1
-        guard !playing, file == currentArtworkFile() else { return }
-        guard !skipsAudio, arrived else { return }
+        guard !playing, file == nowPlayingFile(), arrived else { return }
         guard let image = MediaStore.cachedImage(file: file, small: true, maxPixel: 720) else { return }
+        if let pausedArtworkWriter {
+            pausedArtworkWriter(image)
+            return
+        }
+        guard !skipsAudio else { return }
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyArtwork] = Self.makeArtwork(image)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
-    private func currentArtworkFile() -> String {
-        if let frame = pair(for: window).current {
-            return frame.file
-        }
-        return "images/art002e016184.webp"
+    /// The file on the glass. Now Playing uses this, not the Z9 frame a window list might pair.
+    func nowPlayingFile() -> String {
+        shownOnGlass()?.file ?? "images/art002e009611.webp"
+    }
+
+    private func shownOnGlass() -> Frame? {
+        HybridFrames.shown(at: utc, side: window, timeline: timeline, span: activeSpan)
     }
 
     private func reloadAtCurrentTime() {
@@ -1492,7 +1535,13 @@ final class PlaybackModel: NSObject, ObservableObject {
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
         let milestone = FlybyActivityCopy.nextLabel(after: utc, milestones: milestones)
-        let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID
+        let currentSpeaker: String? = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker
+        let speaker: String
+        if let currentSpeaker {
+            speaker = SpeakerLabel.display(currentSpeaker) ?? ""
+        } else {
+            speaker = crewID
+        }
         let spanEnded = utc >= span.end
         let requested = activityEvent
         activityEvent = false
@@ -1541,7 +1590,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func artworkID() -> String {
-        pair(for: window).current?.nasaID ?? ""
+        shownOnGlass()?.nasaID ?? ""
     }
 
     func pair(for side: WindowSide) -> FramePair {
@@ -1572,7 +1621,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func artworkImage() -> UIImage? {
-        let file = currentArtworkFile()
+        let file = nowPlayingFile()
         if let image = MediaStore.cachedImage(file: file, small: true, maxPixel: 720) {
             return image
         }
@@ -1686,11 +1735,18 @@ enum MediaStore {
 
     /// Lands a decoded frame. Tests use it to prove a memory warning keeps the bitmap on screen.
     static func stage(image: UIImage, file: String, maxPixel: CGFloat) {
-        let key = cacheKey(file: file, small: false, maxPixel: maxPixel)
+        stage(image: image, file: file, small: false, maxPixel: maxPixel)
+    }
+
+    /// `small` stores the 720 px Now Playing bitmap. The full-size stage also pins that bitmap.
+    static func stage(image: UIImage, file: String, small: Bool, maxPixel: CGFloat) {
+        let key = cacheKey(file: file, small: small, maxPixel: maxPixel)
         let name = key as String
         let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 1
         cache.setObject(image, forKey: key, cost: cost)
-        rememberDisplayed(name, image)
+        if !small {
+            rememberDisplayed(name, image)
+        }
     }
 
     /// Decodes off the main thread and stores the image on the main actor.

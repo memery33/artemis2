@@ -61,6 +61,8 @@ def test_speaker_normalization_from_real_variants():
     assert normalize_speaker("SCIENCE") == ("SCIENCE", "")
     assert normalize_speaker("") == ("", "")
     assert normalize_speaker(None) == ("", "")
+    assert normalize_speaker("   ") == ("", "")
+    assert normalize_speaker("`") == ("", "")
 
 
 def test_hertzsprung_is_not_geographic():

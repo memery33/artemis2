@@ -19,7 +19,9 @@ def normalize_speaker(raw: str | None) -> tuple[str, str]:
     """Return ``(speaker, role)``.
 
     ``speaker`` is a crew surname, ``CAPCOM``, ``SCIENCE``, ``Crew``, or the
-    cleaned original text. ``role`` is the bracketed qualifier when one exists.
+    cleaned original text when that text contains a letter. A blank or a
+    punctuation token such as a backtick is no speaker. ``role`` is the
+    bracketed qualifier when one exists.
     """
     if raw is None:
         return "", ""
@@ -42,4 +44,7 @@ def normalize_speaker(raw: str | None) -> tuple[str, str]:
         return "SCIENCE", role
     if upper == "CREW":
         return "Crew", role
+    # A punctuation token such as the source backtick is not a person.
+    if not any(character.isalpha() for character in bare):
+        return "", role
     return bare, role
