@@ -111,6 +111,8 @@ enum FlybyLiveActivity {
     static func install(_ replacement: any FlybyActivityClient) -> any FlybyActivityClient {
         let previous = client
         client = replacement
+        lastPushedAt = .distantPast
+        lastPushedState = nil
         return previous
     }
 
@@ -211,11 +213,19 @@ enum FlybyLiveActivity {
     static func scheduleEndAllImmediately() -> Task<Void, Never> {
         let ending = client
         let ids = ending.identifiers()
+        lastPushedState = nil
         return enqueue {
             await ending.end(identifiers: ids)
         }
     }
 
+    /// Ceiling for ordinary pushes. Play, pause, a line or milestone change, and the span end pass `immediate` and skip this.
+    @MainActor private static let minimumPushInterval: TimeInterval = 1
+    @MainActor private static var lastPushedAt = Date.distantPast
+    @MainActor private static var lastPushedState: FlybyActivityAttributes.ContentState?
+
+    /// `immediate` is only for play/pause, a line or milestone change, and the span end.
+    /// Everything else, including a frame decode after a memory warning, waits out `minimumPushInterval` and drops a repeat of the last state.
     @MainActor
     static func sync(
         arrived: Bool,
@@ -225,7 +235,8 @@ enum FlybyLiveActivity {
         speaker: String,
         clock: String,
         elapsedText: String,
-        staleDate: Date?
+        staleDate: Date?,
+        immediate: Bool
     ) {
         enqueue {
             let state = FlybyActivityAttributes.ContentState(
@@ -238,14 +249,21 @@ enum FlybyLiveActivity {
             )
             guard arrived else {
                 let ids = client.identifiers()
+                lastPushedState = nil
                 await client.end(identifiers: ids)
                 return
             }
             if client.identifiers().isEmpty {
                 guard playing else { return }
+                lastPushedAt = Date()
+                lastPushedState = state
                 await client.request(state, staleDate: staleDate)
                 return
             }
+            if lastPushedState == state { return }
+            if !immediate, Date().timeIntervalSince(lastPushedAt) < minimumPushInterval { return }
+            lastPushedAt = Date()
+            lastPushedState = state
             await client.update(state, staleDate: staleDate)
         }
     }

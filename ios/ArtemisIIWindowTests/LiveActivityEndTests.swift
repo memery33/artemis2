@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import ArtemisIIWindow
 
@@ -356,8 +357,8 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertLessThan(model.utc, span.end)
     }
 
-    /// A ruler drag inside the flyby, including a finger that reaches into the cab run,
-    /// stays in the active span and does not end the Live Activity.
+    /// A ruler drag stays in the flyby. A finger that reaches the cab run, or any date past
+    /// the span end, clamps to end − 8 s. The Live Activity stays up.
     @MainActor
     func testDraggingTheRulerKeepsTheLiveActivity() async throws {
         let fake = FakeFlybyActivities(identifiers: ["live"])
@@ -378,7 +379,11 @@ final class LiveActivityEndTests: XCTestCase {
         model.scrubRuler(to: cab.start.addingTimeInterval(30))
         XCTAssertEqual(model.range, .flyby)
         XCTAssertEqual(model.window, .nikon)
-        XCTAssertEqual(model.utc.timeIntervalSince(inside), 0, accuracy: 0.01)
+        XCTAssertEqual(
+            model.utc.timeIntervalSince(span.end.addingTimeInterval(-PlaybackModel.scrubEndMargin)),
+            0,
+            accuracy: 0.01
+        )
         model.scrubRuler(to: span.end.addingTimeInterval(-1))
         XCTAssertEqual(
             model.utc.timeIntervalSince(span.end),
@@ -625,5 +630,95 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(model.ended)
         XCTAssertTrue(model.playing)
         XCTAssertEqual(model.range, .flyby)
+    }
+
+    /// A memory warning may retry decodes. Those completions must not push the Live Activity on every frame.
+    @MainActor
+    func testMemoryWarningKeepsTheLiveActivityCadence() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.playing = true
+        let span = try XCTUnwrap(model.activeSpan)
+        model.seek(to: span.start.addingTimeInterval(30))
+        await FlybyLiveActivity.finishQueuedWork()
+        let file = try XCTUnwrap(model.pair(for: model.window).current?.file)
+
+        let stamp = CACurrentMediaTime()
+        let calmStart = fake.updatedPlaying.count
+        for _ in 0..<30 {
+            model.advanceDisplayLinkForTest(to: stamp)
+        }
+        await FlybyLiveActivity.finishQueuedWork()
+        let calm = fake.updatedPlaying.count - calmStart
+        XCTAssertEqual(calm, 0, "ordinary ticks pushed \(calm) times")
+
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        MediaStore.allowRetries()
+        let warned = fake.updatedPlaying.count
+        for _ in 0..<60 {
+            model.noteFramesDecoded(file: file)
+        }
+        for _ in 0..<30 {
+            model.advanceDisplayLinkForTest(to: stamp)
+        }
+        await FlybyLiveActivity.finishQueuedWork()
+        let pushed = fake.updatedPlaying.count - warned
+        XCTAssertEqual(pushed, 0, "memory warning pushed \(pushed) times across 60 decodes and 30 ticks")
+    }
+
+    /// The purge drops the spare pin and keeps the bitmap that was on screen.
+    @MainActor
+    func testMemoryWarningKeepsTheDisplayedFrame() {
+        let shown = Self.solidImage(UIColor(white: 0.9, alpha: 1))
+        let spare = Self.solidImage(UIColor(white: 0.1, alpha: 1))
+        MediaStore.stage(image: spare, file: "images/spare.webp", maxPixel: 800)
+        MediaStore.stage(image: shown, file: "images/shown.webp", maxPixel: 800)
+
+        MediaStore.allowRetries()
+
+        let kept = MediaStore.cachedImage(file: "images/shown.webp", small: false, maxPixel: 800)
+        XCTAssertTrue(kept === shown)
+        XCTAssertNil(MediaStore.cachedImage(file: "images/spare.webp", small: false, maxPixel: 800))
+    }
+
+    /// Replay parks in the gap before the first file. Locking there used to leave the clock on
+    /// display-link time, which crawls while the screen is off. The locked gap follows wall time.
+    @MainActor
+    func testLockRightAfterReplayFollowsWallTime() async throws {
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        model.playing = true
+        model.utc = span.start.addingTimeInterval(120)
+        let origin = Date(timeIntervalSince1970: 1_800_000_000)
+        model.wallNow = { origin }
+        model.replay()
+        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 0, accuracy: 0.001)
+        XCTAssertTrue(model.playing)
+        XCTAssertFalse(model.ended)
+
+        model.setSceneActive(false)
+        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 0, accuracy: 0.05)
+        XCTAssertFalse(model.ended)
+
+        model.wallNow = { origin.addingTimeInterval(18) }
+        model.backgroundTick()
+        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 18, accuracy: 0.05)
+        XCTAssertTrue(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertLessThan(model.utc, span.end)
+    }
+
+    private static func solidImage(_ color: UIColor) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
+        return renderer.image { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }
     }
 }

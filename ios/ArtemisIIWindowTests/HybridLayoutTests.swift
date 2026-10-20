@@ -44,6 +44,9 @@ final class HybridLayoutTests: XCTestCase {
                 space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return false }
+            // The view mirrors x only (`scaleEffect(x: -1)`). This draw also flips y, and the
+            // bitmap's first row is then the bottom of the file. Sampling view y directly read
+            // file row 483: peak 169.7 against a ring of 165.4. The crater is file row 179.
             context.translateBy(x: 0, y: CGFloat(height))
             context.scaleBy(x: 1, y: -1)
             context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
@@ -55,9 +58,9 @@ final class HybridLayoutTests: XCTestCase {
             lat: 23.73,
             in: CGSize(width: CGFloat(width), height: CGFloat(height))
         )
-        // The file is drawn mirrored, so west-left x maps back to the file by subtracting from the width.
+        // West-left x maps back to the file by subtracting from the width. Y is inverted in this buffer.
         let centerX = width - Int(point.x.rounded())
-        let centerY = Int(point.y.rounded())
+        let centerY = height - 1 - Int(point.y.rounded())
         func luminance(_ x: Int, _ y: Int) -> Double {
             let clampedX = min(max(x, 0), width - 1)
             let clampedY = min(max(y, 0), height - 1)

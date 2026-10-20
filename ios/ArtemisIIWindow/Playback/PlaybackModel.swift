@@ -377,7 +377,11 @@ final class PlaybackModel: NSObject, ObservableObject {
                 if playing { loadSegment(segment) }
             }
         } else {
+            // The span start is before the first file. Drop the file that was playing
+            // so Replay does not restart it at offset 0 while the clock is in that gap.
             holdSeconds = 0
+            currentFile = nil
+            audioFile = nil
             stopPlayer()
         }
         refreshNowPlaying(force: true)
@@ -593,6 +597,11 @@ final class PlaybackModel: NSObject, ObservableObject {
             lastWall = nil
             if playing {
                 chainForward(from: utc)
+                // The opening gap after Replay has no audible file yet. Anchor it here,
+                // at the lock, so the first background tick measures from this instant.
+                if silentWall == nil {
+                    armSilentClock(at: utc, wall: wallNow())
+                }
                 startBackgroundClock()
             }
             // The display link will not tick in the background. Push the current state
@@ -690,10 +699,11 @@ final class PlaybackModel: NSObject, ObservableObject {
         player.stop()
     }
 
-    func noteFramesDecoded(file: String) {
+    /// The view reads `frameCacheEpoch` and swaps in the bitmap once it is cached.
+    /// A decode must not push the Live Activity. After a memory warning the artwork
+    /// cache miss used to complete, force a push, and prefetch again, about once per frame.
+    func noteFramesDecoded(file _: String) {
         frameCacheEpoch += 1
-        guard file == currentArtworkFile() else { return }
-        refreshNowPlaying(force: true)
     }
 
     private func currentArtworkFile() -> String {
@@ -911,6 +921,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// Schedules the real file to begin after `delay` seconds of silence.
     /// The silence is the gap in the archive, not a generated bed.
     private func scheduleAtRealStart(_ segment: Segment, delay: TimeInterval) {
+        guard !skipsAudio else { return }
         guard delay > 0.05 else {
             loadSegment(segment)
             return
@@ -1134,13 +1145,15 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// Locked clock step. The background timer and the silent-tail unit test both call this.
     func backgroundTick() {
         guard playing, displayClockPaused, !rebuilding, !scrubbing else { return }
-        if !skipsAudio, holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
+        if !skipsAudio, player.isPlaying, let segment = segmentForCurrentFile(), renderedSeconds() > 0 {
+            // The file is audible. It is the clock. A wall anchor left from the gap must not keep adding.
+            holdUntil = nil
             clearSilentClock()
             utc = segment.start.addingTimeInterval(renderedSeconds())
-        } else if holdUntil == nil, segment(at: utc) == nil, upcomingSegment(after: utc) == nil {
-            let now = wallNow()
-            armSilentClock(at: utc, wall: now)
-            sampleSilentClock(now: now)
+        } else {
+            // No audible sample: the opening gap after Replay, an armed lead, or the silent tail.
+            // Display-link timestamps crawl while the screen is off, so this follows `wallNow`.
+            advanceLockedClock(now: wallNow())
         }
         if let end = activeSpan?.end, utc >= end {
             endAtSpanEnd(user: true)
@@ -1148,6 +1161,16 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         followSegment()
         refreshNowPlaying(force: false)
+    }
+
+    /// Moves the locked clock by wall time since `armSilentClock`. Reaching an armed file drops the arm
+    /// so the next step can load that file at the caught-up offset.
+    private func advanceLockedClock(now: Date) {
+        armSilentClock(at: utc, wall: now)
+        sampleSilentClock(now: now)
+        if let armed = holdUntil, utc >= armed {
+            holdUntil = nil
+        }
     }
 
     // MARK: - Session
@@ -1471,9 +1494,10 @@ final class PlaybackModel: NSObject, ObservableObject {
         let milestoneChanged = milestone != lastActivityMilestone
         let endedChanged = spanEnded != lastActivityEnded
         let due = playing && Date().timeIntervalSince(lastActivityPush) >= Self.activityPushInterval
-        // Background, pause, seek, span end, and a line or milestone change pass through.
-        // While playing, a push also happens every `activityPushInterval` so the static elapsed line moves.
-        guard force || requested || becameMissing || playbackChanged || speakerChanged || milestoneChanged || endedChanged || due else { return }
+        // Play, pause, a line or milestone, and the span end are immediate.
+        // The 8 s cadence moves the static elapsed line. A frame decode is not a reason to push.
+        let immediate = playbackChanged || speakerChanged || milestoneChanged || endedChanged
+        guard force || requested || becameMissing || immediate || due else { return }
         lastActivityPush = Date()
         lastActivitySpeaker = speaker
         lastActivityMilestone = milestone
@@ -1493,7 +1517,8 @@ final class PlaybackModel: NSObject, ObservableObject {
             speaker: speaker,
             clock: reading.clock,
             elapsedText: reading.elapsedText,
-            staleDate: FlybyActivityCopy.staleDate(playing: playing, utc: utc, spanEnd: span.end, rate: rate)
+            staleDate: FlybyActivityCopy.staleDate(playing: playing, utc: utc, spanEnd: span.end, rate: rate),
+            immediate: immediate
         )
     }
 
@@ -1572,6 +1597,9 @@ enum MediaStore {
     private static var waiters: [String: @MainActor () -> Void] = [:]
     private static var pinned: [String: UIImage] = [:]
     private static var pinOrder: [String] = []
+    /// The bitmap last handed to the glass. A purge keeps this until a newer decode replaces it.
+    private static var displayedName: String?
+    private static var displayedImage: UIImage?
     private static var memoryObserver: NSObjectProtocol?
 
     static func observeMemoryWarning() {
@@ -1591,10 +1619,14 @@ enum MediaStore {
         failed.removeAll()
         attempts.removeAll()
         cache.removeAllObjects()
-        // The two pins are about 18 MB each. Keep only the frame most recently shown.
-        while pinOrder.count > 1 {
-            let oldest = pinOrder.removeFirst()
-            pinned.removeValue(forKey: oldest)
+        let keptName = displayedName
+        let keptImage = displayedImage
+        pinned.removeAll()
+        pinOrder.removeAll()
+        // The other pin is about 18 MB. The bitmap on screen stays until its replacement has decoded.
+        if let keptName, let keptImage {
+            pinned[keptName] = keptImage
+            pinOrder = [keptName]
         }
     }
 
@@ -1626,11 +1658,27 @@ enum MediaStore {
         let key = cacheKey(file: file, small: small, maxPixel: maxPixel)
         let name = key as String
         if let cached = cache.object(forKey: key) {
-            if !small { pin(name, cached) }
+            if !small { rememberDisplayed(name, cached) }
             return cached
         }
         guard !small else { return nil }
-        return pinned[name]
+        if let image = pinned[name] {
+            rememberDisplayed(name, image)
+            return image
+        }
+        if displayedName == name, let displayedImage {
+            return displayedImage
+        }
+        return nil
+    }
+
+    /// Lands a decoded frame. Tests use it to prove a memory warning keeps the bitmap on screen.
+    static func stage(image: UIImage, file: String, maxPixel: CGFloat) {
+        let key = cacheKey(file: file, small: false, maxPixel: maxPixel)
+        let name = key as String
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 1
+        cache.setObject(image, forKey: key, cost: cost)
+        rememberDisplayed(name, image)
     }
 
     /// Decodes off the main thread and stores the image on the main actor.
@@ -1687,8 +1735,16 @@ enum MediaStore {
         }
         let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
         cache.setObject(image, forKey: name as NSString, cost: cost)
+        // Pin the decode, but do not call it the frame on screen until something reads it.
+        // The next frame finishing prefetch must not become the one a purge keeps.
         if hold { pin(name, image) }
         ready?()
+    }
+
+    private static func rememberDisplayed(_ name: String, _ image: UIImage) {
+        displayedName = name
+        displayedImage = image
+        pin(name, image)
     }
 
     private static func pin(_ name: String, _ image: UIImage) {

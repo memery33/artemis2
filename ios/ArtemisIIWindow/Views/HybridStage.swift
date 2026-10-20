@@ -821,11 +821,14 @@ struct ControlPanel: View {
                     clocks
                     transport
                     DocumentaryCaption(compact: true, includeCredit: false, identifier: "panel-caption")
-                    windowRow
                 }
                 .padding(.bottom, 8)
             }
             .scrollBounceBehavior(.basedOnSize)
+            windowRow
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+                .fixedSize(horizontal: false, vertical: true)
             CrewRow()
             secondaryRow
         }
