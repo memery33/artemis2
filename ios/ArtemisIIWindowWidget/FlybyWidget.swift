@@ -40,10 +40,14 @@ struct FlybyLiveActivityWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     MissionClockText(state: context.state, font: HybridFont.text(12, relativeTo: .caption))
+                        .padding(.leading, 8)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(context.state.speaker)
                         .font(HybridFont.text(12, relativeTo: .caption))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(.trailing, 8)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -52,8 +56,10 @@ struct FlybyLiveActivityWidget: Widget {
                             .tint(HybridColor.gold)
                         Text(context.state.nextMilestone)
                             .font(HybridFont.text(12, relativeTo: .caption))
-                            .lineLimit(2)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
+                    .padding(.horizontal, 4)
                 }
             } compactLeading: {
                 MissionClockText(state: context.state, font: HybridFont.text(11, relativeTo: .caption2))
@@ -96,10 +102,9 @@ private struct PausedMarker: View {
     }
 }
 
-/// Absolute mission UTC from the last push, plus, on the Lock Screen, elapsed time since the span start.
-/// The UTC line is the static string. It is not a `showsHours` timer: that redacts seconds to `--` and
-/// painted the day-long count about five minutes fast. The elapsed line ticks only while playing.
-/// VoiceOver reads the static strings, so it does not speak a redacted timer.
+/// Absolute mission UTC and, on the Lock Screen, elapsed time. Both strings come from the last push.
+/// Neither is a timer: a ticking elapsed count ran ahead of the UTC line, then stuck at the span length.
+/// VoiceOver reads the same static strings.
 struct MissionClockText: View {
     var state: FlybyActivityAttributes.ContentState
     var font: Font
@@ -108,8 +113,12 @@ struct MissionClockText: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 1) {
             Text(state.clock)
-            if showsElapsed {
-                elapsedLine
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            if showsElapsed, !state.elapsedText.isEmpty {
+                Text(state.elapsedText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
         }
         .font(font.monospacedDigit())
@@ -120,16 +129,7 @@ struct MissionClockText: View {
     }
 
     private var accessibilityText: String {
-        showsElapsed ? "\(state.clock), \(state.elapsedText)" : state.clock
-    }
-
-    @ViewBuilder
-    private var elapsedLine: some View {
-        if state.playing, state.elapsedEnd > state.elapsedStart {
-            (Text(timerInterval: state.elapsedStart...state.elapsedEnd, countsDown: false)
-                + Text(" into the flyby"))
-        } else {
-            Text(state.elapsedText)
-        }
+        guard showsElapsed, !state.elapsedText.isEmpty else { return state.clock }
+        return "\(state.clock), \(state.elapsedText)"
     }
 }

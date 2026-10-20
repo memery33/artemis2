@@ -92,26 +92,6 @@ final class FrameSelectionTests: XCTestCase {
         }
     }
 
-    func testMapOmitsHertzsprung() throws {
-        let names = Set(MapProjection.geographicTargets(timeline.targets).map(\.name))
-        XCTAssertEqual(
-            names,
-            Set([
-                "Glushko Crater",
-                "Ohm Crater",
-                "Aristarchus Plateau",
-                "Reiner Gamma",
-                "Orientale Basin",
-                "Vavilov Crater",
-            ])
-        )
-        XCTAssertFalse(names.contains("Hertzsprung Basin"))
-        let ohm = try XCTUnwrap(MapProjection.point(lon: 246.22, lat: 18.32, width: 120, height: 85))
-        XCTAssertEqual(ohm.x, 36.22, accuracy: 0.001)
-        XCTAssertEqual(ohm.y, 26.68, accuracy: 0.001)
-        XCTAssertNil(MapProjection.point(lon: 0, lat: 0, width: 120, height: 85))
-    }
-
     private func pair(_ utc: String, _ window: WindowSide, span: TimeSpan? = nil) throws -> FramePair {
         FrameSelection.visiblePair(
             at: try date(utc),

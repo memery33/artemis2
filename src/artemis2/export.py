@@ -154,7 +154,7 @@ def export_replay(
             "provider": pointing.name,
             "note": (
                 "No per-window attitude. The NAIF SPICE bundle is delayed and no CK/FK/SCLK "
-                "is public. Footprints are georeferenced Nikon frames, not a window boresight. "
+                "is public. The photographs are not drawn as footprints, and there is no window boresight. "
                 "A PointingProvider with boresight(utc, window_id) is the drop-in seam."
             ),
         },

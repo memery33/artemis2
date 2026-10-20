@@ -69,6 +69,7 @@ struct HybridStage: View {
         GeometryReader { geo in
             let panelHeight = min(460, max(340, geo.size.height * 0.5))
             let pixels = ScreenImage.maxPixel(size: geo.size, scale: displayScale)
+            let safeBottom = geo.safeAreaInsets.bottom
             ZStack {
                 HybridColor.ground.ignoresSafeArea()
                 if crater == nil {
@@ -76,7 +77,7 @@ struct HybridStage: View {
                         .matchedGeometryEffect(id: "flyby-photo", in: flight)
                 }
                 vignette
-                chrome(panelHeight: panelHeight, size: geo.size)
+                chrome(panelHeight: panelHeight, size: geo.size, safeBottom: safeBottom)
                     .modifier(ApproachChrome())
                 if let crater {
                     CraterPage(
@@ -176,7 +177,7 @@ struct HybridStage: View {
         )
     }
 
-    private func chrome(panelHeight: CGFloat, size: CGSize) -> some View {
+    private func chrome(panelHeight: CGFloat, size: CGSize, safeBottom: CGFloat) -> some View {
         let shift = sheetShift(height: panelHeight)
         let revealed = panelHeight - shift
         return ZStack {
@@ -204,7 +205,7 @@ struct HybridStage: View {
                 }
             }
             if crater == nil {
-                sheet(panelHeight: panelHeight)
+                sheet(panelHeight: panelHeight, safeBottom: safeBottom)
                     .offset(y: shift)
                 // Stay mounted for the whole drag. Removing it mid-gesture
                 // cancelled the swipe after the sheet had risen about 90 pt.
@@ -217,12 +218,13 @@ struct HybridStage: View {
         .frame(width: size.width, height: size.height)
     }
 
-    private func sheet(panelHeight: CGFloat) -> some View {
+    private func sheet(panelHeight: CGFloat, safeBottom: CGFloat) -> some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: 0) {
                 ControlPanel(
                     height: panelHeight,
+                    safeBottom: safeBottom,
                     onClose: { setPanelOpen(false) },
                     onDragChanged: trackPanelDrag,
                     onDragEnded: { translation, predicted, velocity in
@@ -234,7 +236,7 @@ struct HybridStage: View {
                         )
                     }
                 )
-                FlybyRuler { kind in
+                FlybyRuler(safeBottom: safeBottom) { kind in
                     crater = kind
                 }
                 .frame(width: dynamicTypeSize.isAccessibilitySize ? 228 : 176)
@@ -305,6 +307,7 @@ struct HybridStage: View {
                 .allowsHitTesting(!panelOpen)
                 .gesture(panelDrag(panelHeight: panelHeight))
                 .accessibilityElement()
+                .accessibilityHidden(panelOpen)
                 .accessibilityIdentifier("panel-edge")
                 .accessibilityLabel("Swipe up for controls")
             Color.clear
@@ -606,12 +609,31 @@ enum RulerLabelMarks {
 }
 
 enum RulerLabelLayout {
+    /// Minimum hit height. The time text itself is `timeBand` and stays centered on the tick.
     static let timeLine: CGFloat = 44
-    static let nameOffset: CGFloat = 28
+    static let timeBand: CGFloat = 16
+    /// The name starts at the bottom of the time band and hangs below it.
+    static let nameOffset: CGFloat = 16
+    static let nameLine: CGFloat = 14
 
-    static func timeCenter(tick: CGFloat, height: CGFloat) -> CGFloat {
-        let half = timeLine / 2
-        return min(max(half, tick), max(half, height - half))
+    /// Keeps the time line on the rail. The rail inset is 16 pt, so clamping to half of the 44 pt hit target sat 6 pt off the tick.
+    static func timeCenter(tick: CGFloat, height: CGFloat, safeArea: CGFloat = 0) -> CGFloat {
+        let low = RulerMetrics.topInset
+        let high = max(low, height - RulerMetrics.bottomInset(safeArea: safeArea))
+        return min(max(low, tick), high)
+    }
+
+    static func nameTop(center: CGFloat) -> CGFloat {
+        center - timeBand / 2 + nameOffset
+    }
+}
+
+/// Hit target under a ruler label. It grows downward from the time band so it does not cover the name above.
+private struct RulerHitShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var hit = rect
+        hit.size.height = max(rect.height, RulerLabelLayout.timeLine)
+        return Path(hit)
     }
 }
 
@@ -619,16 +641,20 @@ enum RulerMetrics {
     static let topInset: CGFloat = 16
     static let bottomInset: CGFloat = 16
 
-    static func trackHeight(_ height: CGFloat) -> CGFloat {
-        max(1, height - topInset - bottomInset)
+    static func bottomInset(safeArea: CGFloat) -> CGFloat {
+        bottomInset + max(0, safeArea)
     }
 
-    static func y(fraction: Double, height: CGFloat) -> CGFloat {
-        topInset + CGFloat(min(1, max(0, fraction))) * trackHeight(height)
+    static func trackHeight(_ height: CGFloat, safeArea: CGFloat = 0) -> CGFloat {
+        max(1, height - topInset - bottomInset(safeArea: safeArea))
     }
 
-    static func fraction(y: CGFloat, height: CGFloat) -> Double {
-        let track = trackHeight(height)
+    static func y(fraction: Double, height: CGFloat, safeArea: CGFloat = 0) -> CGFloat {
+        topInset + CGFloat(min(1, max(0, fraction))) * trackHeight(height, safeArea: safeArea)
+    }
+
+    static func fraction(y: CGFloat, height: CGFloat, safeArea: CGFloat = 0) -> Double {
+        let track = trackHeight(height, safeArea: safeArea)
         return Double(min(1, max(0, (y - topInset) / track)))
     }
 }
@@ -778,6 +804,7 @@ struct DocumentaryCaption: View {
 struct ControlPanel: View {
     @EnvironmentObject private var model: PlaybackModel
     var height: CGFloat
+    var safeBottom: CGFloat
     var onClose: () -> Void
     var onDragChanged: (CGFloat) -> Void
     var onDragEnded: (_ translation: CGFloat, _ predicted: CGFloat, _ velocity: CGFloat) -> Void
@@ -795,16 +822,16 @@ struct ControlPanel: View {
                     transport
                     DocumentaryCaption(compact: true, includeCredit: false, identifier: "panel-caption")
                     windowRow
-                    CrewRow()
-                    secondaryRow
                 }
                 .padding(.bottom, 8)
             }
             .scrollBounceBehavior(.basedOnSize)
+            CrewRow()
+            secondaryRow
         }
         .padding(.leading, 20)
         .padding(.trailing, 8)
-        .padding(.bottom, 72)
+        .padding(.bottom, safeBottom)
         .frame(height: height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.colorScheme, .dark)
@@ -966,6 +993,7 @@ struct ControlPanel: View {
 
 struct FlybyRuler: View {
     @EnvironmentObject private var model: PlaybackModel
+    var safeBottom: CGFloat = 0
     var onCrater: (CraterKind) -> Void
 
     var body: some View {
@@ -1010,7 +1038,7 @@ struct FlybyRuler: View {
         return ZStack(alignment: .topTrailing) {
             Capsule()
                 .fill(HybridColor.cream.opacity(0.32))
-                .frame(width: 1, height: RulerMetrics.trackHeight(height))
+                .frame(width: 1, height: RulerMetrics.trackHeight(height, safeArea: safeBottom))
                 .padding(.trailing, 18)
                 .offset(y: RulerMetrics.topInset)
             if let window = timeline?.window {
@@ -1091,7 +1119,7 @@ struct FlybyRuler: View {
         let centerX = width - gutter - labelWidth / 2
         let tick = y(date, height: height)
         // The time line, not the name under it, is centered on the tick.
-        let centerY = RulerLabelLayout.timeCenter(tick: tick, height: height)
+        let centerY = RulerLabelLayout.timeCenter(tick: tick, height: height, safeArea: safeBottom)
         return label()
             .frame(width: labelWidth, alignment: .trailing)
             .position(x: centerX, y: centerY)
@@ -1105,26 +1133,8 @@ struct FlybyRuler: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Text(time)
-                .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
-                .fontWeight(.semibold)
-                .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: RulerLabelLayout.timeLine,
-                    alignment: Alignment(horizontal: .trailing, vertical: .center)
-                )
-                .overlay(alignment: .topTrailing) {
-                    Text(name)
-                        .font(HybridFont.text(11, relativeTo: .caption2))
-                        .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.trailing)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.top, RulerLabelLayout.nameOffset)
-                }
-                .contentShape(Rectangle())
+            rulerLabel(time: time, name: name, now: now)
+                .contentShape(RulerHitShape())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)
@@ -1159,18 +1169,11 @@ struct FlybyRuler: View {
                 model.seek(to: date, markEnd: false)
             }
         } else {
-            VStack(alignment: .trailing, spacing: 0) {
-                Text(ClockMath.utcText(date).replacingOccurrences(of: " UTC", with: ""))
-                    .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
-                    .fontWeight(.semibold)
-                Text("Closest approach")
-                    .font(HybridFont.text(11, relativeTo: .caption2))
-                    .lineLimit(3)
-                    .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .foregroundStyle(isNow(date) ? HybridColor.gold : HybridColor.cream)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+            rulerLabel(
+                time: ClockMath.utcText(date).replacingOccurrences(of: " UTC", with: ""),
+                name: "Closest approach",
+                now: isNow(date)
+            )
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("milestone-approach")
             .accessibilityLabel("Closest approach, outside the flyby and the cab run")
@@ -1178,7 +1181,29 @@ struct FlybyRuler: View {
     }
 
     private func y(_ date: Date, height: CGFloat) -> CGFloat {
-        RulerMetrics.y(fraction: HybridClock.fraction(date: date, timeline: model.timeline), height: height)
+        RulerMetrics.y(
+            fraction: HybridClock.fraction(date: date, timeline: model.timeline),
+            height: height,
+            safeArea: safeBottom
+        )
+    }
+
+    private func rulerLabel(time: String, name: String, now: Bool) -> some View {
+        Text(time)
+            .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
+            .fontWeight(.semibold)
+            .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
+            .frame(maxWidth: .infinity, minHeight: RulerLabelLayout.timeBand, alignment: .trailing)
+            .overlay(alignment: .topTrailing) {
+                Text(name)
+                    .font(HybridFont.text(11, relativeTo: .caption2))
+                    .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.top, RulerLabelLayout.nameOffset)
+            }
     }
 
     private func scrub(height: CGFloat) -> some Gesture {
@@ -1188,13 +1213,22 @@ struct FlybyRuler: View {
                 if !model.scrubbing { model.beginScrub() }
                 model.scrubRuler(to: date)
             }
-            .onEnded { _ in
+            .onEnded { value in
+                // A fast flick's finger can still be inside the span while the predicted end is past it.
+                let predicted = date(atY: value.predictedEndLocation.y, height: height)
+                if let predicted {
+                    if !model.scrubbing { model.beginScrub() }
+                    model.scrubRuler(to: predicted)
+                }
                 model.endScrub(markEnd: false)
             }
     }
 
     private func date(atY y: CGFloat, height: CGFloat) -> Date? {
-        HybridClock.date(atFraction: RulerMetrics.fraction(y: y, height: height), timeline: model.timeline)
+        HybridClock.date(
+            atFraction: RulerMetrics.fraction(y: y, height: height, safeArea: safeBottom),
+            timeline: model.timeline
+        )
     }
 }
 

@@ -187,10 +187,7 @@ struct EndCard: View {
                     .font(HybridFont.text(12, relativeTo: .caption))
                     .foregroundStyle(HybridColor.cream.opacity(0.8))
                 Button("Replay this span") {
-                    if let span = model.activeSpan {
-                        model.seek(to: span.start)
-                        model.play()
-                    }
+                    model.replay()
                 }
                 .font(HybridFont.text(17, relativeTo: .body))
                 .fontWeight(.semibold)

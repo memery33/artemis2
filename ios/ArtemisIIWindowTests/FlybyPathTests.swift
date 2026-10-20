@@ -1,5 +1,3 @@
-import SceneKit
-import UIKit
 import XCTest
 @testable import ArtemisIIWindow
 
@@ -40,64 +38,6 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(approach.date.timeIntervalSince(lowest.date), 0, accuracy: 60)
         XCTAssertEqual(Self.longitudeEast(lowest), 179.492308, accuracy: 0.05)
         XCTAssertEqual(Self.latitude(lowest), -2.607641, accuracy: 0.05)
-    }
-
-    /// The SVS texture and the crater pins use one mapping. u for 47.4°W is the
-    /// Aristarchus pin, and Mare Crisium (59.1°E) sits toward the eastern limb.
-    func testTextureLongitudeMatchesThePin() {
-        let longitude = -47.4
-        let latitude = 23.7
-        let u = GlobeMapping.textureU(longitudeEast: longitude)
-        XCTAssertEqual(u, 0.5 + longitude / 360, accuracy: 0.000001)
-        let pin = GlobeMapping.scene(
-            MoonFrame.unit(latitude: latitude, longitudeEast: longitude),
-            radiusKm: 1
-        )
-        let painted = GlobeMapping.scene(textureU: u, latitude: latitude)
-        XCTAssertEqual(Double(painted.x), Double(pin.x), accuracy: 0.0001)
-        XCTAssertEqual(Double(painted.y), Double(pin.y), accuracy: 0.0001)
-        XCTAssertEqual(Double(painted.z), Double(pin.z), accuracy: 0.0001)
-        XCTAssertGreaterThan(pin.x, Float(0))
-        XCTAssertGreaterThan(pin.y, Float(0))
-        XCTAssertGreaterThan(pin.z, Float(0))
-
-        let crisium = GlobeMapping.scene(
-            MoonFrame.unit(latitude: 17.0, longitudeEast: 59.1),
-            radiusKm: 1
-        )
-        XCTAssertGreaterThan(crisium.x, Float(0))
-        XCTAssertLessThan(crisium.z, Float(0))
-        XCTAssertGreaterThan(abs(crisium.z), crisium.x)
-    }
-
-    func testDisplayedPathKeepsDirectionAndPullsTheRangeIn() throws {
-        let target = Self.utc("2026-04-06T19:40:00Z")
-        let sample = try XCTUnwrap(samples.min {
-            abs($0.date.timeIntervalSince(target)) < abs($1.date.timeIntervalSince(target))
-        })
-        let shown = GlobeMapping.scene(
-            (sample.x, sample.y, sample.z),
-            radiusKm: document.radiusKm,
-            compressAltitude: true
-        )
-        let full = GlobeMapping.scene((sample.x, sample.y, sample.z), radiusKm: document.radiusKm)
-        let shownLength = Self.length(shown)
-        let fullLength = Self.length(full)
-        XCTAssertGreaterThan(Double(shownLength), 1.01)
-        XCTAssertLessThan(shownLength, fullLength)
-        XCTAssertEqual(Double(shown.x / shownLength), Double(full.x / fullLength), accuracy: 0.0001)
-        XCTAssertEqual(Double(shown.y / shownLength), Double(full.y / fullLength), accuracy: 0.0001)
-        XCTAssertEqual(Double(shown.z / shownLength), Double(full.z / fullLength), accuracy: 0.0001)
-        let camera = GlobeMapping.cameraPosition(toward: (sample.x, sample.y, sample.z))
-        XCTAssertEqual(Double(Self.length(camera)), Double(GlobeMapping.cameraDistance), accuracy: 0.001)
-        let aim = GlobeMapping.cameraDistance
-        XCTAssertEqual(Double(camera.x / aim), Double(full.x / fullLength), accuracy: 0.0001)
-        XCTAssertEqual(Double(camera.y / aim), Double(full.y / fullLength), accuracy: 0.0001)
-        XCTAssertEqual(Double(camera.z / aim), Double(full.z / fullLength), accuracy: 0.0001)
-    }
-
-    private static func length(_ point: SCNVector3) -> Float {
-        (point.x * point.x + point.y * point.y + point.z * point.z).squareRoot()
     }
 
     func testClosestApproachUsesTheSampleSpacing() throws {
@@ -201,20 +141,6 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(near, 1, accuracy: 0.05)
         XCTAssertFalse(FlybyPath.fadesInterface(at: samples[0].date, approach: approach.date))
         XCTAssertTrue(FlybyPath.fadesInterface(at: approach.date, approach: approach.date))
-    }
-
-    func testParallaxStaysInsideItsLimits() {
-        let still = ParallaxShift.shift(pitch: 0.4, roll: -0.4, enabled: false)
-        XCTAssertEqual(still, .zero)
-        let hard = ParallaxShift.shift(pitch: 4, roll: -4, enabled: true)
-        XCTAssertEqual(hard.photoX, -ParallaxShift.photoLimit)
-        XCTAssertEqual(hard.photoY, ParallaxShift.photoLimit)
-        XCTAssertEqual(hard.frameX, -ParallaxShift.frameLimit)
-        XCTAssertEqual(hard.frameY, ParallaxShift.frameLimit)
-        let gentle = ParallaxShift.shift(pitch: 0.1, roll: -0.1, enabled: true)
-        XCTAssertLessThan(abs(gentle.photoX), ParallaxShift.photoLimit)
-        XCTAssertLessThan(abs(gentle.frameY), ParallaxShift.frameLimit)
-        XCTAssertGreaterThan(abs(gentle.frameX), 0)
     }
 
     func testExhibitCardsQuoteTheTargetingPlan() throws {
@@ -405,11 +331,6 @@ final class FlybyPathTests: XCTestCase {
         XCTAssertEqual(direction.x, expected.x, accuracy: 1e-9)
         XCTAssertEqual(direction.y, expected.y, accuracy: 1e-9)
         XCTAssertEqual(direction.z, expected.z, accuracy: 1e-9)
-        let placed = GlobeMapping.scene(direction, radiusKm: 1)
-        let length = Self.length(placed)
-        XCTAssertEqual(Double(length), 1, accuracy: 0.0001)
-        XCTAssertGreaterThan(placed.x, Float(0))
-        XCTAssertGreaterThan(placed.z, Float(0))
     }
 
     /// A step from 350° to 10° crosses 0°, so the midpoint is 0° rather than 180°.

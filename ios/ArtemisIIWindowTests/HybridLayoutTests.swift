@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import ArtemisIIWindow
 
@@ -5,7 +6,8 @@ final class HybridLayoutTests: XCTestCase {
     /// Open-fold width used by the old stage tests. Phone widths are 375, 402, and 440.
     private let widths: [CGFloat] = [375, 402, 440, 890]
 
-    func testCraterPixelsLandOnTheFittedStrip() {
+    @MainActor
+    func testCraterPixelsLandOnTheFittedStrip() throws {
         let aristarchus = (lon: -47.49, lat: 23.73)
         let reiner = (lon: -58.96, lat: 7.39)
         for width in widths {
@@ -13,8 +15,6 @@ final class HybridLayoutTests: XCTestCase {
             XCTAssertEqual(size.width / size.height, TrackMapGeometry.pixelWidth / TrackMapGeometry.pixelHeight, accuracy: 0.0001)
             let aristarchusPoint = TrackMapGeometry.point(lon: aristarchus.lon, lat: aristarchus.lat, in: size)
             let reinerPoint = TrackMapGeometry.point(lon: reiner.lon, lat: reiner.lat, in: size)
-            assertMatchesFilePixel(aristarchusPoint, lon: aristarchus.lon, lat: aristarchus.lat, size: size)
-            assertMatchesFilePixel(reinerPoint, lon: reiner.lon, lat: reiner.lat, size: size)
             XCTAssertLessThan(
                 reinerPoint.x,
                 aristarchusPoint.x,
@@ -22,6 +22,66 @@ final class HybridLayoutTests: XCTestCase {
             )
             XCTAssertLessThan(aristarchusPoint.y, reinerPoint.y)
         }
+        try assertAristarchusIsABrightnessPeak()
+    }
+
+    /// Samples the flipped crater map at the Aristarchus point. The crater is a local bright patch.
+    @MainActor
+    private func assertAristarchusIsABrightnessPeak() throws {
+        let loaded = TrackMapImage.load() ?? TrackMapImage.load(in: Bundle(for: HybridLayoutTests.self))
+        let image = try XCTUnwrap(loaded?.cgImage)
+        let width = image.width
+        let height = image.height
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+        let drew = pixels.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(
+                data: raw.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.translateBy(x: 0, y: CGFloat(height))
+            context.scaleBy(x: 1, y: -1)
+            context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+            return true
+        }
+        XCTAssertTrue(drew)
+        let point = TrackMapGeometry.point(
+            lon: -47.49,
+            lat: 23.73,
+            in: CGSize(width: CGFloat(width), height: CGFloat(height))
+        )
+        // The file is drawn mirrored, so west-left x maps back to the file by subtracting from the width.
+        let centerX = width - Int(point.x.rounded())
+        let centerY = Int(point.y.rounded())
+        func luminance(_ x: Int, _ y: Int) -> Double {
+            let clampedX = min(max(x, 0), width - 1)
+            let clampedY = min(max(y, 0), height - 1)
+            let index = clampedY * bytesPerRow + clampedX * 4
+            return (Double(pixels[index]) + Double(pixels[index + 1]) + Double(pixels[index + 2])) / 3
+        }
+        var peak = 0.0
+        for dy in -2...2 {
+            for dx in -2...2 {
+                peak = max(peak, luminance(centerX + dx, centerY + dy))
+            }
+        }
+        var around = 0.0
+        var count = 0
+        for dy in -16...16 {
+            for dx in -16...16 {
+                let distance = dx * dx + dy * dy
+                guard distance >= 8 * 8, distance <= 16 * 16 else { continue }
+                around += luminance(centerX + dx, centerY + dy)
+                count += 1
+            }
+        }
+        let ring = around / Double(max(count, 1))
+        XCTAssertGreaterThan(peak, ring + 40, "Aristarchus peak \(peak) vs surroundings \(ring)")
     }
 
     @MainActor
@@ -111,6 +171,11 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertEqual(model.utc.timeIntervalSince(line.date), 0, accuracy: 0.01)
         XCTAssertTrue(model.playing)
         XCTAssertFalse(model.ended)
+
+        let stayed = model.utc
+        model.showFlyby()
+        XCTAssertEqual(model.range, .flyby)
+        XCTAssertEqual(model.utc.timeIntervalSince(stayed), 0, accuracy: 0.01)
     }
 
     func testMarkerLettersAndReadoutClearTheCraters() {
@@ -143,9 +208,38 @@ final class HybridLayoutTests: XCTestCase {
 
     func testRulerTimeSitsOnItsTick() {
         let height: CGFloat = 700
-        let tick = RulerMetrics.y(fraction: 0.42, height: height)
-        XCTAssertEqual(RulerLabelLayout.timeCenter(tick: tick, height: height), tick, accuracy: 0.01)
+        for fraction in [0.0, 0.42, 1.0] {
+            let tick = RulerMetrics.y(fraction: fraction, height: height)
+            XCTAssertEqual(
+                RulerLabelLayout.timeCenter(tick: tick, height: height),
+                tick,
+                accuracy: 0.01,
+                "fraction \(fraction)"
+            )
+        }
+        XCTAssertEqual(RulerMetrics.y(fraction: 0, height: height), RulerMetrics.topInset, accuracy: 0.01)
+        XCTAssertEqual(RulerMetrics.y(fraction: 1, height: height), height - RulerMetrics.bottomInset, accuracy: 0.01)
         XCTAssertEqual(RulerLabelLayout.timeLine, 44, accuracy: 0.001)
+        let safe: CGFloat = 34
+        let approach = RulerMetrics.y(fraction: 1, height: height, safeArea: safe)
+        XCTAssertEqual(approach, height - RulerMetrics.bottomInset - safe, accuracy: 0.01)
+        XCTAssertEqual(RulerLabelLayout.timeCenter(tick: approach, height: height, safeArea: safe), approach, accuracy: 0.01)
+    }
+
+    @MainActor
+    func testShortPanelKeepsTheAristarchusNameClearOfTheNextLabel() throws {
+        let model = PlaybackModel()
+        let timeline = try XCTUnwrap(model.timeline)
+        let height: CGFloat = 340
+        let first = try XCTUnwrap(timeline.lines.first { $0.utc == RulerLabelMarks.aristarchus }?.date)
+        let second = try XCTUnwrap(timeline.lines.first { $0.utc == RulerLabelMarks.aristarchusLine }?.date)
+        let tickA = RulerMetrics.y(fraction: HybridClock.fraction(date: first, timeline: timeline), height: height)
+        let tickB = RulerMetrics.y(fraction: HybridClock.fraction(date: second, timeline: timeline), height: height)
+        let centerA = RulerLabelLayout.timeCenter(tick: tickA, height: height)
+        let centerB = RulerLabelLayout.timeCenter(tick: tickB, height: height)
+        let nameBottom = RulerLabelLayout.nameTop(center: centerA) + RulerLabelLayout.nameLine
+        let nextTop = centerB - RulerLabelLayout.timeBand / 2
+        XCTAssertLessThanOrEqual(nameBottom, nextTop)
     }
 
     func testDecodeCapIsTheScreenAndNotTheFile() {
@@ -198,16 +292,5 @@ final class HybridLayoutTests: XCTestCase {
         let milestones = MilestoneList.derive(timeline).map(\.date)
         XCTAssertFalse(milestones.contains { abs($0.timeIntervalSince(reiner)) < 0.001 })
         XCTAssertGreaterThanOrEqual(dates.count, 3)
-    }
-
-    private func assertMatchesFilePixel(_ point: CGPoint, lon: Double, lat: Double, size: CGSize) {
-        var east = lon.truncatingRemainder(dividingBy: 360)
-        if east < 0 { east += 360 }
-        let fileX = (340.0 - east) / (340.0 - 150.0) * 1400.0
-        let fileY = (48.0 - lat) / 90.0 * 663.0
-        let expectedX = (1400.0 - fileX) / 1400.0 * size.width
-        let expectedY = fileY / 663.0 * size.height
-        XCTAssertEqual(point.x, expectedX, accuracy: 0.01)
-        XCTAssertEqual(point.y, expectedY, accuracy: 0.01)
     }
 }

@@ -39,43 +39,31 @@ enum FlybyActivityCopy {
         "at \(clock(date)) UTC"
     }
 
-    /// Elapsed time since the span started, as a wall-clock interval the lock screen can tick,
-    /// plus the same count written out for the paused card and for VoiceOver.
-    ///
-    /// Do not anchor this at UTC midnight and pass it to `Text(timerInterval:showsHours:)`.
-    /// That range made `now - start` equal the time of day (19:33:18 → 19h33m18s), and the unit test
-    /// for that difference passed, so the dates were not five minutes early. The Lock Screen still
-    /// painted `at 19:38:-- UTC` during 19:33:18–19:33:35, and `at 19:53:-- UTC` in the tail near 19:48.
-    /// Two renderer behaviors did that: with `showsHours` it does not print the duration as a UTC clock,
-    /// and on the Lock Screen it replaces the seconds with `--`. The five minutes were that presentation
-    /// (19:33 read as 19:38, 19:48 as 19:53), not `span.start` and not `Calendar.startOfDay`.
-    /// This interval is only `utc - spanStart`, and it is never asked to look like `HH:mm:ss`.
-    struct ElapsedTimer: Equatable, Sendable {
-        var start: Date
-        var end: Date
-        var text: String
+    /// UTC line and elapsed line from one mission instant. Elapsed is `utc - spanStart`.
+    /// Both playing and paused show this string. It does not tick on its own.
+    struct Reading: Equatable, Sendable {
+        var clock: String
+        var elapsedText: String
     }
 
-    static func elapsedTimer(
-        now: Date = Date(),
-        utc: Date,
-        spanStart: Date,
-        spanEnd: Date
-    ) -> ElapsedTimer {
+    @MainActor
+    static func reading(utc: Date, spanStart: Date, phrase: String) -> Reading {
         let elapsed = max(0, utc.timeIntervalSince(spanStart))
-        let duration = max(0, spanEnd.timeIntervalSince(spanStart))
-        let start = now.addingTimeInterval(-elapsed)
-        return ElapsedTimer(
-            start: start,
-            end: start.addingTimeInterval(duration),
-            text: elapsedLabel(elapsed)
-        )
+        return Reading(clock: lockScreenClock(utc), elapsedText: elapsedLabel(elapsed, phrase: phrase))
     }
 
-    /// `mm:ss into the flyby`. Minutes may pass 59. This is the paused label and the accessibility label.
-    static func elapsedLabel(_ elapsed: TimeInterval) -> String {
+    /// `m:ss` plus the span phrase. Minutes are not zero-padded, so paused and playing match (`0:54`, not `00:54`).
+    /// `phrase` is `into the flyby` or `into the cab run`.
+    static func elapsedLabel(_ elapsed: TimeInterval, phrase: String) -> String {
         let total = max(0, Int(elapsed.rounded(.down)))
-        return String(format: "%02d:%02d into the flyby", total / 60, total % 60)
+        return String(format: "%d:%02d", total / 60, total % 60) + " " + phrase
+    }
+
+    static func elapsedPhrase(range: MissionRange) -> String {
+        switch range {
+        case .flyby: return "into the flyby"
+        case .cab: return "into the cab run"
+        }
     }
 }
 
@@ -236,8 +224,6 @@ enum FlybyLiveActivity {
         nextMilestone: String,
         speaker: String,
         clock: String,
-        elapsedStart: Date,
-        elapsedEnd: Date,
         elapsedText: String,
         staleDate: Date?
     ) {
@@ -248,8 +234,6 @@ enum FlybyLiveActivity {
                 speaker: speaker,
                 clock: clock,
                 playing: playing,
-                elapsedStart: elapsedStart,
-                elapsedEnd: elapsedEnd,
                 elapsedText: elapsedText
             )
             guard arrived else {

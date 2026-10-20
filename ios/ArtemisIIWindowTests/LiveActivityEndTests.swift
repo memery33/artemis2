@@ -21,13 +21,16 @@ final class FakeFlybyActivities: FlybyActivityClient {
     }
 
     var updatedPlaying: [Bool] = []
+    var lastState: FlybyActivityAttributes.ContentState?
 
     func request(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {
+        lastState = state
         updatedPlaying.append(state.playing)
         _ = staleDate
     }
 
     func update(_ state: FlybyActivityAttributes.ContentState, staleDate: Date?) async {
+        lastState = state
         updatedPlaying.append(state.playing)
         _ = staleDate
     }
@@ -57,55 +60,73 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertEqual(fake.identifiersStore, ["fresh"])
     }
 
+    /// The UTC line and the elapsed line are built from one mission instant, then stored on one ContentState.
     @MainActor
-    func testLockScreenClockIsAbsoluteUTCAndHasNoBlankSeconds() throws {
-        let utc = try ISO8601.parse("2026-04-06T19:38:45Z")
-        let text = FlybyActivityCopy.lockScreenClock(utc)
-        XCTAssertEqual(text, "at 19:38:45 UTC")
-        XCTAssertFalse(text.contains("--"))
+    func testLockScreenClockAndElapsedComeFromOneInstant() throws {
         let spanStart = try ISO8601.parse("2026-04-06T19:33:00Z")
-        let spanEnd = try ISO8601.parse("2026-04-06T19:48:30Z")
-        let timer = FlybyActivityCopy.elapsedTimer(now: Date(timeIntervalSince1970: 1_700_000_000), utc: utc, spanStart: spanStart, spanEnd: spanEnd)
-        let state = FlybyActivityAttributes.ContentState(
-            progress: 0.2,
+        let utc = try ISO8601.parse("2026-04-06T19:33:06Z")
+        let reading = FlybyActivityCopy.reading(utc: utc, spanStart: spanStart, phrase: "into the flyby")
+        let elapsed = utc.timeIntervalSince(spanStart)
+        XCTAssertEqual(elapsed, 6, accuracy: 0.001)
+        XCTAssertEqual(reading.clock, "at 19:33:06 UTC")
+        XCTAssertEqual(reading.elapsedText, FlybyActivityCopy.elapsedLabel(elapsed, phrase: "into the flyby"))
+        XCTAssertEqual(reading.elapsedText, "0:06 into the flyby")
+        XCTAssertFalse(reading.clock.contains("--"))
+        XCTAssertFalse(reading.elapsedText.contains("--"))
+
+        let playing = FlybyActivityAttributes.ContentState(
+            progress: elapsed / (15 * 60 + 30),
             nextMilestone: "End of this span",
             speaker: "Wiseman",
-            clock: text,
+            clock: reading.clock,
             playing: true,
-            elapsedStart: timer.start,
-            elapsedEnd: timer.end,
-            elapsedText: timer.text
+            elapsedText: reading.elapsedText
         )
-        XCTAssertEqual(state.clock, "at 19:38:45 UTC")
-        XCTAssertFalse(state.clock.contains("--"))
-        XCTAssertFalse(state.elapsedText.contains("--"))
-        XCTAssertEqual(state.elapsedText, "05:45 into the flyby")
-    }
+        let paused = FlybyActivityAttributes.ContentState(
+            progress: playing.progress,
+            nextMilestone: playing.nextMilestone,
+            speaker: playing.speaker,
+            clock: reading.clock,
+            playing: false,
+            elapsedText: reading.elapsedText
+        )
+        XCTAssertEqual(playing.clock, paused.clock)
+        XCTAssertEqual(playing.elapsedText, paused.elapsedText)
+        XCTAssertEqual(playing.elapsedText, "0:06 into the flyby")
 
-    /// Elapsed at a known mission time is `missionTime - span.start`, not the time of day.
-    /// A midnight anchor plus `Text(timerInterval:showsHours:)` painted 19:33 as 19:38 and hid the seconds.
-    func testElapsedAnchorMatchesTimeSinceSpanStart() throws {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let spanStart = try ISO8601.parse("2026-04-06T19:33:00Z")
-        let spanEnd = try ISO8601.parse("2026-04-06T19:48:30Z")
-        let utc = try ISO8601.parse("2026-04-06T19:33:18Z")
-        let early = FlybyActivityCopy.elapsedTimer(now: now, utc: utc, spanStart: spanStart, spanEnd: spanEnd)
-        let elapsed = utc.timeIntervalSince(spanStart)
-        XCTAssertEqual(elapsed, 18, accuracy: 0.001)
-        XCTAssertEqual(now.timeIntervalSince(early.start), elapsed, accuracy: 0.001)
-        XCTAssertEqual(early.end.timeIntervalSince(early.start), spanEnd.timeIntervalSince(spanStart), accuracy: 0.001)
-        XCTAssertEqual(early.text, "00:18 into the flyby")
-        XCTAssertEqual(FlybyActivityCopy.elapsedLabel(elapsed), early.text)
-        // The retired midnight anchor was ~19h33m. This interval is 18 seconds, so a showsHours clock cannot recur.
-        XCTAssertLessThan(now.timeIntervalSince(early.start), 60)
-        XCTAssertGreaterThan(abs(now.timeIntervalSince(early.start) - (19 * 3600 + 33 * 60 + 18)), 60)
+        let later = try ISO8601.parse("2026-04-06T19:38:45Z")
+        let five = FlybyActivityCopy.reading(utc: later, spanStart: spanStart, phrase: "into the flyby")
+        XCTAssertEqual(five.clock, "at 19:38:45 UTC")
+        XCTAssertEqual(five.elapsedText, "5:45 into the flyby")
+        XCTAssertEqual(FlybyActivityCopy.elapsedLabel(54, phrase: "into the flyby"), "0:54 into the flyby")
 
         let tail = try ISO8601.parse("2026-04-06T19:48:00Z")
-        let late = FlybyActivityCopy.elapsedTimer(now: now, utc: tail, spanStart: spanStart, spanEnd: spanEnd)
-        XCTAssertEqual(now.timeIntervalSince(late.start), tail.timeIntervalSince(spanStart), accuracy: 0.001)
+        let fifteen = FlybyActivityCopy.reading(utc: tail, spanStart: spanStart, phrase: "into the flyby")
         XCTAssertEqual(tail.timeIntervalSince(spanStart), 15 * 60, accuracy: 0.001)
-        XCTAssertEqual(late.text, "15:00 into the flyby")
-        XCTAssertEqual(late.end.timeIntervalSince(late.start), 15 * 60 + 30, accuracy: 0.001)
+        XCTAssertEqual(fifteen.clock, "at 19:48:00 UTC")
+        XCTAssertEqual(fifteen.elapsedText, "15:00 into the flyby")
+
+        let cab = FlybyActivityCopy.reading(utc: later, spanStart: spanStart, phrase: FlybyActivityCopy.elapsedPhrase(range: .cab))
+        XCTAssertEqual(cab.clock, five.clock)
+        XCTAssertEqual(cab.elapsedText, "5:45 into the cab run")
+
+        let encoded = try JSONEncoder().encode(playing)
+        let decoded = try JSONDecoder().decode(FlybyActivityAttributes.ContentState.self, from: encoded)
+        XCTAssertEqual(decoded.clock, playing.clock)
+        XCTAssertEqual(decoded.elapsedText, playing.elapsedText)
+    }
+
+    /// An activity pushed by an older build has no elapsed field. It must still decode.
+    func testStaleActivityDecodesWithoutElapsedText() throws {
+        let json = """
+        {"progress":0.1,"nextMilestone":"End of this span","speaker":"Wiseman","clock":"at 19:33:02 UTC","playing":true,"clockStart":0,"clockEnd":1,"elapsedStart":0,"elapsedEnd":1}
+        """.data(using: .utf8)!
+        let state = try JSONDecoder().decode(FlybyActivityAttributes.ContentState.self, from: json)
+        XCTAssertEqual(state.clock, "at 19:33:02 UTC")
+        XCTAssertEqual(state.speaker, "Wiseman")
+        XCTAssertTrue(state.playing)
+        XCTAssertEqual(state.elapsedText, "")
+        XCTAssertEqual(state.progress, 0.1, accuracy: 0.0001)
     }
 
     func testPausedMarkerIsAbsentWhilePlaying() {
@@ -462,6 +483,8 @@ final class LiveActivityEndTests: XCTestCase {
         model.playing = true
         let parked = span.end.addingTimeInterval(-30)
         model.utc = parked
+        let origin = Date(timeIntervalSince1970: 1_800_000_000)
+        model.wallNow = { origin }
         model.setSceneActive(false)
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertTrue(fake.ended.isEmpty)
@@ -469,7 +492,8 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(model.ended)
         XCTAssertEqual(model.utc, parked)
 
-        model.advanceSilentTailForTest(by: 10)
+        model.wallNow = { origin.addingTimeInterval(10) }
+        model.backgroundTick()
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertEqual(model.utc.timeIntervalSince(parked), 10, accuracy: 0.05)
         XCTAssertLessThan(model.utc, span.end)
@@ -478,7 +502,8 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertTrue(fake.ended.isEmpty)
         XCTAssertEqual(fake.identifiersStore, ["live"])
 
-        model.advanceSilentTailForTest(by: 29)
+        model.wallNow = { origin.addingTimeInterval(29) }
+        model.backgroundTick()
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertEqual(model.utc.timeIntervalSince(parked), 29, accuracy: 0.05)
         XCTAssertLessThan(model.utc, span.end)
@@ -486,7 +511,18 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(model.ended)
         XCTAssertTrue(fake.ended.isEmpty)
 
-        model.advanceSilentTailForTest(by: 30)
+        model.setSceneActive(true)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(model.utc.timeIntervalSince(parked), 29, accuracy: 0.05)
+        XCTAssertTrue(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+
+        model.wallNow = { origin.addingTimeInterval(29) }
+        model.setSceneActive(false)
+        model.wallNow = { origin.addingTimeInterval(30) }
+        model.backgroundTick()
         await FlybyLiveActivity.finishQueuedWork()
         XCTAssertEqual(model.utc.timeIntervalSince(span.end), 0, accuracy: 0.001)
         XCTAssertTrue(model.ended)
@@ -547,5 +583,47 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertEqual(fake.ended, ["live"])
         XCTAssertTrue(fake.identifiersStore.isEmpty)
         XCTAssertFalse(FlybyLiveActivity.client is SystemFlybyActivities)
+    }
+
+    /// Replay dismisses the card that was already up, then pushes the span start. It does not keep the old instant.
+    @MainActor
+    func testReplayClearsTheStaleActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        model.playing = true
+        model.utc = span.start.addingTimeInterval(5)
+        model.ended = true
+        model.playing = false
+        model.replay()
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertEqual(model.utc.timeIntervalSince(span.start), 0, accuracy: 0.001)
+        XCTAssertTrue(model.playing)
+        XCTAssertFalse(model.ended)
+        let state = try XCTUnwrap(fake.lastState)
+        XCTAssertEqual(state.clock, "at 19:33:00 UTC")
+        XCTAssertEqual(state.elapsedText, "0:00 into the flyby")
+        XCTAssertTrue(state.playing)
+    }
+
+    /// A date past the span end, the way a fast flick's predicted end lands, parks at end − 8s.
+    @MainActor
+    func testFlickPastTheEndParksShortOfTheSpanEnd() throws {
+        let model = PlaybackModel()
+        let span = try XCTUnwrap(model.activeSpan)
+        model.playing = true
+        model.beginScrub()
+        model.scrubRuler(to: span.start.addingTimeInterval(40))
+        model.scrubRuler(to: span.end.addingTimeInterval(12))
+        model.endScrub(markEnd: false)
+        XCTAssertEqual(model.utc.timeIntervalSince(span.end.addingTimeInterval(-PlaybackModel.scrubEndMargin)), 0, accuracy: 0.001)
+        XCTAssertFalse(model.ended)
+        XCTAssertTrue(model.playing)
+        XCTAssertEqual(model.range, .flyby)
     }
 }

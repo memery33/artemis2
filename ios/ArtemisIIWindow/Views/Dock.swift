@@ -72,10 +72,14 @@ struct AboutView: View {
                                 model.showFlyby()
                             }
                         }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityIdentifier("span-toggle")
                         Button(model.spatial ? "Spatial on" : "Spatial") {
                             model.setSpatial(!model.spatial)
                         }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityIdentifier("spatial-toggle")
                     }
                     .font(HybridFont.text(15, relativeTo: .subheadline))
@@ -99,9 +103,9 @@ struct AboutView: View {
                         .font(HybridFont.text(13, relativeTo: .footnote))
                     Text("The crater map, lroc-track.jpg, is a 1400 by 663 reprojection of the NASA SVS CGI Moon Kit 2025 LROC color map, SVS 4720, from 340° E to 150° E and 48° N to 42° S. The app draws it with north up and west on the left. Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio, Lunar Reconnaissance Orbiter Camera, Arizona State University, and Noah Petro (NASA/GSFC), visualization by Ernie Wright. It is an aesthetic rendering, not a photograph and not the flyby lighting.")
                         .font(HybridFont.text(13, relativeTo: .footnote))
-                    Text("Crater pages quote the Science and Operational Focus of NASA’s Guide to the Artemis II Lunar Targeting Plan for Aristarchus Plateau, Reiner Gamma, and Orientale Basin. The pictures are the real frames already labeled with those targets.")
+                    Text("Crater pages quote the Science and Operational Focus of NASA’s Guide to the Artemis II Lunar Targeting Plan for Aristarchus Plateau and Reiner Gamma. The pictures are the real frames already labeled with those targets.")
                         .font(HybridFont.text(13, relativeTo: .footnote))
-                    Text("Orion’s path is a JPL Horizons observer table: Moon (301) from Artemis II (spacecraft) -1024 body center, sub-observer east longitude and latitude in the IAU MOON_ME body-fixed frame, plus range, one-minute steps from 2026-04-06 18:00 UT through 2026-04-07 02:00 UT. MOON_ME +X is the 0° east meridian, not the body-equator node. Closest approach is the minimum of that table, not a typed-in time. Surface labels use the USGS Gazetteer of Planetary Nomenclature: Aristarchus, Reiner Gamma, and Mare Orientale.")
+                    Text("Orion’s path is a JPL Horizons observer table: Moon (301) from Artemis II (spacecraft) -1024 body center, sub-observer east longitude and latitude in the IAU MOON_ME body-fixed frame, plus range, one-minute steps from 2026-04-06 18:00 UT through 2026-04-07 02:00 UT. MOON_ME +X is the 0° east meridian, not the body-equator node. Closest approach is the minimum of that table, not a typed-in time. Aristarchus and Reiner Gamma are labeled from the USGS Gazetteer of Planetary Nomenclature. Mare Orientale is an unlabeled dot at that mare’s USGS center.")
                         .font(HybridFont.text(13, relativeTo: .footnote))
                     if let licenses = model.timeline?.licenses {
                         ForEach(licenses) { license in

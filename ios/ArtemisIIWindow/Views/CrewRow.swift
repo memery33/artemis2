@@ -38,9 +38,10 @@ struct CrewRow: View {
                                     .fontWeight(.medium)
                                     .foregroundStyle(HybridColor.dim.opacity(followed ? 1 : 0.8))
                                     .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
+                                    .fixedSize(horizontal: true, vertical: true)
                             }
-                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(minWidth: 44, alignment: .top)
+                            .fixedSize(horizontal: false, vertical: true)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Follow \(member.id)")

@@ -67,6 +67,18 @@ z = sin(lat)
 
 At 2026-04-06 19:40 UT, Horizons prints `SunSub-LON` 306.562535° and `SunSub-LAT` 1.028083°.
 
+## Shown frames
+
+The frames on the glass are lossy WebP with a 2700 px long edge, written from the PDS browse originals (WebP quality 72). Each one also has a 720 px sibling for a narrow screen. Nikon Window 2 frames come from the browse PNGs, 5568 by 3712:
+
+`https://pds-imaging.jpl.nasa.gov/api/data/atlas:pds4:artemis2:artemis2:/artemis2_crew_camera/browse/fd06/{nasa_id}_nkd5015_prc_v01.png`
+
+Cab Cam frames come from the browse-source JPEGs, 4000 by 3000:
+
+`https://pds-imaging.jpl.nasa.gov/api/data/atlas:pds4:artemis2:artemis2:/artemis2_orion_camera/browse_source/fd05/{nasa_id}_cab2_src_v01.jpg`
+
+Those are the URLs the 2700 px derivation fetched. They are not the `:md` or `:lg` Atlas thumbnails, and they are not a 1200-pixel long edge.
+
 ## Crater map
 
 NASA SVS CGI Moon Kit, ID 4720, file `lroc_color_2k.jpg`, 2048 by 1024, centered on 0° longitude with east to the right. https://svs.gsfc.nasa.gov/4720/ That equirectangular file is the source of the reprojection and is not bundled.

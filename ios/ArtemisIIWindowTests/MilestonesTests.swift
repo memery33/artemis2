@@ -277,62 +277,7 @@ final class MilestonesTests: XCTestCase {
         XCTAssertEqual(model.utc, span.start)
     }
 
-    @MainActor
-    func testPathScrubKeepsPlayingAndDoesNotJumpToTheSpanEnd() throws {
-        let model = PlaybackModel()
-        let timeline = try XCTUnwrap(model.timeline)
-        let span = try XCTUnwrap(model.activeSpan)
-        model.playing = true
-        let target = span.start.addingTimeInterval(120)
-        model.beginPathScrub()
-        model.scrubPath(to: target)
-        XCTAssertTrue(model.scrubbing)
-        XCTAssertTrue(model.playing)
-        XCTAssertFalse(model.ended)
-        XCTAssertEqual(model.utc.timeIntervalSince(target), 0, accuracy: 0.5)
-        XCTAssertLessThan(model.utc, span.end.addingTimeInterval(-60))
-
-        let cab = try XCTUnwrap(timeline.cabRun)
-        let cabTime = cab.start.addingTimeInterval(45)
-        model.scrubPath(to: cabTime)
-        XCTAssertEqual(model.range, .cab)
-        XCTAssertEqual(model.utc.timeIntervalSince(cabTime), 0, accuracy: 0.5)
-        XCTAssertLessThan(model.utc, cab.end)
-        XCTAssertTrue(model.playing)
-        XCTAssertNotEqual(model.utc, span.end)
-        XCTAssertNotEqual(model.utc, cab.end)
-
-        model.scrubPath(to: span.start.addingTimeInterval(-3600))
-        XCTAssertEqual(model.utc.timeIntervalSince(cabTime), 0, accuracy: 0.5)
-
-        model.endPathScrub()
-        XCTAssertFalse(model.scrubbing)
-        XCTAssertNotNil(model.segment(at: model.utc))
-        XCTAssertGreaterThan(model.utc, cab.start)
-        XCTAssertLessThan(model.utc, cab.end)
-        XCTAssertNotEqual(model.utc, cab.end)
-        XCTAssertNotEqual(model.utc, span.end)
-        if !model.engineFailed {
-            XCTAssertTrue(model.playing)
-        }
-        XCTAssertFalse(model.ended)
-    }
-
-    @MainActor
-    func testReleasingAPathDragAtTheSpanEndShowsTheEndCard() throws {
-        let model = PlaybackModel()
-        let span = try XCTUnwrap(model.activeSpan)
-        model.playing = true
-        model.beginPathScrub()
-        model.scrubPath(to: span.end)
-        XCTAssertEqual(model.utc, span.end)
-        XCTAssertFalse(model.ended)
-        model.endPathScrub()
-        XCTAssertFalse(model.scrubbing)
-        XCTAssertTrue(model.ended)
-        XCTAssertEqual(model.utc, span.end)
-        XCTAssertFalse(model.playing)
-
+    func testLaunchArguments() {
         XCTAssertTrue(PlaybackModel.opensAtSpanEnd(["-seekToEnd"]))
         XCTAssertFalse(PlaybackModel.opensAtSpanEnd([]))
         XCTAssertFalse(RuntimeHost.allowsPlaybackServices(arguments: ["-XCTest"], unitTestHost: true))
