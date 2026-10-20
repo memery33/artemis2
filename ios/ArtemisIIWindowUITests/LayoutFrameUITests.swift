@@ -93,6 +93,41 @@ final class LayoutFrameUITests: XCTestCase {
         }
     }
 
+    /// The longest bundled line is Hansen at 19:47:31.641Z. Begin parks there, paused.
+    /// The panel shows two lines of it, still above Window 2, and the pills stay above Lines.
+    func testLongestQuoteStaysAboveTheWindowPills() {
+        let app = FlybyUILaunch.application(["-seekLineUTC", "2026-04-06T19:47:31.641Z"])
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let caption = element(named: "panel-caption", in: app)
+        XCTAssertTrue(caption.waitForExistence(timeout: 8))
+        let quote = caption.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "most prominent ray")).firstMatch
+        XCTAssertTrue(quote.waitForExistence(timeout: 8))
+        let window = app.buttons["window-nikon"]
+        XCTAssertTrue(window.waitForExistence(timeout: 8))
+        let lines = app.buttons["lines-button"]
+        XCTAssertTrue(lines.waitForExistence(timeout: 8))
+        let deadline = Date().addingTimeInterval(5)
+        var texts = caption.staticTexts.allElementsBoundByIndex
+        while Date() < deadline, texts.count < 2 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            texts = caption.staticTexts.allElementsBoundByIndex
+        }
+        XCTAssertGreaterThanOrEqual(texts.count, 2)
+        for text in texts {
+            XCTAssertGreaterThan(text.frame.height, 1)
+            XCTAssertLessThanOrEqual(text.frame.maxY, window.frame.minY + 0.5)
+        }
+        XCTAssertLessThanOrEqual(window.frame.maxY, lines.frame.minY + 0.5)
+    }
+
     /// Lines, Moments, and About sit on the safe-area edge, and those controls are at least 44 by 44.
     func testAboutClearsTheHomeIndicatorAndControlsAre44Points() {
         let app = FlybyUILaunch.application()

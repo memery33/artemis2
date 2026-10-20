@@ -176,6 +176,25 @@ final class PlaybackModel: NSObject, ObservableObject {
             }
             return
         }
+        if let stamp = Self.openingLineUTC(ProcessInfo.processInfo.arguments),
+           let line = timeline?.lines.first(where: { $0.utc == stamp }) {
+            if line.track != trackID {
+                trackID = line.track
+                if timeline?.crew.contains(where: { $0.id == crewID && $0.track == line.track }) != true,
+                   let member = timeline?.crew.first(where: { $0.track == line.track }) {
+                    crewID = member.id
+                }
+            }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                arrived = true
+                utc = line.date
+                ended = false
+                playing = false
+            }
+            return
+        }
         guard !RuntimeHost.isUnitTestHost else {
             arrived = true
             return
@@ -198,6 +217,17 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// Playing from that instant would rewind to the span start.
     nonisolated static func opensAtSpanEnd(_ arguments: [String]) -> Bool {
         arguments.contains("-seekToEnd")
+    }
+
+    /// UI tests pass `-seekLineUTC` and a transcript `utc` so Begin parks on that line.
+    /// Playback stays paused, so a long quote does not scroll away before the panel is measured.
+    nonisolated static func openingLineUTC(_ arguments: [String]) -> String? {
+        guard let flag = arguments.firstIndex(of: "-seekLineUTC") else { return nil }
+        let valueIndex: Int = flag + 1
+        guard valueIndex < arguments.count else { return nil }
+        let stamp: String = arguments[valueIndex]
+        guard !stamp.isEmpty, !stamp.hasPrefix("-") else { return nil }
+        return stamp
     }
 
     /// `fromHold` reschedules the real file at the offset saved across an interruption.

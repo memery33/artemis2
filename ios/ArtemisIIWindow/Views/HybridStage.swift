@@ -829,6 +829,10 @@ struct DocumentaryCaption: View {
                     font: HybridFont.display(compact ? 15 : 28, relativeTo: compact ? .subheadline : .title2, italic: true),
                     color: HybridColor.cream,
                     annotationColor: HybridColor.dim,
+                    // The panel column is about 198 pt wide on a 402×874 phone. Two lines
+                    // are the tallest quote that leaves the clock and the transport fully
+                    // visible above the window pills. The longest bundled line is ten lines
+                    // at that width, so a taller cap would push the pills into Lines.
                     lineLimit: compact ? Optional(2) : nil
                 )
                 .fixedSize(horizontal: false, vertical: true)
@@ -862,22 +866,26 @@ struct ControlPanel: View {
     @State private var suppressCloseTap = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // One column, top to bottom: clock, quote, window pills, crew, Lines.
+        // The quote used to live in the clock scroller, so a wrapped line drew
+        // through the pills, which stay put. It now sits directly above them and
+        // grows upward. Spacing is 8 so a two-line quote, the clock, and the
+        // transport all fit in the 437 pt sheet on a 402×874 phone.
+        VStack(alignment: .leading, spacing: 8) {
             handle
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     clocks
                     transport
-                    DocumentaryCaption(compact: true, includeCredit: false, identifier: "panel-caption")
                 }
-                .padding(.bottom, 8)
             }
             .scrollBounceBehavior(.basedOnSize)
+            DocumentaryCaption(compact: true, includeCredit: false, identifier: "panel-caption")
+                .fixedSize(horizontal: false, vertical: true)
             windowRow
-                .padding(.top, 4)
-                .padding(.bottom, 8)
                 .fixedSize(horizontal: false, vertical: true)
             CrewRow()
+                .fixedSize(horizontal: false, vertical: true)
             secondaryRow
                 .fixedSize(horizontal: false, vertical: true)
         }
