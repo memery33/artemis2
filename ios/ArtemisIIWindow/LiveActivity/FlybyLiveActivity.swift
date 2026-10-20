@@ -33,11 +33,32 @@ enum FlybyActivityCopy {
         clockFormatter.string(from: date)
     }
 
-    /// Lock-screen line. This is static text. It changes when playback pushes a new state, not by counting on its own.
-    /// A minutes-and-seconds `Text(timerInterval:)` renders as `--` and does not advance.
+    /// Lock-screen line. VoiceOver reads this. The widget's visible clock is `missionTimer`, which keeps counting while locked.
     @MainActor
     static func lockScreenClock(_ date: Date) -> String {
         "at \(clock(date)) UTC"
+    }
+
+    /// Wall interval whose elapsed time is the mission clock's hour, minute, and second.
+    /// The range is a full day and contains `now`, and the widget asks for hours, so it is not the
+    /// minutes-and-seconds interval that a Live Activity draws as `--`.
+    struct MissionTimer: Equatable, Sendable {
+        var start: Date
+        var end: Date
+        var pause: Date?
+    }
+
+    static func missionTimer(now: Date = Date(), utc: Date, playing: Bool) -> MissionTimer {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? TimeZone(identifier: "UTC") ?? .current
+        let midnight = calendar.startOfDay(for: utc)
+        let seconds = utc.timeIntervalSince(midnight)
+        let start = now.addingTimeInterval(-seconds)
+        return MissionTimer(
+            start: start,
+            end: start.addingTimeInterval(24 * 60 * 60),
+            pause: playing ? nil : now
+        )
     }
 }
 
@@ -198,6 +219,9 @@ enum FlybyLiveActivity {
         nextMilestone: String,
         speaker: String,
         clock: String,
+        clockStart: Date,
+        clockEnd: Date,
+        clockPause: Date?,
         staleDate: Date?
     ) {
         enqueue {
@@ -206,7 +230,10 @@ enum FlybyLiveActivity {
                 nextMilestone: nextMilestone,
                 speaker: speaker,
                 clock: clock,
-                playing: playing
+                playing: playing,
+                clockStart: clockStart,
+                clockEnd: clockEnd,
+                clockPause: clockPause
             )
             guard arrived else {
                 let ids = client.identifiers()

@@ -96,14 +96,31 @@ private struct PausedMarker: View {
     }
 }
 
-/// Absolute mission UTC. Static text, replaced when playback pushes a new state on play, pause, seek, speaker change, or span end, and at most every 15 seconds while playing. A forced push is not held for that 15-second cadence. A `Text(timerInterval:)` of minutes and seconds renders as `--` and does not advance.
+/// Mission `HH:mm:ss` as a wall-clock count from `clockStart`. It advances while the phone is locked.
+/// Hours are shown, and the range is a day that contains now, so this is not the minutes-and-seconds
+/// interval that a Live Activity draws as `--`. A pause freezes the count. VoiceOver reads the absolute UTC string.
 struct MissionClockText: View {
     var state: FlybyActivityAttributes.ContentState
     var font: Font
 
     var body: some View {
-        Text(state.clock)
+        clock
             .font(font.monospacedDigit())
             .foregroundStyle(HybridColor.cream)
+            .accessibilityLabel(state.clock)
+    }
+
+    private var clock: Text {
+        guard state.clockEnd > state.clockStart else {
+            return Text(state.clock)
+        }
+        return Text("at ")
+            + Text(
+                timerInterval: state.clockStart...state.clockEnd,
+                pauseTime: state.clockPause,
+                countsDown: false,
+                showsHours: true
+            )
+            + Text(" UTC")
     }
 }

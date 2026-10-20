@@ -63,15 +63,35 @@ final class LiveActivityEndTests: XCTestCase {
         let text = FlybyActivityCopy.lockScreenClock(utc)
         XCTAssertEqual(text, "at 19:38:45 UTC")
         XCTAssertFalse(text.contains("--"))
+        let timer = FlybyActivityCopy.missionTimer(now: Date(timeIntervalSince1970: 1_700_000_000), utc: utc, playing: true)
         let state = FlybyActivityAttributes.ContentState(
             progress: 0.2,
             nextMilestone: "End of this span",
             speaker: "Wiseman",
             clock: text,
-            playing: true
+            playing: true,
+            clockStart: timer.start,
+            clockEnd: timer.end,
+            clockPause: timer.pause
         )
         XCTAssertEqual(state.clock, "at 19:38:45 UTC")
         XCTAssertFalse(state.clock.contains("--"))
+        XCTAssertNil(state.clockPause)
+        XCTAssertGreaterThan(state.clockEnd, state.clockStart)
+    }
+
+    /// The lock-screen count is the mission hour, minute, and second, measured on the wall clock.
+    func testMissionTimerMatchesUTCAndStaysInsideADay() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let utc = try ISO8601.parse("2026-04-06T19:38:45Z")
+        let playing = FlybyActivityCopy.missionTimer(now: now, utc: utc, playing: true)
+        XCTAssertEqual(now.timeIntervalSince(playing.start), 19 * 3600 + 38 * 60 + 45, accuracy: 0.001)
+        XCTAssertEqual(playing.end.timeIntervalSince(playing.start), 24 * 60 * 60, accuracy: 0.001)
+        XCTAssertGreaterThan(playing.end, now)
+        XCTAssertNil(playing.pause)
+
+        let paused = FlybyActivityCopy.missionTimer(now: now, utc: utc, playing: false)
+        XCTAssertEqual(paused.pause, now)
     }
 
     func testPausedMarkerIsAbsentWhilePlaying() {
@@ -412,6 +432,53 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertFalse(model.ended)
         XCTAssertEqual(model.utc, parked)
         XCTAssertLessThan(model.utc, span.end)
+    }
+
+    /// After the last file, a locked phone follows wall time. The activity stays up
+    /// until that clock reaches the span end, and it ends then — the same as an unlocked natural end.
+    @MainActor
+    func testLockedSilentTailEndsOnlyWhenWallTimeReachesSpanEnd() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        let span = try XCTUnwrap(model.activeSpan)
+        model.playing = true
+        let parked = span.end.addingTimeInterval(-30)
+        model.utc = parked
+        model.setSceneActive(false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+        XCTAssertFalse(model.ended)
+        XCTAssertEqual(model.utc, parked)
+
+        model.advanceSilentTailForTest(by: 10)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(model.utc.timeIntervalSince(parked), 10, accuracy: 0.05)
+        XCTAssertLessThan(model.utc, span.end)
+        XCTAssertTrue(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+
+        model.advanceSilentTailForTest(by: 29)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(model.utc.timeIntervalSince(parked), 29, accuracy: 0.05)
+        XCTAssertLessThan(model.utc, span.end)
+        XCTAssertTrue(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertTrue(fake.ended.isEmpty)
+
+        model.advanceSilentTailForTest(by: 30)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertEqual(model.utc.timeIntervalSince(span.end), 0, accuracy: 0.001)
+        XCTAssertTrue(model.ended)
+        XCTAssertFalse(model.playing)
+        XCTAssertEqual(fake.ended, ["live"])
+        XCTAssertTrue(fake.identifiersStore.isEmpty)
     }
 
     /// A ruler dragged past the flyby end, released while playing, then locked,

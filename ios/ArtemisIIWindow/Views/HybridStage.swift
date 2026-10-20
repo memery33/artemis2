@@ -589,6 +589,22 @@ struct RulerPiece: Equatable {
 
 /// One inset for the rail, the ticks, the needle, `y`, and `date(atY:)`.
 /// The ruler label's time line is centered on its tick. The name hangs below that line.
+enum RulerLabelMarks {
+    /// Named ruler rows. Each date gets a tick, including a quote that is not a `MilestoneList` row.
+    static let aristarchus = "2026-04-06T19:33:02.700Z"
+    static let aristarchusLine = "2026-04-06T19:36:05.938Z"
+    static let reiner = "2026-04-06T19:40:57.609Z"
+
+    static func dates(timeline: Timeline?, approach: Date?) -> [Date] {
+        let quotes = [aristarchus, aristarchusLine, reiner]
+        var dates = quotes.compactMap { utc in timeline?.lines.first { $0.utc == utc }?.date }
+        if let approach {
+            dates.append(approach)
+        }
+        return dates
+    }
+}
+
 enum RulerLabelLayout {
     static let timeLine: CGFloat = 44
     static let nameOffset: CGFloat = 28
@@ -1010,6 +1026,13 @@ struct FlybyRuler: View {
                     .padding(.trailing, 14)
                     .offset(y: y(milestone.date, height: height))
             }
+            ForEach(RulerLabelMarks.dates(timeline: timeline, approach: approachDate), id: \.timeIntervalSinceReferenceDate) { date in
+                Capsule()
+                    .fill(HybridColor.cream.opacity(0.9))
+                    .frame(width: 10, height: 1)
+                    .padding(.trailing, 14)
+                    .offset(y: y(date, height: height))
+            }
             Capsule()
                 .fill(HybridColor.cream)
                 .frame(width: 22, height: 2)
@@ -1032,14 +1055,14 @@ struct FlybyRuler: View {
 
     private func labelColumn(height: CGFloat, width: CGFloat) -> some View {
         ZStack(alignment: .topTrailing) {
-            if let line = quote(utc: "2026-04-06T19:33:02.700Z") {
+            if let line = quote(utc: RulerLabelMarks.aristarchus) {
                 placed(at: line.date, height: height, width: width) {
                     labelButton(time: Stamp.clock(line.utc), name: "Aristarchus", now: isNow(line.date), identifier: "milestone-aristarchus") {
                         onCrater(.aristarchus)
                     }
                 }
             }
-            if let line = quote(utc: "2026-04-06T19:36:05.938Z") {
+            if let line = quote(utc: RulerLabelMarks.aristarchusLine) {
                 placed(at: line.date, height: height, width: width) {
                     labelButton(time: Stamp.clock(line.utc), name: "Aristarchus line", now: isNow(line.date), identifier: "milestone-wiseman") {
                         model.showFlyby()
@@ -1047,7 +1070,7 @@ struct FlybyRuler: View {
                     }
                 }
             }
-            if let line = quote(utc: "2026-04-06T19:40:57.609Z") {
+            if let line = quote(utc: RulerLabelMarks.reiner) {
                 placed(at: line.date, height: height, width: width) {
                     labelButton(time: Stamp.clock(line.utc), name: "Reiner Gamma", now: isNow(line.date), identifier: "milestone-reiner") {
                         onCrater(.reiner)

@@ -10,6 +10,8 @@ import UIKit
 private final class PlaybackLifetime {
     var engineObserver: NSObjectProtocol?
     var displayLink: CADisplayLink?
+    var backgroundClock: Timer?
+    var silentTailTask: UIBackgroundTaskIdentifier = .invalid
     var commands: [(MPRemoteCommand, Any)] = []
 
     nonisolated init() {}
@@ -21,6 +23,13 @@ private final class PlaybackLifetime {
         }
         displayLink?.invalidate()
         displayLink = nil
+        backgroundClock?.invalidate()
+        backgroundClock = nil
+        if silentTailTask != .invalid {
+            let task = silentTailTask
+            silentTailTask = .invalid
+            UIApplication.shared.endBackgroundTask(task)
+        }
         for (command, token) in commands {
             command.removeTarget(token)
         }
@@ -97,6 +106,11 @@ final class PlaybackModel: NSObject, ObservableObject {
     var postsLiveActivityWhileSkippingAudio = false
     /// Set with the scene. The background span-end path reads it when the unit-test host has no display link.
     private var displayClockPaused = false
+    /// Wall time and mission time when a silent tail (no file left in the span) took over the clock.
+    /// The display link's timestamps stall while the phone is locked, so this tail follows `Date`.
+    private var silentWall: Date?
+    private var silentUTC: Date?
+    private var lastActivityMilestone = ""
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private var unavailableFiles = Set<String>()
     nonisolated private let lifetime = PlaybackLifetime()
@@ -182,6 +196,7 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     /// `fromHold` reschedules the real file at the offset saved across an interruption.
     func play(fromHold: Bool = false) {
+        clearSilentClock()
         guard timeline != nil else { return }
         if let end = activeSpan?.end, utc >= end, let start = activeSpan?.start {
             utc = start
@@ -219,6 +234,9 @@ final class PlaybackModel: NSObject, ObservableObject {
         if let segment = segment(at: utc), currentFile == segment.file, audioFile != nil, !player.isPlaying {
             player.play()
         }
+        if displayClockPaused {
+            startBackgroundClock()
+        }
         refreshNowPlaying(force: true)
     }
 
@@ -226,6 +244,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// That clears the interruption resume flag so a later `.shouldResume`
     /// does not start the recording again.
     func pause(user: Bool) {
+        clearSilentClock()
+        stopBackgroundClock()
         if !skipsAudio {
             let nodeWasPlaying = player.isPlaying
             let rendered = nodeWasPlaying ? renderedSeconds() : max(0, holdSeconds)
@@ -327,6 +347,7 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     func seek(to date: Date, markEnd: Bool = true) {
         guard let span = activeSpan else { return }
+        clearSilentClock()
         activityEvent = true
         utc = MissionClock.clamp(date, to: span)
         let atEnd = markEnd && utc >= span.end
@@ -432,6 +453,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     func beginScrub() {
         scrubbing = true
         lastWall = nil
+        clearSilentClock()
     }
 
     func scrub(toFraction fraction: Double) {
@@ -618,6 +640,18 @@ final class PlaybackModel: NSObject, ObservableObject {
     func setSceneActive(_ active: Bool) {
         displayClockPaused = !active
         if active {
+            stopBackgroundClock()
+            if playing {
+                // The locked tail has been following wall time. Apply that once, then
+                // let the display link take over from the caught-up instant.
+                sampleSilentClock(now: Date())
+                if let end = activeSpan?.end, utc >= end {
+                    endAtSpanEnd(user: true)
+                    lifetime.displayLink?.isPaused = false
+                    return
+                }
+            }
+            clearSilentClock()
             lifetime.displayLink?.isPaused = false
             if !skipsAudio, holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
                 // Sample time, not host time, so a pause does not move the clock.
@@ -631,6 +665,7 @@ final class PlaybackModel: NSObject, ObservableObject {
             lastWall = nil
             if playing {
                 chainForward(from: utc)
+                startBackgroundClock()
             }
             // The display link will not tick in the background. Push the current state
             // once, including a pause, so the lock screen shows "Paused" before suspension.
@@ -874,6 +909,21 @@ final class PlaybackModel: NSObject, ObservableObject {
         tickOnMain(timestamp)
     }
 
+    /// Test seam for the locked silent tail. `elapsed` is wall time since the tail was anchored,
+    /// not a display-link delta. The activity ends only once that wall time reaches the span end.
+    func advanceSilentTailForTest(by elapsed: TimeInterval) {
+        if silentWall == nil {
+            armSilentClock(at: utc, wall: Date())
+        }
+        guard let silentWall, playing, !rebuilding, !scrubbing else { return }
+        sampleSilentClock(now: silentWall.addingTimeInterval(elapsed))
+        if let end = activeSpan?.end, utc >= end {
+            endAtSpanEnd(user: true)
+            return
+        }
+        refreshNowPlaying(force: false)
+    }
+
     /// The scheduled file reached its end. The display link is paused in the
     /// background, so the next real file has to be armed here.
     private func segmentDidFinish() {
@@ -906,7 +956,13 @@ final class PlaybackModel: NSObject, ObservableObject {
             return
         }
         guard let next = upcomingSegment(after: time) else {
-            guard let end = activeSpan?.end, time >= end else { return }
+            guard let end = activeSpan?.end else { return }
+            // No file left. Stay on the wall-clock anchor; do not jump to the end
+            // just because the phone locked. The tail ends when that clock arrives.
+            guard time >= end else {
+                armSilentClock(at: time, wall: Date())
+                return
+            }
             if displayClockPaused || lifetime.displayLink?.isPaused == true {
                 pause(user: false)
                 utc = end
@@ -1062,17 +1118,18 @@ final class PlaybackModel: NSObject, ObservableObject {
                 }
             } else if let armed = holdUntil, utc < armed {
                 utc = min(utc.addingTimeInterval(rawDelta), armed)
+            } else if holdUntil == nil, segment(at: utc) == nil, upcomingSegment(after: utc) == nil {
+                // No audio left in the span. Display-link timestamps crawl while the
+                // screen is off, so this tail follows wall time and ends at the span end.
+                let wall = Date()
+                armSilentClock(at: utc, wall: wall)
+                sampleSilentClock(now: wall)
             } else {
-                // The display link was paused in the background. This step is that
-                // real silence, and it is not added on top of a file that is already playing.
+                // A gap that still has a file ahead. The display link steps it in the foreground.
                 utc = utc.addingTimeInterval(rawDelta)
             }
             if let end = activeSpan?.end, utc >= end {
-                utc = end
-                pause(user: true)
-                utc = end
-                ended = true
-                FlybyLiveActivity.scheduleEndAllImmediately()
+                endAtSpanEnd(user: true)
             } else {
                 followSegment()
             }
@@ -1080,6 +1137,102 @@ final class PlaybackModel: NSObject, ObservableObject {
         if usingEnvironment {
             easePan()
         }
+        refreshNowPlaying(force: false)
+    }
+
+    /// Mission time of a silent tail: `silentUTC` plus the wall time since `silentWall`.
+    /// The first sample does not move the clock. Reaching the span end does not happen here.
+    private func armSilentClock(at time: Date, wall: Date) {
+        guard silentWall == nil else { return }
+        silentWall = wall
+        silentUTC = time
+        if displayClockPaused {
+            beginSilentTailTask()
+        }
+    }
+
+    private func clearSilentClock() {
+        silentWall = nil
+        silentUTC = nil
+    }
+
+    private func sampleSilentClock(now: Date) {
+        guard let silentWall, let silentUTC else { return }
+        let advanced = silentUTC.addingTimeInterval(max(0, now.timeIntervalSince(silentWall)))
+        if let end = activeSpan?.end, advanced >= end {
+            utc = end
+        } else {
+            utc = advanced
+        }
+    }
+
+    /// The unlocked natural end. A locked silent tail uses this same dismissal,
+    /// and only after the wall clock has reached the span end.
+    private func endAtSpanEnd(user: Bool) {
+        guard let end = activeSpan?.end else { return }
+        utc = end
+        pause(user: user)
+        utc = end
+        ended = true
+        FlybyLiveActivity.scheduleEndAllImmediately()
+    }
+
+    /// Keeps the mission clock moving while the display link is paused.
+    /// Audio follows the render clock. A silent tail follows the wall-time anchor.
+    private func startBackgroundClock() {
+        guard !RuntimeHost.isUnitTestHost else { return }
+        guard lifetime.backgroundClock == nil else { return }
+        let timer = Timer(timeInterval: 0.25, repeats: true) { @Sendable [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.backgroundTick()
+            }
+        }
+        timer.tolerance = 0.05
+        RunLoop.main.add(timer, forMode: .common)
+        lifetime.backgroundClock = timer
+    }
+
+    private func stopBackgroundClock() {
+        lifetime.backgroundClock?.invalidate()
+        lifetime.backgroundClock = nil
+        endSilentTailTask()
+    }
+
+    /// Keeps the process scheduled through the tail after the last file stops.
+    /// The expiration handler catches the clock up and ends the activity only if the span end has arrived.
+    private func beginSilentTailTask() {
+        guard !RuntimeHost.isUnitTestHost else { return }
+        guard lifetime.silentTailTask == .invalid else { return }
+        lifetime.silentTailTask = UIApplication.shared.beginBackgroundTask(withName: "flyby-silent-tail") { @Sendable [weak self] in
+            MainActor.assumeIsolated {
+                self?.backgroundTick()
+                self?.endSilentTailTask()
+            }
+        }
+    }
+
+    private func endSilentTailTask() {
+        let task = lifetime.silentTailTask
+        guard task != .invalid else { return }
+        lifetime.silentTailTask = .invalid
+        UIApplication.shared.endBackgroundTask(task)
+    }
+
+    private func backgroundTick() {
+        guard playing, displayClockPaused, !rebuilding, !scrubbing else { return }
+        if !skipsAudio, holdUntil == nil, player.isPlaying, let segment = segmentForCurrentFile() {
+            clearSilentClock()
+            utc = segment.start.addingTimeInterval(renderedSeconds())
+        } else if holdUntil == nil, segment(at: utc) == nil, upcomingSegment(after: utc) == nil {
+            let now = Date()
+            armSilentClock(at: utc, wall: now)
+            sampleSilentClock(now: now)
+        }
+        if let end = activeSpan?.end, utc >= end {
+            endAtSpanEnd(user: true)
+            return
+        }
+        followSegment()
         refreshNowPlaying(force: false)
     }
 
@@ -1394,28 +1547,35 @@ final class PlaybackModel: NSObject, ObservableObject {
         }
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
+        let milestone = FlybyActivityCopy.nextLabel(after: utc, milestones: milestones)
         let speaker = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker ?? crewID
         let spanEnded = utc >= span.end
         let requested = activityEvent
         activityEvent = false
         let playbackChanged = lastActivityPlaying != playing
         let speakerChanged = speaker != lastActivitySpeaker
+        let milestoneChanged = milestone != lastActivityMilestone
         let endedChanged = spanEnded != lastActivityEnded
         let due = playing && Date().timeIntervalSince(lastActivityPush) >= Self.activityPushInterval
-        // Background, pause, seek, and span end pass force and are not held for the 15s cadence.
-        guard force || requested || becameMissing || playbackChanged || speakerChanged || endedChanged || due else { return }
+        // Background, pause, seek, span end, and a line change pass through and are not held for the 15s cadence.
+        guard force || requested || becameMissing || playbackChanged || speakerChanged || milestoneChanged || endedChanged || due else { return }
         lastActivityPush = Date()
         lastActivitySpeaker = speaker
+        lastActivityMilestone = milestone
         lastActivityPlaying = playing
         lastActivityEnded = spanEnded
         let rate = playing ? 1.0 : 0.0
+        let timer = FlybyActivityCopy.missionTimer(utc: utc, playing: playing && !spanEnded)
         FlybyLiveActivity.sync(
             arrived: arrived,
             playing: playing,
             progress: FlybyActivityCopy.progress(elapsed: elapsed, duration: duration),
-            nextMilestone: FlybyActivityCopy.nextLabel(after: utc, milestones: milestones),
+            nextMilestone: milestone,
             speaker: speaker,
             clock: FlybyActivityCopy.lockScreenClock(utc),
+            clockStart: timer.start,
+            clockEnd: timer.end,
+            clockPause: timer.pause,
             staleDate: FlybyActivityCopy.staleDate(playing: playing, utc: utc, spanEnd: span.end, rate: rate)
         )
     }
@@ -1481,9 +1641,12 @@ enum ScreenImage {
 
 @MainActor
 enum MediaStore {
+    /// The glass holds the frame on screen and the next one. Anything older is evicted.
+    private static let heldFrameCap = 2
     private static let cache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = 64 * 1024 * 1024
+        cache.countLimit = heldFrameCap
+        cache.totalCostLimit = 48 * 1024 * 1024
         return cache
     }()
     private static var inflight = Set<String>()
@@ -1510,7 +1673,8 @@ enum MediaStore {
     static func allowRetries() {
         failed.removeAll()
         attempts.removeAll()
-        while pinOrder.count > 2 {
+        cache.removeAllObjects()
+        while pinOrder.count > heldFrameCap {
             let oldest = pinOrder.removeFirst()
             pinned.removeValue(forKey: oldest)
         }
@@ -1544,9 +1708,10 @@ enum MediaStore {
         let key = cacheKey(file: file, small: small, maxPixel: maxPixel)
         let name = key as String
         if let cached = cache.object(forKey: key) {
-            pin(name, cached)
+            if !small { pin(name, cached) }
             return cached
         }
+        guard !small else { return nil }
         return pinned[name]
     }
 
@@ -1573,10 +1738,11 @@ enum MediaStore {
         inflight.insert(name)
         waiters[name] = ready
         let pixels = CGFloat(pixelBucket(maxPixel))
+        let hold = !small
         Task.detached(priority: .userInitiated) {
             let owned = ImageDecode.thumbnail(url: url, maxPixel: pixels)
             await MainActor.run {
-                MediaStore.finishPrefetch(name: name, owned: owned, url: url, maxPixel: pixels)
+                MediaStore.finishPrefetch(name: name, owned: owned, url: url, maxPixel: pixels, hold: hold)
             }
         }
     }
@@ -1586,7 +1752,7 @@ enum MediaStore {
         return "\(name)@\(pixelBucket(maxPixel))" as NSString
     }
 
-    private static func finishPrefetch(name: String, owned: ImageDecode.Owned?, url: URL, maxPixel: CGFloat) {
+    private static func finishPrefetch(name: String, owned: ImageDecode.Owned?, url: URL, maxPixel: CGFloat, hold: Bool) {
         inflight.remove(name)
         let ready = waiters.removeValue(forKey: name)
         let image = owned.map { UIImage(cgImage: $0.cgImage) } ?? fallbackImage(url: url, maxPixel: maxPixel)
@@ -1602,7 +1768,7 @@ enum MediaStore {
         }
         let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
         cache.setObject(image, forKey: name as NSString, cost: cost)
-        pin(name, image)
+        if hold { pin(name, image) }
         ready?()
     }
 
@@ -1610,7 +1776,7 @@ enum MediaStore {
         pinOrder.removeAll { $0 == name }
         pinOrder.append(name)
         pinned[name] = image
-        while pinOrder.count > 4 {
+        while pinOrder.count > heldFrameCap {
             let oldest = pinOrder.removeFirst()
             pinned.removeValue(forKey: oldest)
         }

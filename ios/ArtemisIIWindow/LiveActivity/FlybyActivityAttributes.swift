@@ -6,9 +6,14 @@ struct FlybyActivityAttributes: Codable, Hashable, Sendable {
         var progress: Double
         var nextMilestone: String
         var speaker: String
-        /// Absolute mission UTC, `at HH:mm:ss UTC`. The lock screen shows this string. It does not use a timer interval.
+        /// Absolute mission UTC, `at HH:mm:ss UTC`. VoiceOver reads this. The lock screen draws `clockStart`.
         var clock: String
         var playing: Bool
+        /// Wall-clock count whose elapsed time is the mission `HH:mm:ss`. It ticks while the app is suspended.
+        /// `clockPause` freezes that count while playback is paused.
+        var clockStart: Date
+        var clockEnd: Date
+        var clockPause: Date?
     }
 
     /// Lock Screen and Dynamic Island copy. Nil while the recording is playing.

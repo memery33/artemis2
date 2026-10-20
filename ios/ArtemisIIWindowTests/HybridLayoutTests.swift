@@ -173,6 +173,31 @@ final class HybridLayoutTests: XCTestCase {
             XCTAssertEqual(place.y, CGFloat(y), accuracy: 0.0001)
             XCTAssertFalse(abs(Double(place.x) - 0.30) < 0.001 && abs(Double(place.y) - 0.50) < 0.001)
         }
+        let glushko = try XCTUnwrap(frames.first { $0.nasaID == "art002e009611" })
+        // The disk fills the left of the frame. The limb is near x 0.31 at the top
+        // and x 0.45 a quarter of the way down. A focus in that band puts the edge
+        // in the upper right of the portrait crop. The old centroid (0.19, 0.65) did not.
+        let focusX = try XCTUnwrap(glushko.focusX)
+        let focusY = try XCTUnwrap(glushko.focusY)
+        XCTAssertGreaterThan(focusX, 0.28)
+        XCTAssertLessThan(focusX, 0.36)
+        XCTAssertGreaterThan(focusY, 0.30)
+        XCTAssertLessThan(focusY, 0.50)
+    }
+
+    @MainActor
+    func testLabeledRulerMarksIncludeTheReinerTick() throws {
+        let model = PlaybackModel()
+        let timeline = try XCTUnwrap(model.timeline)
+        let approach = FlybyEphemeris.bundled.flatMap {
+            FlybyPath.closestApproach($0.samples, radiusKm: $0.document.radiusKm)?.date
+        }
+        let dates = RulerLabelMarks.dates(timeline: timeline, approach: approach)
+        let reiner = try XCTUnwrap(timeline.lines.first { $0.utc == RulerLabelMarks.reiner }?.date)
+        XCTAssertTrue(dates.contains { abs($0.timeIntervalSince(reiner)) < 0.001 })
+        let milestones = MilestoneList.derive(timeline).map(\.date)
+        XCTAssertFalse(milestones.contains { abs($0.timeIntervalSince(reiner)) < 0.001 })
+        XCTAssertGreaterThanOrEqual(dates.count, 3)
     }
 
     private func assertMatchesFilePixel(_ point: CGPoint, lon: Double, lat: Double, size: CGSize) {
