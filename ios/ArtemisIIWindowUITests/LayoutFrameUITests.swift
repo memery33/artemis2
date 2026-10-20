@@ -77,15 +77,13 @@ final class LayoutFrameUITests: XCTestCase {
         let edge = element(named: "safe-area-bottom", in: app)
         XCTAssertTrue(edge.waitForExistence(timeout: 8))
         let minimumSide = 44 - 0.01
-        let settled = XCTNSPredicateExpectation(
-            predicate: NSPredicate(
-                format: "frame.size.height >= %f AND frame.size.width >= %f",
-                minimumSide,
-                minimumSide
-            ),
-            object: about
-        )
-        wait(for: [settled], timeout: 5)
+        // XCUIElement does not resolve frame.size through NSPredicate, so poll the frame itself.
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            let frame = about.frame
+            if frame.width >= minimumSide, frame.height >= minimumSide { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
 
         let inset = app.frame.maxY - edge.frame.maxY
         XCTAssertGreaterThanOrEqual(inset, -0.01)
