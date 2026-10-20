@@ -65,11 +65,20 @@ struct HybridStage: View {
     @State private var dragTranslation: CGFloat = 0
     @State private var crater: CraterKind?
     /// Window bottom inset. The geometry reader below ignores the safe area, so its own inset is always 0.
-    @State private var safeBottom: CGFloat = 0
+    /// Seeded from the window before the first frame, then updated when the inset changes.
+    @State private var safeBottom: CGFloat
+
+    init() {
+        _safeBottom = State(initialValue: Self.seededSafeBottom())
+    }
+
+    private static func seededSafeBottom() -> CGFloat {
+        MainActor.assumeIsolated { WindowSafeArea.bottom }
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let panelHeight = min(460, max(340, geo.size.height * 0.5))
+            let panelHeight = PanelMetrics.sheetHeight(screenHeight: geo.size.height, safeBottom: safeBottom)
             let pixels = ScreenImage.maxPixel(size: geo.size, scale: displayScale)
             ZStack {
                 HybridColor.ground.ignoresSafeArea()
@@ -640,6 +649,8 @@ enum RulerLabelLayout {
     /// The name starts at the bottom of the time band and hangs below it.
     static let nameOffset: CGFloat = 16
     static let nameLine: CGFloat = 14
+    /// From the time-line center to the bottom of the name.
+    static var nameTail: CGFloat { nameOffset - timeBand / 2 + nameLine }
 
     /// Keeps the time line on the rail. The rail inset is 16 pt, so clamping to half of the 44 pt hit target sat 6 pt off the tick.
     static func timeCenter(tick: CGFloat, height: CGFloat, safeArea: CGFloat = 0) -> CGFloat {
@@ -667,7 +678,8 @@ enum RulerMetrics {
     static let bottomInset: CGFloat = 16
 
     static func bottomInset(safeArea: CGFloat) -> CGFloat {
-        bottomInset + max(0, safeArea)
+        // The name hangs past the 16 pt rail padding. Leave room for it above the safe edge.
+        max(bottomInset, RulerLabelLayout.nameTail) + max(0, safeArea)
     }
 
     static func trackHeight(_ height: CGFloat, safeArea: CGFloat = 0) -> CGFloat {
@@ -1465,8 +1477,6 @@ struct CraterPage: View {
     }
 }
 
-/// Small credit kept on every photograph. Its own element, so a crater page
-/// query can find `photo-credit` beside the picture.
 /// The stage ignores the safe area, so a geometry reader on it reports a zero bottom inset.
 /// This reads the window inset instead and reports it once the view is in a window.
 struct WindowSafeAreaReader: UIViewRepresentable {
@@ -1518,6 +1528,34 @@ struct WindowSafeAreaReader: UIViewRepresentable {
     }
 }
 
+/// Bottom inset of the key window, read synchronously so the first frame is not laid out at 0.
+@MainActor
+enum WindowSafeArea {
+    static var bottom: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        for scene in scenes {
+            if let window = scene.keyWindow ?? scene.windows.first(where: \.isKeyWindow) ?? scene.windows.first {
+                return window.safeAreaInsets.bottom
+            }
+        }
+        return 0
+    }
+}
+
+/// The scrollable part of the sheet keeps its height. The home-indicator inset is added
+/// outside that number, so the padding does not push the caption below the fold.
+enum PanelMetrics {
+    static func contentHeight(screenHeight: CGFloat) -> CGFloat {
+        min(460, max(340, screenHeight * 0.5))
+    }
+
+    static func sheetHeight(screenHeight: CGFloat, safeBottom: CGFloat) -> CGFloat {
+        contentHeight(screenHeight: screenHeight) + max(0, safeBottom)
+    }
+}
+
+/// Small credit kept on every photograph. Its own element, so a crater page
+/// query can find `photo-credit` beside the picture.
 struct CreditLine: View {
     var body: some View {
         Text("Credit: NASA/Artemis II Crew")
