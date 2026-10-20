@@ -1336,17 +1336,19 @@ struct AccessibilityMomentList: View {
 
     private var lineGap: CGFloat {
         switch dynamicTypeSize {
-        case .accessibilityMedium:
+        case .accessibility1:
             return 6
-        case .accessibilityLarge:
+        case .accessibility2:
             return 8
-        case .accessibilityExtraLarge:
+        case .accessibility3:
             return 10
-        case .accessibilityExtraExtraLarge:
+        case .accessibility4:
             return 12
-        case .accessibilityExtraExtraExtraLarge:
+        case .accessibility5:
             return 16
-        default:
+        case .xSmall, .small, .medium, .large, .xLarge, .xxLarge, .xxxLarge:
+            return 8
+        @unknown default:
             return 8
         }
     }
