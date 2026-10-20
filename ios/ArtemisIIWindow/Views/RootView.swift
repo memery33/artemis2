@@ -71,7 +71,7 @@ struct GateView: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             HybridColor.ground.ignoresSafeArea()
-            if let hero, let image = model.photo(hero, maxPixel: 1400) {
+            if let hero, let image = model.photo(hero, maxPixel: ScreenImage.maxPixel) {
                 PlacedPhoto(image: image, objectX: 0.34, objectY: 0.42)
                     .ignoresSafeArea()
                     .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
@@ -150,8 +150,8 @@ struct GateView: View {
             RuntimeHost.noteSceneBecameActive()
             for _ in 0..<40 {
                 if Task.isCancelled { return }
-                model.prefetch(hero, maxPixel: 1400)
-                if model.photo(hero, maxPixel: 1400) != nil { return }
+                model.prefetch(hero, maxPixel: ScreenImage.maxPixel)
+                if model.photo(hero, maxPixel: ScreenImage.maxPixel) != nil { return }
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
         }

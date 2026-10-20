@@ -153,6 +153,9 @@ struct Frame: Decodable, Equatable, Identifiable {
     let targetID: String
     let exposureNote: String
     let focalLengthMM: Double?
+    /// Brightness centroid of the lit surface, 0...1. Nil keeps the default crop.
+    let focusX: Double?
+    let focusY: Double?
 
     var id: String { nasaID }
     var isCabinCard: Bool { nasaID == Timeline.cabinID }
@@ -165,6 +168,8 @@ struct Frame: Decodable, Equatable, Identifiable {
         case targetID = "target_id"
         case exposureNote = "exposure_note"
         case focalLengthMM = "focal_length_mm"
+        case focusX = "focus_x"
+        case focusY = "focus_y"
     }
 
     init(from decoder: Decoder) throws {
@@ -180,6 +185,8 @@ struct Frame: Decodable, Equatable, Identifiable {
         targetID = try raw.decodeIfPresent(String.self, forKey: .targetID) ?? ""
         exposureNote = try raw.decodeIfPresent(String.self, forKey: .exposureNote) ?? ""
         focalLengthMM = try raw.decodeIfPresent(Double.self, forKey: .focalLengthMM)
+        focusX = try raw.decodeIfPresent(Double.self, forKey: .focusX)
+        focusY = try raw.decodeIfPresent(Double.self, forKey: .focusY)
         date = try ISO8601.parse(utc)
     }
 }

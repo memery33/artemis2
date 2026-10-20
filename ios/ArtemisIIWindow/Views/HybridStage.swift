@@ -90,11 +90,15 @@ struct HybridStage: View {
         .preferredColorScheme(.dark)
         .task(id: shownFrame?.file) {
             guard let frame = shownFrame else { return }
-            model.prefetch(frame, maxPixel: 1400)
+            let pixels = ScreenImage.maxPixel
+            model.prefetch(frame, maxPixel: pixels)
+            if let upcoming = HybridFrames.upcomingWindowTwo(after: model.utc, frames: model.timeline?.frames ?? []) {
+                model.prefetch(upcoming, maxPixel: pixels)
+            }
         }
         .task(id: crater?.id) {
             guard let crater, let frame = craterFrame(crater) else { return }
-            model.prefetch(frame, maxPixel: 1400)
+            model.prefetch(frame, maxPixel: ScreenImage.maxPixel)
         }
     }
 
@@ -106,9 +110,8 @@ struct HybridStage: View {
         HybridFrames.shown(at: model.utc, side: model.window, timeline: model.timeline, span: model.activeSpan)
     }
 
-    @ViewBuilder
     private var flightPhoto: some View {
-        if let frame = shownFrame, let image = model.photo(frame, maxPixel: 1400) {
+        StableFramePhoto(frame: shownFrame, maxPixel: ScreenImage.maxPixel) { image, frame in
             let place = HybridFrames.placement(frame)
             let photo = placed(image, place)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -413,6 +416,13 @@ enum HybridFrames {
         }
     }
 
+    /// The next Window 2 frame after `time`, prefetched so the pane never waits on an empty decode.
+    static func upcomingWindowTwo(after time: Date, frames: [Frame]) -> Frame? {
+        frames
+            .filter { $0.instrument == "nkd5015" && $0.date > time }
+            .min { $0.date < $1.date }
+    }
+
     /// Window 2 (D5) only. The latest real frame at or before the clock stays up.
     /// Before the first frame, that first frame is shown, so Glushko (art002e009611,
     /// 19:33:59) is on screen through 19:34:29 instead of the later Moon frame.
@@ -442,14 +452,22 @@ enum HybridFrames {
     }
 
     /// Cab frames keep the Moon on the right. A Moon disk is centered and zoomed to the edges.
-    /// Other Window 2 frames keep the lit surface, which sits left of the sky.
+    /// Window 2 uses the stored brightness centroid when the frame has one, so a limb
+    /// is not cropped onto the dark sky. Otherwise the lit surface sits left of the sky.
     static func placement(_ frame: Frame) -> Placement {
         if frame.instrument == "cab2" {
             // Dark Cab Cam frames keep the Moon as a small disk. Crop toward that limb.
             if frame.look == "dark" {
+                if let x = frame.focusX, let y = frame.focusY {
+                    return Placement(x: CGFloat(x), y: CGFloat(y), zoom: 2.8, focus: true)
+                }
                 return Placement(x: 0.54, y: 0.54, zoom: 2.8, focus: true)
             }
             return Placement(x: 0.34, y: 0.42, zoom: 1, focus: false)
+        }
+        if let x = frame.focusX, let y = frame.focusY {
+            let zoom: CGFloat = frame.targetID == "Moon" ? 1.38 : 1.08
+            return Placement(x: CGFloat(x), y: CGFloat(y), zoom: zoom, focus: true)
         }
         if frame.targetID == "Moon" {
             return Placement(x: 0.36, y: 0.59, zoom: 1.38, focus: true)
@@ -564,6 +582,17 @@ struct RulerPiece: Equatable {
 }
 
 /// One inset for the rail, the ticks, the needle, `y`, and `date(atY:)`.
+/// The ruler label's time line is centered on its tick. The name hangs below that line.
+enum RulerLabelLayout {
+    static let timeLine: CGFloat = 44
+    static let nameOffset: CGFloat = 28
+
+    static func timeCenter(tick: CGFloat, height: CGFloat) -> CGFloat {
+        let half = timeLine / 2
+        return min(max(half, tick), max(half, height - half))
+    }
+}
+
 enum RulerMetrics {
     static let topInset: CGFloat = 16
     static let bottomInset: CGFloat = 16
@@ -589,6 +618,56 @@ enum FrameOptics {
         let whole = mm.rounded()
         let digits = abs(mm - whole) < 0.05 ? String(format: "%.0f", whole) : String(format: "%.1f", mm)
         return "Window \(window) · \(digits) mm"
+    }
+}
+
+/// Keeps the last decoded frame on screen until the next file has a bitmap.
+/// A cache miss must not clear the pane.
+struct StableFramePhoto<Content: View>: View {
+    @EnvironmentObject private var model: PlaybackModel
+    var frame: Frame?
+    var maxPixel: CGFloat
+    @ViewBuilder var content: (UIImage, Frame) -> Content
+    @State private var heldImage: UIImage?
+    @State private var heldFrame: Frame?
+
+    var body: some View {
+        let live = decoded
+        let shown = live ?? held
+        Group {
+            if let shown {
+                content(shown.image, shown.frame)
+            }
+        }
+        .onAppear { adopt(live) }
+        .onChange(of: model.frameCacheEpoch) { _, _ in
+            adopt(decoded)
+            if decoded == nil, let frame {
+                model.prefetch(frame, maxPixel: maxPixel)
+            }
+        }
+        .onChange(of: frame?.file) { _, _ in
+            adopt(decoded)
+            if decoded == nil, let frame {
+                model.prefetch(frame, maxPixel: maxPixel)
+            }
+        }
+    }
+
+    private var decoded: (image: UIImage, frame: Frame)? {
+        guard let frame, let image = model.photo(frame, maxPixel: maxPixel) else { return nil }
+        return (image, frame)
+    }
+
+    private var held: (image: UIImage, frame: Frame)? {
+        guard let heldImage, let heldFrame else { return nil }
+        return (heldImage, heldFrame)
+    }
+
+    private func adopt(_ live: (image: UIImage, frame: Frame)?) {
+        guard let live else { return }
+        heldImage = live.image
+        heldFrame = live.frame
     }
 }
 
@@ -981,7 +1060,9 @@ struct FlybyRuler: View {
         let gutter: CGFloat = 36
         let labelWidth = max(96, width - gutter - 4)
         let centerX = width - gutter - labelWidth / 2
-        let centerY = min(max(22, y(date, height: height)), max(22, height - 22))
+        let tick = y(date, height: height)
+        // The time line, not the name under it, is centered on the tick.
+        let centerY = RulerLabelLayout.timeCenter(tick: tick, height: height)
         return label()
             .frame(width: labelWidth, alignment: .trailing)
             .position(x: centerX, y: centerY)
@@ -995,20 +1076,26 @@ struct FlybyRuler: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(alignment: .trailing, spacing: 0) {
-                Text(time)
-                    .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
-                    .fontWeight(.semibold)
-                Text(name)
-                    .font(HybridFont.text(11, relativeTo: .caption2))
-                    .lineLimit(3)
-                    .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
-            .fixedSize(horizontal: false, vertical: true)
-            .contentShape(Rectangle())
+            Text(time)
+                .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
+                .fontWeight(.semibold)
+                .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: RulerLabelLayout.timeLine,
+                    alignment: Alignment(horizontal: .trailing, vertical: .center)
+                )
+                .overlay(alignment: .topTrailing) {
+                    Text(name)
+                        .font(HybridFont.text(11, relativeTo: .caption2))
+                        .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.top, RulerLabelLayout.nameOffset)
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)
@@ -1149,15 +1236,19 @@ struct CraterPage: View {
                 }
             }
             Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(HybridColor.cream)
-                    .frame(width: 32, height: 32)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay {
-                        Circle().strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
-                    }
-                    .frame(width: 44, height: 44)
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 32, height: 32)
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(HybridColor.cream)
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.leading, 12)
@@ -1173,8 +1264,8 @@ struct CraterPage: View {
     private var header: some View {
         ZStack(alignment: .bottom) {
             HybridColor.ground
-            if let frame, let image = model.photo(frame, maxPixel: 1400) {
-                let place = HybridFrames.placement(frame)
+            StableFramePhoto(frame: frame, maxPixel: ScreenImage.maxPixel) { image, shown in
+                let place = HybridFrames.placement(shown)
                 PlacedPhoto(
                     image: image,
                     objectX: place.x,
@@ -1186,7 +1277,7 @@ struct CraterPage: View {
                 .frame(maxWidth: .infinity)
                 .clipped()
                 .matchedGeometryEffect(id: "flyby-photo", in: namespace)
-                .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
+                .accessibilityLabel(FrameSelection.photoAccessLabel(shown))
             }
             LinearGradient(
                 colors: [.clear, HybridColor.ground.opacity(0.2), HybridColor.ground],
@@ -1197,8 +1288,7 @@ struct CraterPage: View {
             .frame(maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(false)
             TrackMapView(date: frame?.date ?? model.utc, emphasized: kind.siteID)
-                .frame(height: 168)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: .infinity, maxHeight: 168)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 28)
         }

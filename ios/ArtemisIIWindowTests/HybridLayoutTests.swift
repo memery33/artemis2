@@ -113,6 +113,68 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertFalse(model.ended)
     }
 
+    func testMarkerLettersAndReadoutClearTheCraters() {
+        XCTAssertEqual(TrackMapGeometry.markerLetter(for: "aristarchus"), "A")
+        XCTAssertEqual(TrackMapGeometry.markerLetter(for: "reiner-gamma"), "R")
+        XCTAssertNil(TrackMapGeometry.markerLetter(for: "orientale"))
+        let aristarchus = (lon: -47.49, lat: 23.73)
+        let reiner = (lon: -58.96, lat: 7.39)
+        for width: CGFloat in [335, 362, 400, 520] {
+            let size = TrackMapGeometry.fittedSize(width: width)
+            let rect = TrackMapGeometry.fillRect(in: size)
+            XCTAssertEqual(rect.width, size.width, accuracy: 0.5)
+            XCTAssertEqual(rect.height, size.height, accuracy: 0.5)
+            let markers = [
+                TrackMapGeometry.point(lon: aristarchus.lon, lat: aristarchus.lat, in: rect),
+                TrackMapGeometry.point(lon: reiner.lon, lat: reiner.lat, in: rect),
+            ]
+            let corner = TrackMapGeometry.readoutCorner(markers: markers, in: size)
+            let box = corner.rect(in: size, box: CGSize(width: 124, height: 70), margin: 8)
+            XCTAssertNotEqual(corner, .topTrailing, "Aristarchus sits in the top-right at \(width)")
+            for marker in markers {
+                XCTAssertGreaterThan(
+                    TrackMapGeometry.distance(marker, from: box),
+                    8,
+                    "ORION box covers a marker at width \(width)"
+                )
+            }
+        }
+    }
+
+    func testRulerTimeSitsOnItsTick() {
+        let height: CGFloat = 700
+        let tick = RulerMetrics.y(fraction: 0.42, height: height)
+        XCTAssertEqual(RulerLabelLayout.timeCenter(tick: tick, height: height), tick, accuracy: 0.01)
+        XCTAssertEqual(RulerLabelLayout.timeLine, 44)
+    }
+
+    func testDecodeCapIsTheScreenAndNotTheFile() {
+        XCTAssertEqual(ScreenImage.maxPixel(bounds: CGSize(width: 402, height: 874), scale: 3), 2622)
+        XCTAssertEqual(ScreenImage.maxPixel(bounds: CGSize(width: 440, height: 956), scale: 3), 2868)
+        XCTAssertEqual(ScreenImage.maxPixel(bounds: CGSize(width: 2000, height: 2000), scale: 3), 3000)
+        XCTAssertEqual(ScreenImage.maxPixel(bounds: .zero, scale: 1), 1600)
+    }
+
+    @MainActor
+    func testLimbFramesCropTowardTheStoredFocus() throws {
+        let model = PlaybackModel()
+        let frames = try XCTUnwrap(model.timeline?.frames)
+        for nasaID in ["art002e010041", "art002e009611"] {
+            let frame = try XCTUnwrap(frames.first { $0.nasaID == nasaID })
+            let x = try XCTUnwrap(frame.focusX)
+            let y = try XCTUnwrap(frame.focusY)
+            XCTAssertGreaterThanOrEqual(x, 0)
+            XCTAssertLessThanOrEqual(x, 1)
+            XCTAssertGreaterThanOrEqual(y, 0)
+            XCTAssertLessThanOrEqual(y, 1)
+            let place = HybridFrames.placement(frame)
+            XCTAssertTrue(place.focus)
+            XCTAssertEqual(place.x, CGFloat(x), accuracy: 0.0001)
+            XCTAssertEqual(place.y, CGFloat(y), accuracy: 0.0001)
+            XCTAssertFalse(abs(Double(place.x) - 0.30) < 0.001 && abs(Double(place.y) - 0.50) < 0.001)
+        }
+    }
+
     private func assertMatchesFilePixel(_ point: CGPoint, lon: Double, lat: Double, size: CGSize) {
         var east = lon.truncatingRemainder(dividingBy: 360)
         if east < 0 { east += 360 }

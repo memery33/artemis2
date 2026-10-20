@@ -58,13 +58,13 @@ struct FlybyLiveActivityWidget: Widget {
             } compactLeading: {
                 MissionClockText(state: context.state, font: HybridFont.text(11, relativeTo: .caption2))
             } compactTrailing: {
-                if let paused = FlybyActivityAttributes.pausedLabel(playing: context.state.playing) {
-                    Text(paused)
-                        .font(HybridFont.text(11, relativeTo: .caption2))
-                        .fontWeight(.semibold)
-                } else {
+                if context.state.playing {
                     Text(context.state.speaker)
                         .font(HybridFont.text(11, relativeTo: .caption2))
+                } else {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .accessibilityLabel("Paused")
                 }
             } minimal: {
                 if context.state.playing {
@@ -80,7 +80,8 @@ struct FlybyLiveActivityWidget: Widget {
     }
 }
 
-/// "Paused" on the Lock Screen and in the Dynamic Island while `playing` is false.
+/// "Paused" on the Lock Screen and in the expanded Dynamic Island while `playing` is false.
+/// The compact trailing slot uses a pause glyph instead of this word.
 private struct PausedMarker: View {
     var playing: Bool
     var font: Font

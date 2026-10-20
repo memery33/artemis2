@@ -441,12 +441,19 @@ final class PlaybackModel: NSObject, ObservableObject {
         utc = MissionClock.clamp(date, to: span)
     }
 
-    /// Ruler drag. Stays strictly inside the active span. A date in the cab run,
-    /// or on the span end, does not move the clock and does not change range.
+    /// A ruler drag stops this far short of the span end. The last few seconds
+    /// belong to playback, so releasing the ruler cannot sit on the edge where
+    /// one display-link step walks off the end.
+    static let scrubEndMargin: TimeInterval = 8
+
+    /// Ruler drag. Stays strictly inside the active span, and at least
+    /// `scrubEndMargin` short of the end. A date in the cab run, or on the
+    /// span end, does not move the clock and does not change range.
     func scrubRuler(to date: Date) {
         guard scrubbing, let span = activeSpan else { return }
         guard date >= span.start, date < span.end else { return }
-        utc = date
+        let latest = span.end.addingTimeInterval(-Self.scrubEndMargin)
+        utc = min(date, max(span.start, latest))
     }
 
     /// `markEnd` is false while the flyby ruler is exploring the coast past the
@@ -619,6 +626,9 @@ final class PlaybackModel: NSObject, ObservableObject {
             }
         } else {
             lifetime.displayLink?.isPaused = true
+            // Drop the last tick so unlocking does not add the whole locked interval
+            // in one step and walk a scrub near the end off the span.
+            lastWall = nil
             if playing {
                 chainForward(from: utc)
             }
@@ -887,23 +897,22 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     /// Plays the next real segment, or arms it at its own start time.
-    /// A span with nothing left to play pauses and sets the Now Playing rate to 0.
+    /// A silent tail — the ruler dragged past the last file, then the phone locked —
+    /// leaves the clock and the Live Activity where they are. Only a clock that has
+    /// already reached the span end dismisses the activity from here.
     private func chainForward(from time: Date) {
         guard playing, !engineFailed, !rebuilding, holdUntil == nil else { return }
         if !skipsAudio, player.isPlaying, segment(at: time) != nil {
             return
         }
         guard let next = upcomingSegment(after: time) else {
+            guard let end = activeSpan?.end, time >= end else { return }
             if displayClockPaused || lifetime.displayLink?.isPaused == true {
                 pause(user: false)
-                // The display link is not running, so it cannot advance `utc` onto the span end.
-                // Park there, end the Live Activity, and raise the end card before the scene returns.
-                if let end = activeSpan?.end {
-                    utc = end
-                    ended = true
-                    FlybyLiveActivity.scheduleEndAllImmediately()
-                    refreshNowPlaying(force: true)
-                }
+                utc = end
+                ended = true
+                FlybyLiveActivity.scheduleEndAllImmediately()
+                refreshNowPlaying(force: true)
             }
             return
         }
@@ -1437,12 +1446,12 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     func photo(_ frame: Frame, maxPixel: CGFloat) -> UIImage? {
         _ = frameCacheEpoch
-        let cap = maxPixel > 1 ? maxPixel : 1400
+        let cap = maxPixel > 1 ? maxPixel : ScreenImage.maxPixel
         return MediaStore.cachedImage(file: frame.file, small: phoneImages, maxPixel: cap)
     }
 
     func prefetch(_ frame: Frame, maxPixel: CGFloat) {
-        let cap = maxPixel > 1 ? maxPixel : 1400
+        let cap = maxPixel > 1 ? maxPixel : ScreenImage.maxPixel
         MediaStore.prefetch(file: frame.file, small: phoneImages, maxPixel: cap) { [weak self] in
             self?.noteFramesDecoded(file: frame.file)
         }
@@ -1457,6 +1466,19 @@ final class PlaybackModel: NSObject, ObservableObject {
             self?.noteFramesDecoded(file: file)
         }
         return nil
+    }
+}
+
+/// Decode cap for a full-bleed frame. The file on disk is larger than the glass.
+enum ScreenImage {
+    static func maxPixel(bounds: CGSize, scale: CGFloat) -> CGFloat {
+        let edge = max(bounds.width, bounds.height) * max(scale, 1)
+        guard edge.isFinite, edge >= 200 else { return 1600 }
+        return min(3000, ceil(edge))
+    }
+
+    static var maxPixel: CGFloat {
+        maxPixel(bounds: UIScreen.main.bounds, scale: UIScreen.main.scale)
     }
 }
 
@@ -1535,7 +1557,15 @@ enum MediaStore {
     static func prefetch(file: String, small: Bool, maxPixel: CGFloat, ready: @escaping @MainActor () -> Void) {
         let key = cacheKey(file: file, small: small, maxPixel: maxPixel)
         let name = key as String
-        if cache.object(forKey: key) != nil || pinned[name] != nil || inflight.contains(name) || failed.contains(name) {
+        if cache.object(forKey: key) != nil || pinned[name] != nil || failed.contains(name) {
+            return
+        }
+        if inflight.contains(name) {
+            let previous = waiters[name]
+            waiters[name] = {
+                previous?()
+                ready()
+            }
             return
         }
         guard let url = url(for: variant(file, small: small)) else {
@@ -1569,6 +1599,8 @@ enum MediaStore {
             if count >= 2 {
                 failed.insert(name)
             }
+            // Wake the view so it can keep the previous frame up and try once more.
+            ready?()
             return
         }
         let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0

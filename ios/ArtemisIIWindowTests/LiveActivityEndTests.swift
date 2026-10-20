@@ -324,6 +324,12 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertEqual(model.range, .flyby)
         XCTAssertEqual(model.window, .nikon)
         XCTAssertEqual(model.utc.timeIntervalSince(inside), 0, accuracy: 0.01)
+        model.scrubRuler(to: span.end.addingTimeInterval(-1))
+        XCTAssertEqual(
+            model.utc.timeIntervalSince(span.end),
+            -PlaybackModel.scrubEndMargin,
+            accuracy: 0.05
+        )
         model.scrubRuler(to: span.end)
         XCTAssertLessThan(model.utc, span.end)
         XCTAssertNotEqual(model.utc, span.end.addingTimeInterval(-0.05))
@@ -385,9 +391,10 @@ final class LiveActivityEndTests: XCTestCase {
         XCTAssertEqual(model.utc, span.end)
     }
 
-    /// Background playback with nothing left in the span dismisses the activity.
+    /// Locking the phone before the span end keeps the Live Activity, even when
+    /// this track has no file left to play. Only the clock reaching the end dismisses it.
     @MainActor
-    func testBackgroundSpanEndEndsTheActivity() async throws {
+    func testBackgroundBeforeSpanEndKeepsTheActivity() async throws {
         let fake = FakeFlybyActivities(identifiers: ["live"])
         let previous = FlybyLiveActivity.install(fake)
         defer { FlybyLiveActivity.install(previous) }
@@ -396,15 +403,53 @@ final class LiveActivityEndTests: XCTestCase {
         model.postsLiveActivityWhileSkippingAudio = true
         let span = try XCTUnwrap(model.activeSpan)
         model.playing = true
-        // Thirty seconds before the end, so pause itself is still mid-span.
-        // With nothing left to play, chainForward parks on the span end and dismisses the activity.
-        model.utc = span.end.addingTimeInterval(-30)
+        let parked = span.end.addingTimeInterval(-30)
+        model.utc = parked
         model.setSceneActive(false)
         await FlybyLiveActivity.finishQueuedWork()
-        XCTAssertEqual(fake.ended, ["live"])
-        XCTAssertTrue(fake.identifiersStore.isEmpty)
-        XCTAssertTrue(model.ended)
-        XCTAssertEqual(model.utc, span.end)
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+        XCTAssertFalse(model.ended)
+        XCTAssertEqual(model.utc, parked)
+        XCTAssertLessThan(model.utc, span.end)
+    }
+
+    /// A ruler dragged past the flyby end, released while playing, then locked,
+    /// leaves the Live Activity up and the clock short of the span end.
+    @MainActor
+    func testScrubPastTheSpanEndKeepsTheLiveActivity() async throws {
+        let fake = FakeFlybyActivities(identifiers: ["live"])
+        let previous = FlybyLiveActivity.install(fake)
+        defer { FlybyLiveActivity.install(previous) }
+        let model = PlaybackModel()
+        model.arrived = true
+        model.postsLiveActivityWhileSkippingAudio = true
+        model.playing = true
+        let span = try XCTUnwrap(model.activeSpan)
+        let margin = PlaybackModel.scrubEndMargin
+
+        model.beginScrub()
+        model.scrubRuler(to: span.end.addingTimeInterval(-0.25))
+        model.scrubRuler(to: span.end.addingTimeInterval(45))
+        model.endScrub(markEnd: false)
+        model.advanceDisplayLinkForTest(to: 1)
+        model.advanceDisplayLinkForTest(to: 2)
+        await FlybyLiveActivity.finishQueuedWork()
+
+        XCTAssertTrue(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertLessThanOrEqual(model.utc, span.end.addingTimeInterval(-margin + 1.1))
+        XCTAssertGreaterThan(model.utc, span.end.addingTimeInterval(-margin - 0.05))
+        XCTAssertLessThan(model.utc, span.end)
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+
+        model.setSceneActive(false)
+        await FlybyLiveActivity.finishQueuedWork()
+        XCTAssertTrue(fake.ended.isEmpty)
+        XCTAssertEqual(fake.identifiersStore, ["live"])
+        XCTAssertFalse(model.ended)
+        XCTAssertLessThan(model.utc, span.end)
     }
 
     @MainActor
