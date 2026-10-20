@@ -146,6 +146,54 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(toggle.isHittable)
     }
 
+    /// Default type. The clock stays one line, and the Play circle sits inside the transport scroller.
+    func testPlayToggleSitsInsideTheOpenPanel() {
+        let app = FlybyUILaunch.application()
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let toggle = app.buttons["playback-toggle"]
+        let scroll = app.scrollViews["transport-scroll"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+        let clock = element(named: "mission-clock", in: app)
+        XCTAssertTrue(clock.waitForExistence(timeout: 8))
+
+        let deadline = Date().addingTimeInterval(3)
+        var toggleFrame = toggle.frame
+        var scrollFrame = scroll.frame
+        var clockFrame = clock.frame
+        while Date() < deadline {
+            toggleFrame = toggle.frame
+            scrollFrame = scroll.frame
+            clockFrame = clock.frame
+            let inside = scrollFrame.height > 1
+                && toggleFrame.height >= 55
+                && toggleFrame.minY >= scrollFrame.minY - 0.5
+                && toggleFrame.maxY <= scrollFrame.maxY + 0.5
+                && toggleFrame.minX >= scrollFrame.minX - 0.5
+                && toggleFrame.maxX <= scrollFrame.maxX + 0.5
+                && toggleFrame.maxY <= app.frame.maxY + 0.5
+                && clockFrame.height > 1
+                && clockFrame.height < 26
+            if inside { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertGreaterThanOrEqual(toggleFrame.height, 55)
+        XCTAssertGreaterThanOrEqual(toggleFrame.minY, scrollFrame.minY - 0.5)
+        XCTAssertLessThanOrEqual(toggleFrame.maxY, scrollFrame.maxY + 0.5)
+        XCTAssertGreaterThanOrEqual(toggleFrame.minX, scrollFrame.minX - 0.5)
+        XCTAssertLessThanOrEqual(toggleFrame.maxX, scrollFrame.maxX + 0.5)
+        XCTAssertLessThanOrEqual(toggleFrame.maxY, app.frame.maxY + 0.5)
+        XCTAssertGreaterThan(clockFrame.height, 1)
+        XCTAssertLessThan(clockFrame.height, 26)
+    }
+
     /// AX3 is UICTContentSizeCategoryAccessibilityXL (not the Swift name AccessibilityExtraLarge).
     /// AX1 AccessibilityM, AX2 AccessibilityL, AX3 AccessibilityXL, AX4 AccessibilityXXL, AX5 AccessibilityXXXL.
     /// The closed screen stays the phone's width. Once the panel is open, the scroll column
@@ -391,11 +439,13 @@ final class LayoutFrameUITests: XCTestCase {
     /// AX5. The frame id and the credit stay above the Controls strip and on the phone.
     private func assertCaptionClearsControls(app: XCUIApplication, card: XCUIElement, caption: XCUIElement) {
         let controls = app.buttons["open-panel"]
-        let frameID = element(named: "frame-id", in: app)
-        let credit = element(named: "photo-credit", in: app)
+        let frameIDs = app.descendants(matching: .any).matching(identifier: "frame-id")
+        let frameID = caption.descendants(matching: .any)["frame-id"]
+        let credit = caption.descendants(matching: .any)["photo-credit"]
         XCTAssertTrue(controls.waitForExistence(timeout: 4))
         XCTAssertTrue(frameID.waitForExistence(timeout: 4))
         XCTAssertTrue(credit.waitForExistence(timeout: 4))
+        XCTAssertEqual(frameIDs.count, 1)
         let deadline = Date().addingTimeInterval(3)
         var controlsTop = controls.frame.minY
         var cardFrame = card.frame

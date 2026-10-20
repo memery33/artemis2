@@ -265,8 +265,11 @@ struct HybridStage: View {
                 .frame(width: size.width, height: size.height, alignment: .top)
             }
             if crater == nil {
+                // The sheet stays mounted while it is off the bottom of the phone.
+                // Hide it from accessibility then, so its caption is not a second frame-id.
                 sheet(panelHeight: panelHeight, width: size.width, safeBottom: safeBottom)
                     .frame(width: size.width, alignment: .leading)
+                    .accessibilityHidden(!panelOpen)
                     .offset(y: shift)
                 // Stay mounted for the whole drag. Removing it mid-gesture
                 // cancelled the swipe after the sheet had risen about 90 pt.
@@ -340,39 +343,12 @@ struct HybridStage: View {
     }
 
     private func approachCard(_ gap: String, width: CGFloat, maxHeight: CGFloat? = nil) -> some View {
-        let copy = Text(gap)
-            .font(
-                model.approachInformational
-                    ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
-                    : HybridFont.text(15, relativeTo: .subheadline)
-            )
-            .foregroundStyle(HybridColor.cream)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: width, alignment: .leading)
-            .padding(12)
-        return Group {
-            if let maxHeight {
-                ScrollView(.vertical, showsIndicators: false) {
-                    copy
-                }
-                .frame(width: width, height: maxHeight, alignment: .top)
-                .clipped()
-            } else {
-                copy
-            }
-        }
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.black.opacity(0.62))
-                }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityIdentifier("approach-gap")
-        .accessibilityLabel(gap)
+        ApproachCard(
+            gap: gap,
+            informational: model.approachInformational,
+            width: width,
+            maxHeight: maxHeight
+        )
     }
 
     private func sheet(panelHeight: CGFloat, width: CGFloat, safeBottom: CGFloat) -> some View {
@@ -1026,82 +1002,72 @@ struct DocumentaryCaption: View {
     }
 
     /// One line at every size. Accessibility sizes scale the word instead of breaking it.
-    /// The closed caption sits on the photograph, so the name is cream on dark glass.
-    /// Gold on a bright frame fails contrast.
+    /// Cream on a solid dark chip. Gold, and thin material over the Moon, fail contrast.
     @ViewBuilder
     private func speakerName(_ name: String) -> some View {
         let text = Text(name.uppercased())
             .font(HybridFont.text(11, relativeTo: .caption2))
             .tracking(1.6)
-            .foregroundStyle(compact ? HybridColor.gold : HybridColor.cream)
+            .foregroundStyle(HybridColor.cream)
+            .lineLimit(1)
+            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize || !compact ? 0.4 : 1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, compact ? 0 : 3)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.black.opacity(compact ? 0.92 : 0.88))
+            }
         if !compact {
             text
-                .lineLimit(1)
-                .minimumScaleFactor(0.4)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background {
-                    // Solid, not thin material. Material let the bright frame through
-                    // and the small name failed contrast.
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.black.opacity(0.88))
-                }
                 .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, alignment: .leading)
                 .accessibilityIdentifier("speaker-name")
         } else if dynamicTypeSize.isAccessibilitySize {
             text
-                .lineLimit(1)
-                .minimumScaleFactor(0.4)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("speaker-name")
         } else {
+            // The closed caption already publishes speaker-name. This copy stays out of that query.
             text
+                .accessibilityIdentifier("panel-speaker-name")
         }
     }
 
-    /// Default type keeps the dim one-line id. Accessibility sizes may wrap it.
-    /// The closed caption at those sizes sits on the bright Moon, so the id gets the
-    /// same dark glass and shadow that keep the quote readable.
+    /// The closed caption's id is `frame-id`. The panel copy is `panel-frame-id`,
+    /// because the sheet stays in the tree while it is closed.
+    /// On the photograph the id is cream on a solid chip. Thin material still showed the Moon.
     @ViewBuilder
     private func frameIdentity(_ frame: Frame) -> some View {
         let label = Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
             .font(HybridFont.text(12, relativeTo: .caption))
-        if !compact, dynamicTypeSize.isAccessibilitySize {
+        if compact {
+            label
+                .foregroundStyle(HybridColor.cream)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.4 : 0.6)
+                .fixedSize(horizontal: false, vertical: !fitOfferedHeight)
+                .padding(.horizontal, 6)
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.black.opacity(0.92))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("panel-frame-id")
+        } else {
             label
                 .foregroundStyle(HybridColor.cream)
                 .multilineTextAlignment(.leading)
-                .lineLimit(2)
-                .minimumScaleFactor(0.5)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.5 : 0.6)
                 .fixedSize(horizontal: false, vertical: !fitOfferedHeight)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("frame-id")
                 .background {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.black.opacity(0.55))
-                        }
+                        .fill(Color.black.opacity(0.92))
                 }
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, alignment: .leading)
+                .accessibilityIdentifier("frame-id")
                 .shadow(color: .black.opacity(0.65), radius: 8, y: 2)
-        } else if dynamicTypeSize.isAccessibilitySize {
-            label
-                .foregroundStyle(HybridColor.dim)
-                .lineLimit(2)
-                .minimumScaleFactor(0.4)
-                .fixedSize(horizontal: false, vertical: !fitOfferedHeight)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("frame-id")
-        } else {
-            label
-                .foregroundStyle(HybridColor.dim)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .fixedSize(horizontal: false, vertical: !fitOfferedHeight)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("frame-id")
         }
     }
 }
@@ -1158,6 +1124,7 @@ struct ControlPanel: View {
                 }
             }
             .scrollBounceBehavior(.basedOnSize)
+            .accessibilityIdentifier("transport-scroll")
             panelCaption
             windowRow
                 .fixedSize(horizontal: false, vertical: true)
@@ -1266,6 +1233,13 @@ struct ControlPanel: View {
                         .minimumScaleFactor(0.3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background {
+                    // The sheet is still translucent. A solid chip is what the audit measures.
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.black.opacity(0.92))
+                }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("mission-clock")
                 .accessibilityLabel("\(clocks.utc) · \(clocks.met)")
@@ -1277,25 +1251,16 @@ struct ControlPanel: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                     .accessibilityHidden(true)
-                ViewThatFits(in: .horizontal) {
-                    Text("\(clocks.utc) · \(clocks.met)")
-                        .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
-                        .foregroundStyle(HybridColor.dim)
-                        .lineLimit(1)
-                        .accessibilityIdentifier("mission-clock")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(clocks.utc)
-                        Text(clocks.met)
-                    }
+                // One line at the default size. The line scales down to fit the column.
+                // Accessibility sizes stack UTC and MET above; a second line here pushes Play
+                // past the end of this scroller.
+                Text("\(clocks.utc) · \(clocks.met)")
                     .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
                     .foregroundStyle(HybridColor.dim)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                    .minimumScaleFactor(0.7)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("mission-clock")
-                    .accessibilityLabel("\(clocks.utc) · \(clocks.met)")
-                }
             }
         }
     }
@@ -1465,14 +1430,18 @@ struct ControlPanel: View {
                 .padding(.horizontal, 4)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         } else {
-            Text(title)
-                .font(HybridFont.text(15, relativeTo: .subheadline))
-                .fontWeight(.semibold)
-                .foregroundStyle(HybridColor.cream)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .padding(.horizontal, 4)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            // Content width, one shared size. An equal-width slot scales "Moments" down
+            // and leaves Lines and About larger.
+            ZStack {
+                Color.clear.frame(width: 44, height: 44)
+                Text(title)
+                    .font(HybridFont.text(15, relativeTo: .subheadline))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(HybridColor.cream)
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+            }
+            .fixedSize()
         }
     }
 }
@@ -2155,6 +2124,117 @@ enum WindowSafeArea {
             }
         }
         return 0
+    }
+}
+
+/// Closest-approach sentence. The capped card scrolls, and the text stays a text element
+/// so the contrast audit can read it. The container's frame is the visible card.
+private struct ApproachCard: View {
+    var gap: String
+    var informational: Bool
+    var width: CGFloat
+    var maxHeight: CGFloat?
+
+    private var fill: Color { Color.black.opacity(0.92) }
+
+    var body: some View {
+        Group {
+            if let maxHeight {
+                CappedApproachText(
+                    gap: gap,
+                    informational: informational,
+                    width: width,
+                    maxHeight: maxHeight,
+                    fill: fill
+                )
+            } else {
+                copy
+            }
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(fill)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("approach-gap")
+        .accessibilityLabel(gap)
+    }
+
+    private var copy: some View {
+        Text(gap)
+            .font(
+                informational
+                    ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
+                    : HybridFont.text(15, relativeTo: .subheadline)
+            )
+            .foregroundStyle(HybridColor.cream)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: width, alignment: .leading)
+            .padding(12)
+            .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+/// AX4 and AX5. The sentence is taller than the cap, so the bottom edge fades and shows a chevron.
+private struct CappedApproachText: View {
+    var gap: String
+    var informational: Bool
+    var width: CGFloat
+    var maxHeight: CGFloat
+    var fill: Color
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            Text(gap)
+                .font(
+                    informational
+                        ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
+                        : HybridFont.text(15, relativeTo: .subheadline)
+                )
+                .foregroundStyle(HybridColor.cream)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: width, alignment: .leading)
+                .padding(12)
+                .accessibilityAddTraits(.isStaticText)
+                .background {
+                    GeometryReader { geo in
+                        Color.clear.preference(key: ApproachCardHeightKey.self, value: geo.size.height)
+                    }
+                }
+        }
+        .onPreferenceChange(ApproachCardHeightKey.self) { contentHeight = $0 }
+        .frame(width: width, height: maxHeight, alignment: .top)
+        .clipped()
+        .overlay(alignment: .bottom) {
+            if contentHeight > maxHeight + 1 {
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [fill.opacity(0), fill],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 18)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(HybridColor.cream)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 5)
+                        .background(fill)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+private struct ApproachCardHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
