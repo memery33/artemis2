@@ -208,6 +208,23 @@ struct AboutView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Orion Window: Artemis II Flyby")
                         .font(HybridFont.display(22, relativeTo: .title3))
+                    HStack(spacing: 16) {
+                        Button(model.range == .flyby ? "Cab run" : "Flyby") {
+                            if model.range == .flyby {
+                                model.showCabRun()
+                            } else {
+                                model.showFlyby()
+                            }
+                        }
+                        .accessibilityIdentifier("span-toggle")
+                        Button(model.spatial ? "Spatial on" : "Spatial") {
+                            model.setSpatial(!model.spatial)
+                        }
+                        .accessibilityIdentifier("spatial-toggle")
+                    }
+                    .font(HybridFont.text(15, relativeTo: .subheadline))
+                    .fontWeight(.semibold)
+                    .buttonStyle(.plain)
                     if let attribution = model.timeline?.attribution {
                         Text(attribution.credit)
                             .font(HybridFont.text(17, relativeTo: .headline)).fontWeight(.semibold)

@@ -83,6 +83,7 @@ struct HybridStage: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .animation(reduceMotion ? nil : .smooth(duration: 0.45), value: crater)
+            .defersSystemGestures(on: .bottom)
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
@@ -195,7 +196,9 @@ struct HybridStage: View {
             if crater == nil {
                 sheet(panelHeight: panelHeight)
                     .offset(y: shift)
-                if revealed < 72 {
+                // Stay mounted for the whole drag. Removing it mid-gesture
+                // cancelled the swipe after the sheet had risen about 90 pt.
+                if !panelOpen {
                     collapsedCue(panelHeight: panelHeight)
                 }
                 bottomEdge(panelHeight: panelHeight)
@@ -210,10 +213,15 @@ struct HybridStage: View {
             HStack(alignment: .bottom, spacing: 0) {
                 ControlPanel(
                     height: panelHeight,
-                    onClose: { setPanelOpen(false, height: panelHeight) },
+                    onClose: { setPanelOpen(false) },
                     onDragChanged: trackPanelDrag,
-                    onDragEnded: { translation, predicted in
-                        finishPanelDrag(translation: translation, predicted: predicted, height: panelHeight)
+                    onDragEnded: { translation, predicted, velocity in
+                        finishPanelDrag(
+                            translation: translation,
+                            predicted: predicted,
+                            velocity: velocity,
+                            height: panelHeight
+                        )
                     }
                 )
                 FlybyRuler { kind in
@@ -223,6 +231,14 @@ struct HybridStage: View {
             }
             .frame(height: panelHeight)
             .background { panelFill }
+            .overlay(alignment: .topLeading) {
+                Color.clear
+                    .frame(width: 4, height: 4)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("control-panel")
+                    .accessibilityLabel("Controls")
+                    .accessibilityValue(panelOpen ? "open" : "closed")
+            }
         }
     }
 
@@ -245,7 +261,7 @@ struct HybridStage: View {
         VStack {
             Spacer()
             Button {
-                setPanelOpen(true, height: panelHeight)
+                setPanelOpen(true)
             } label: {
                 VStack(spacing: 8) {
                     Capsule()
@@ -263,22 +279,27 @@ struct HybridStage: View {
             .accessibilityIdentifier("open-panel")
             .accessibilityHint("Opens playback, the timeline, windows, and crew audio")
             .simultaneousGesture(panelDrag(panelHeight: panelHeight))
-            .padding(.bottom, 44)
+            .padding(.bottom, 76)
         }
     }
 
-    /// The bottom edge of the screen. A drag here tracks the sheet; a tap stays on the handle.
+    /// Drag strip above the home indicator. The bottom 20 pt is left alone so the
+    /// system swipe can still reach the app switcher.
     private func bottomEdge(panelHeight: CGFloat) -> some View {
-        VStack {
+        VStack(spacing: 0) {
             Spacer()
             Color.clear
-                .frame(height: 36)
+                .frame(height: 44)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 .gesture(panelDrag(panelHeight: panelHeight))
                 .accessibilityElement()
                 .accessibilityIdentifier("panel-edge")
                 .accessibilityLabel("Swipe up for controls")
+            Color.clear
+                .frame(height: 20)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 
@@ -287,17 +308,15 @@ struct HybridStage: View {
         return min(height, max(0, resting + dragTranslation))
     }
 
-    private func setPanelOpen(_ open: Bool, height: CGFloat) {
-        let visual = sheetShift(height: height)
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
+    private func setPanelOpen(_ open: Bool) {
+        withAnimation(sheetSpring) {
             panelOpen = open
-            dragTranslation = visual - (open ? 0 : height)
-        }
-        withAnimation(reduceMotion ? nil : .spring(duration: 0.38)) {
             dragTranslation = 0
         }
+    }
+
+    private var sheetSpring: Animation? {
+        reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.84)
     }
 
     private func trackPanelDrag(_ translation: CGFloat) {
@@ -308,18 +327,26 @@ struct HybridStage: View {
         }
     }
 
-    private func finishPanelDrag(translation: CGFloat, predicted: CGFloat, height: CGFloat) {
+    /// A quarter of the sheet, or a fast flick, commits. Anything shorter springs shut.
+    private func finishPanelDrag(translation: CGFloat, predicted: CGFloat, velocity: CGFloat, height: CGFloat) {
+        let threshold = max(72, height * 0.25)
+        let flick: CGFloat = 700
+        let projected = abs(predicted) >= abs(translation) ? predicted : translation
         let shouldOpen: Bool
-        if panelOpen {
-            shouldOpen = max(translation, predicted) < 72
+        if velocity < -flick {
+            shouldOpen = true
+        } else if velocity > flick {
+            shouldOpen = false
+        } else if panelOpen {
+            shouldOpen = projected < threshold
         } else {
-            shouldOpen = min(translation, predicted) < -48
+            shouldOpen = projected < -threshold
         }
-        setPanelOpen(shouldOpen, height: height)
+        setPanelOpen(shouldOpen)
     }
 
     private func panelDrag(panelHeight: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .global)
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
             .onChanged { value in
                 trackPanelDrag(value.translation.height)
             }
@@ -327,6 +354,7 @@ struct HybridStage: View {
                 finishPanelDrag(
                     translation: value.translation.height,
                     predicted: value.predictedEndTranslation.height,
+                    velocity: value.velocity.height,
                     height: panelHeight
                 )
             }
@@ -417,6 +445,10 @@ enum HybridFrames {
     /// Other Window 2 frames keep the lit surface, which sits left of the sky.
     static func placement(_ frame: Frame) -> Placement {
         if frame.instrument == "cab2" {
+            // Dark Cab Cam frames keep the Moon as a small disk. Crop toward that limb.
+            if frame.look == "dark" {
+                return Placement(x: 0.54, y: 0.54, zoom: 2.8, focus: true)
+            }
             return Placement(x: 0.34, y: 0.42, zoom: 1, focus: false)
         }
         if frame.targetID == "Moon" {
@@ -486,6 +518,7 @@ struct DocumentaryCaption: View {
     @EnvironmentObject private var model: PlaybackModel
     var compact: Bool
     var includeCredit: Bool
+    var identifier: String = "window-caption"
 
     private var line: TranscriptLine? {
         LyricFocus.focus(at: model.utc, track: model.trackID, lines: model.timeline?.lines ?? []).current
@@ -520,7 +553,7 @@ struct DocumentaryCaption: View {
         }
         .shadow(color: .black.opacity(0.65), radius: compact ? 0 : 8, y: 2)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("window-caption")
+        .accessibilityIdentifier(identifier)
     }
 }
 
@@ -529,7 +562,7 @@ struct ControlPanel: View {
     var height: CGFloat
     var onClose: () -> Void
     var onDragChanged: (CGFloat) -> Void
-    var onDragEnded: (_ translation: CGFloat, _ predicted: CGFloat) -> Void
+    var onDragEnded: (_ translation: CGFloat, _ predicted: CGFloat, _ velocity: CGFloat) -> Void
     @State private var about = false
     @State private var transcript = false
     @State private var moments = false
@@ -542,7 +575,7 @@ struct ControlPanel: View {
                 VStack(alignment: .leading, spacing: 12) {
                     clocks
                     transport
-                    DocumentaryCaption(compact: true, includeCredit: false)
+                    DocumentaryCaption(compact: true, includeCredit: false, identifier: "panel-caption")
                     windowRow
                     CrewRow()
                     secondaryRow
@@ -553,7 +586,7 @@ struct ControlPanel: View {
         }
         .padding(.leading, 20)
         .padding(.trailing, 8)
-        .padding(.bottom, 36)
+        .padding(.bottom, 72)
         .frame(height: height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.colorScheme, .dark)
@@ -583,7 +616,11 @@ struct ControlPanel: View {
                         onDragChanged(value.translation.height)
                     }
                     .onEnded { value in
-                        onDragEnded(value.translation.height, value.predictedEndTranslation.height)
+                        onDragEnded(
+                            value.translation.height,
+                            value.predictedEndTranslation.height,
+                            value.velocity.height
+                        )
                         Task { @MainActor in
                             try? await Task.sleep(nanoseconds: 200_000_000)
                             suppressCloseTap = false
@@ -687,24 +724,10 @@ struct ControlPanel: View {
     }
 
     private var secondaryRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                textButton(model.range == .flyby ? "Cab run" : "Flyby", identifier: "span-toggle") {
-                    if model.range == .flyby {
-                        model.showCabRun()
-                    } else {
-                        model.showFlyby()
-                    }
-                }
-                textButton(model.spatial ? "Spatial on" : "Spatial", identifier: "spatial-toggle") {
-                    model.setSpatial(!model.spatial)
-                }
-            }
-            HStack(spacing: 8) {
-                textButton("Lines", identifier: "lines-button") { transcript = true }
-                textButton("Moments", identifier: "moments-button") { moments = true }
-                textButton("About", identifier: "about-button") { about = true }
-            }
+        HStack(spacing: 8) {
+            textButton("Lines", identifier: "lines-button") { transcript = true }
+            textButton("Moments", identifier: "moments-button") { moments = true }
+            textButton("About", identifier: "about-button") { about = true }
         }
     }
 
@@ -742,7 +765,7 @@ struct FlybyRuler: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     .allowsHitTesting(false)
                 labelColumn
-                    .padding(.bottom, 44)
+                    .padding(.bottom, 76)
                     .padding(.trailing, 34)
             }
             .overlay(alignment: .trailing) {
@@ -943,6 +966,7 @@ struct CraterPage: View {
     var frame: Frame?
     var namespace: Namespace.ID
     var onClose: () -> Void
+    @State private var showsData = false
 
     private var card: ExhibitCard? {
         ExhibitLibrary.cards.first { $0.targetID == kind.targetID }
@@ -963,13 +987,10 @@ struct CraterPage: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             HybridColor.ground.ignoresSafeArea()
-            VStack(spacing: 0) {
-                header
-                ScrollView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
                     VStack(alignment: .leading, spacing: 16) {
-                        TrackMapView(date: model.utc, emphasized: kind.siteID)
-                            .frame(height: 168)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         Text(kind.kicker.uppercased())
                             .font(HybridFont.text(11, relativeTo: .caption2))
                             .tracking(1.6)
@@ -978,9 +999,9 @@ struct CraterPage: View {
                             .font(HybridFont.display(40, relativeTo: .largeTitle))
                             .foregroundStyle(HybridColor.cream)
                         if let site {
-                            Text("\(hemisphere(site.latitude, positive: "N", negative: "S")), \(hemisphere(site.longitudeEast, positive: "E", negative: "W"))")
-                                .font(HybridFont.text(13, relativeTo: .footnote))
-                                .foregroundStyle(HybridColor.dim)
+                            Text("\(hemisphere(site.latitude, positive: "N", negative: "S")) · \(hemisphere(site.longitudeEast, positive: "E", negative: "W"))")
+                                .font(HybridFont.text(15, relativeTo: .subheadline))
+                                .foregroundStyle(HybridColor.cream)
                         }
                         if let card {
                             Text(card.body)
@@ -1006,17 +1027,20 @@ struct CraterPage: View {
                 }
             }
             Button(action: onClose) {
-                Text("Close")
-                    .font(HybridFont.text(15, relativeTo: .body))
-                    .fontWeight(.semibold)
-                    .foregroundStyle(HybridColor.ink)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 44)
-                    .background(HybridColor.cream, in: Capsule())
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(HybridColor.cream)
+                    .frame(width: 32, height: 32)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay {
+                        Circle().strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+                    }
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
-            .padding(.leading, 20)
+            .padding(.leading, 12)
             .padding(.top, 54)
+            .accessibilityLabel("Close")
             .accessibilityIdentifier("close-crater")
         }
         .accessibilityElement(children: .contain)
@@ -1025,7 +1049,7 @@ struct CraterPage: View {
 
     @ViewBuilder
     private var header: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack(alignment: .bottom) {
             HybridColor.ground
             if let frame, let image = model.photo(frame, maxPixel: 1400) {
                 let place = HybridFrames.placement(frame)
@@ -1036,57 +1060,91 @@ struct CraterPage: View {
                     zoom: place.zoom,
                     focus: place.focus
                 )
-                .frame(height: 280)
+                .frame(height: 420)
+                .frame(maxWidth: .infinity)
                 .clipped()
                 .matchedGeometryEffect(id: "flyby-photo", in: namespace)
                 .accessibilityLabel(FrameSelection.photoAccessLabel(frame))
             }
-            LinearGradient(colors: [.clear, HybridColor.ground], startPoint: .center, endPoint: .bottom)
-                .frame(height: 90)
-                .frame(maxHeight: .infinity, alignment: .bottom)
-                .allowsHitTesting(false)
+            LinearGradient(
+                colors: [.clear, HybridColor.ground.opacity(0.2), HybridColor.ground],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 180)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .allowsHitTesting(false)
+            TrackMapView(date: model.utc, emphasized: kind.siteID)
+                .frame(height: 168)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.horizontal, 20)
+                .padding(.bottom, 28)
             VStack(alignment: .leading, spacing: 4) {
                 if let frame {
                     Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
                         .font(HybridFont.text(12, relativeTo: .caption))
                         .foregroundStyle(HybridColor.cream)
+                        .shadow(color: .black.opacity(0.7), radius: 6, y: 1)
                 }
                 CreditLine()
             }
-            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.leading, 20)
+            .padding(.top, 108)
         }
-        .frame(height: 280)
+        .frame(height: 420)
         .clipped()
     }
 
     private var disclosure: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 10) {
-                if let site {
-                    Text(site.source)
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showsData.toggle()
+            } label: {
+                HStack {
+                    Text("About this data")
+                        .font(HybridFont.text(15, relativeTo: .subheadline))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(HybridColor.cream)
+                    Spacer(minLength: 8)
+                    Text(showsData ? "-" : "+")
+                        .font(HybridFont.text(18, relativeTo: .body))
+                        .foregroundStyle(HybridColor.dim)
                 }
-                if let aim {
-                    Text("Lunar Targeting Plan aim \(hemisphere(aim.lat, positive: "N", negative: "S")), \(hemisphere(aim.lon, positive: "E", negative: "W")). Not the USGS center.")
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .background {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
                 }
-                if let card {
-                    Text(card.source)
-                }
-                if let note = model.timeline?.pointing.note {
-                    Text(note)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
                 }
             }
-            .font(HybridFont.text(13, relativeTo: .footnote))
-            .foregroundStyle(HybridColor.dim)
-            .padding(.top, 8)
-        } label: {
-            Text("About this data")
-                .font(HybridFont.text(15, relativeTo: .subheadline))
-                .fontWeight(.semibold)
-                .foregroundStyle(HybridColor.cream)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("about-this-data")
+            .accessibilityLabel("About this data")
+            if showsData {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let site {
+                        Text(site.source)
+                    }
+                    if let aim {
+                        Text("Lunar Targeting Plan aim \(hemisphere(aim.lat, positive: "N", negative: "S")) · \(hemisphere(aim.lon, positive: "E", negative: "W")). Not the USGS center.")
+                    }
+                    if let card {
+                        Text(card.source)
+                    }
+                    if let note = model.timeline?.pointing.note {
+                        Text(note)
+                    }
+                }
+                .font(HybridFont.text(13, relativeTo: .footnote))
+                .foregroundStyle(HybridColor.dim)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .tint(HybridColor.gold)
-        .accessibilityIdentifier("about-this-data")
     }
 
     private func hemisphere(_ value: Double, positive: String, negative: String) -> String {
