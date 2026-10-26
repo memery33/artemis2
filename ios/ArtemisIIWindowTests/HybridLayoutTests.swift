@@ -522,6 +522,83 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertEqual(ApproachLineGrid.viewport(room: 180, lineHeight: 0), 180, accuracy: 0.001)
     }
 
+    /// Open card on a 402×874 phone. The bottom stays one gap above the credit and the sheet
+    /// at the default size, AX3, AX4, and AX5. The panel is the limit when it sits above the credit.
+    func testOpenApproachCardCapClearsCreditAndPanel() throws {
+        let screen: CGFloat = 874
+        let safeTop: CGFloat = 62
+        let revealed: CGFloat = 471
+        let width: CGFloat = 362
+        let categories: [(String, UIContentSizeCategory)] = [
+            ("default", .large),
+            ("AX3", .accessibilityExtraLarge),
+            ("AX4", .accessibilityExtraExtraLarge),
+            ("AX5", .accessibilityExtraExtraExtraLarge),
+        ]
+        var previousCredit: CGFloat = 0
+        var creditHeights: [CGFloat] = []
+        for (name, category) in categories {
+            let traits = UITraitCollection(traitsFrom: [
+                UITraitCollection(userInterfaceIdiom: .phone),
+                UITraitCollection(preferredContentSizeCategory: category),
+            ])
+            let creditHeight = CreditLine.height(fitting: width, compatibleWith: traits)
+            XCTAssertGreaterThan(creditHeight, 8, name)
+            XCTAssertGreaterThanOrEqual(creditHeight, previousCredit - 0.001, name)
+            previousCredit = creditHeight
+            creditHeights.append(creditHeight)
+
+            let panelTop = screen - revealed
+            let creditTop = panelTop - ClosedCaptionMetrics.openCreditLift - creditHeight
+            XCTAssertLessThan(creditTop, panelTop, name)
+            let cardHeight = ClosedCaptionMetrics.openApproachCardMaxHeight(
+                screenHeight: screen,
+                revealed: revealed,
+                creditHeight: creditHeight,
+                safeTop: safeTop
+            )
+            let limited = ClosedCaptionMetrics.openApproachCardMaxHeight(
+                bottomLimit: min(creditTop, panelTop),
+                safeTop: safeTop
+            )
+            XCTAssertEqual(cardHeight, limited, accuracy: 0.001, name)
+            let top = ClosedCaptionMetrics.approachCardTopInset(safeTop: safeTop)
+            let cardBottom = top + cardHeight
+            let limit = min(creditTop, panelTop) - ClosedCaptionMetrics.approachCardGap
+            XCTAssertGreaterThan(cardHeight, 0, name)
+            XCTAssertEqual(cardBottom, limit, accuracy: 0.001, name)
+            XCTAssertLessThanOrEqual(cardBottom, limit + 0.001, name)
+
+            let room = max(0, cardHeight - ApproachLineGrid.chevronRow)
+            let viewport = ApproachLineGrid.viewport(room: room, lineHeight: 33)
+            let plate = ApproachLineGrid.plateHeight(offered: cardHeight, lineHeight: 33)
+            XCTAssertEqual(plate, min(cardHeight, viewport + ApproachLineGrid.chevronRow), accuracy: 0.01, name)
+            XCTAssertLessThanOrEqual(plate, cardHeight + 0.001, name)
+            XCTAssertLessThan(cardHeight - plate, 34, name)
+        }
+        let defaultCredit = try XCTUnwrap(creditHeights.first)
+        let largestCredit = try XCTUnwrap(creditHeights.last)
+        XCTAssertGreaterThan(largestCredit, defaultCredit)
+
+        let panelTop: CGFloat = 300
+        let creditTop: CGFloat = 420
+        let bottomLimit = min(creditTop, panelTop)
+        XCTAssertEqual(bottomLimit, panelTop, accuracy: 0.001)
+        let top = ClosedCaptionMetrics.approachCardTopInset(safeTop: safeTop)
+        let panelLimited = ClosedCaptionMetrics.openApproachCardMaxHeight(
+            bottomLimit: bottomLimit,
+            safeTop: safeTop
+        )
+        let cardBottom = top + panelLimited
+        XCTAssertEqual(
+            panelLimited,
+            panelTop - ClosedCaptionMetrics.approachCardGap - top,
+            accuracy: 0.001
+        )
+        XCTAssertLessThanOrEqual(cardBottom, panelTop - ClosedCaptionMetrics.approachCardGap + 0.001)
+        XCTAssertLessThan(cardBottom, creditTop - ClosedCaptionMetrics.approachCardGap)
+    }
+
     private static func bareTimeline(cab: Bool, utc: String, instrument: String, frames: Bool) throws -> Timeline {
         let cabRun = cab
             ? #","cab_run": {"start": "2026-04-06T22:36:03.000Z", "end": "2026-04-06T22:44:33.000Z", "label": "Cab"}"#

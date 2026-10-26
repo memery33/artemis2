@@ -377,6 +377,25 @@ final class LayoutFrameUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(frame.waitForExistence(timeout: 8))
         assertOpenApproachCardClearsCreditAndPanel(app: app, card: gap)
+        if category == "UICTContentSizeCategoryAccessibilityXXL"
+            || category == "UICTContentSizeCategoryAccessibilityXXXL" {
+            assertApproachChevronIsHidden(app)
+        }
+    }
+
+    /// The chevron is painted as an overlay and stays out of the accessibility tree.
+    private func assertApproachChevronIsHidden(_ app: XCUIApplication) {
+        let down = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "label == %@ OR label == %@ OR identifier == %@",
+                "Go Down",
+                "chevron.down",
+                "chevron.down"
+            )
+        )
+        XCTAssertEqual(down.count, 0)
+        XCTAssertFalse(app.images["Go Down"].exists)
+        XCTAssertFalse(app.images["chevron.down"].exists)
     }
 
     /// The open card's bottom stays at or above the credit and the sheet at every text size.

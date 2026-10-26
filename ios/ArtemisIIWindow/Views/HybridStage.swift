@@ -2223,6 +2223,8 @@ private struct ApproachCard: View {
                 copy
             }
         }
+        // The text measure is `width`. Both plates add the same horizontal padding, so the capped card is not the wider column proposal.
+        .frame(maxWidth: width + ApproachLineGrid.textPadding * 2, alignment: .leading)
         // One plate for the sentence and the chevron. The clip matches the fill, so the bottom corners stay round.
         .background { cardShape.fill(fill) }
         .clipShape(cardShape)
@@ -2243,18 +2245,18 @@ private struct ApproachCard: View {
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: width, alignment: .leading)
-            .padding(12)
+            .padding(ApproachLineGrid.textPadding)
     }
 }
 
-/// Reports the proposed height, so ViewThatFits keeps the natural sentence when it fits.
+/// Forwards the capped plate. Its height is the snapped scrollport plus the chevron row,
+/// which still fits the proposal, so ViewThatFits keeps the natural sentence when it fits.
 private struct FitsProposal: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
-        if let height = proposal.height {
-            return CGSize(width: proposal.width ?? 0, height: height)
-        }
         let child = subviews.first?.sizeThatFits(proposal) ?? .zero
-        return CGSize(width: proposal.width ?? child.width, height: child.height)
+        let width = proposal.width ?? child.width
+        let height = proposal.height.map { min($0, child.height) } ?? child.height
+        return CGSize(width: width, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
@@ -2265,25 +2267,37 @@ private struct FitsProposal: Layout {
     }
 }
 
-/// AX4 and AX5, once the sentence is taller than the cap. The chevron is its own row,
+/// The sentence is taller than the cap. The open card does this from AX3 up, and the
+/// closed card at AX4 and AX5. The chevron is its own row, outside the geometry reader,
 /// and the viewport ends on a line boundary so the last visible line is not cut in half.
 private struct CappedApproachText: View {
     var gap: String
     var informational: Bool
     var width: CGFloat
     @State private var lineHeight: CGFloat = 0
+    @State private var scrolledToEnd = false
 
     var body: some View {
-        GeometryReader { geo in
-            let height = lineHeight > 0 ? lineHeight : ApproachLineGrid.estimatedLineHeight(informational: informational)
-            let room = max(0, geo.size.height - ApproachLineGrid.chevronRow)
-            let viewport = ApproachLineGrid.viewport(room: room, lineHeight: height)
-            VStack(spacing: 0) {
+        let height = lineHeight > 0 ? lineHeight : ApproachLineGrid.estimatedLineHeight(informational: informational)
+        SnappedApproachHeight(lineHeight: height) {
+            GeometryReader { geo in
+                let room = max(0, geo.size.height - ApproachLineGrid.chevronRow)
+                let viewport = ApproachLineGrid.viewport(room: room, lineHeight: height)
                 ScrollView(.vertical, showsIndicators: false) {
                     sentence
                 }
-                .frame(height: viewport)
-                Spacer(minLength: 0)
+                .frame(height: viewport, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    guard geometry.contentSize.height > 1 else { return false }
+                    return geometry.visibleRect.maxY >= geometry.contentSize.height - 1
+                } action: { _, atEnd in
+                    scrolledToEnd = atEnd
+                }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if !scrolledToEnd {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(HybridColor.cream)
@@ -2327,6 +2341,28 @@ private struct CappedApproachText: View {
     }
 }
 
+/// The capped plate is the whole-line scrollport plus the chevron row, not the leftover under the last line.
+private struct SnappedApproachHeight: Layout {
+    var lineHeight: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let width = proposal.width ?? subviews.first?.sizeThatFits(proposal).width ?? 0
+        guard let offered = proposal.height else {
+            let child = subviews.first?.sizeThatFits(proposal) ?? .zero
+            return CGSize(width: width, height: child.height)
+        }
+        return CGSize(width: width, height: ApproachLineGrid.plateHeight(offered: offered, lineHeight: lineHeight))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        let height = ApproachLineGrid.plateHeight(offered: bounds.height, lineHeight: lineHeight)
+        subviews.first?.place(
+            at: bounds.origin,
+            proposal: ProposedViewSize(width: bounds.width, height: height)
+        )
+    }
+}
+
 private struct ApproachLineHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -2339,6 +2375,12 @@ private struct ApproachLineHeightKey: PreferenceKey {
 enum ApproachLineGrid {
     static let textPadding: CGFloat = 12
     static let chevronRow: CGFloat = 22
+
+    /// Scrollport snapped to whole lines, plus the chevron row. Never taller than `offered`.
+    static func plateHeight(offered: CGFloat, lineHeight: CGFloat) -> CGFloat {
+        let room = max(0, offered - chevronRow)
+        return min(max(0, offered), viewport(room: room, lineHeight: lineHeight) + chevronRow)
+    }
 
     static func viewport(room: CGFloat, lineHeight: CGFloat) -> CGFloat {
         let room = max(0, room)
@@ -2456,11 +2498,16 @@ enum ClosedCaptionMetrics {
         creditHeight: CGFloat,
         safeTop: CGFloat
     ) -> CGFloat {
-        let top = approachCardTopInset(safeTop: safeTop)
         let panelTop = screenHeight - revealed
         let creditTop = panelTop - openCreditLift - max(0, creditHeight)
-        let bottom = min(creditTop, panelTop) - approachCardGap
-        return max(0, bottom - top)
+        return openApproachCardMaxHeight(bottomLimit: min(creditTop, panelTop), safeTop: safeTop)
+    }
+
+    /// `bottomLimit` is the credit top or the panel top, whichever the card must clear.
+    /// The card's bottom is one gap under that edge.
+    static func openApproachCardMaxHeight(bottomLimit: CGFloat, safeTop: CGFloat) -> CGFloat {
+        let top = approachCardTopInset(safeTop: safeTop)
+        return max(0, bottomLimit - approachCardGap - top)
     }
 
     /// AX4 and AX5 only. The cap is the room above the measured caption, after the
@@ -2527,9 +2574,11 @@ struct CreditLine: View {
     }
 
     /// Natural height of the pill at `width`, capped at two caption lines.
-    static func height(fitting width: CGFloat) -> CGFloat {
-        let base = UIFont(name: "Inter", size: 11) ?? .systemFont(ofSize: 11)
-        let font = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: base)
+    /// `traits` nil follows the current Dynamic Type size.
+    static func height(fitting width: CGFloat, compatibleWith traits: UITraitCollection? = nil) -> CGFloat {
+        let base = ["Inter-Regular", "Inter"].compactMap { UIFont(name: $0, size: 11) }.first
+            ?? .systemFont(ofSize: 11)
+        let font = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: base, compatibleWith: traits)
         let textWidth = max(1, width - 16)
         let rect = (text as NSString).boundingRect(
             with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
