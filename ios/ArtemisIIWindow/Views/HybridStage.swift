@@ -477,7 +477,6 @@ struct HybridStage: View {
         VStack {
             Spacer()
             miniBar(panelHeight: panelHeight)
-                .padding(.horizontal, 10)
                 .padding(.bottom, ClosedCaptionMetrics.miniBottomPad(safeBottom: safeBottom))
         }
         .overlay {
@@ -509,6 +508,7 @@ struct HybridStage: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
             .accessibilityLabel("Controls")
             .accessibilityIdentifier("open-panel")
             .accessibilityHint("Opens playback, the timeline, windows, and crew audio")
@@ -527,10 +527,12 @@ struct HybridStage: View {
                 }
                 .padding(.horizontal, 8)
             }
+            .padding(.horizontal, 10)
             .frame(height: ClosedCaptionMetrics.miniRow)
         }
         .padding(.top, ClosedCaptionMetrics.miniTopPad)
         .padding(.bottom, ClosedCaptionMetrics.miniBottomInner)
+        .frame(maxWidth: .infinity)
         .background {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -538,6 +540,7 @@ struct HybridStage: View {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Color.black.opacity(0.42))
                 }
+                .padding(.horizontal, 10)
         }
         .opacity(miniChromeVisible ? 1 : 0)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.35), value: miniChromeVisible)
@@ -2594,9 +2597,7 @@ private struct CappedApproachText: View {
         }
         .overlay(alignment: .bottom) {
             if showsChevron {
-                DecorativeChevron()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: ApproachLineGrid.chevronRow)
+                ApproachChevronMark()
                     .accessibilityElement(children: .ignore)
                     .accessibilityHidden(true)
                     .allowsHitTesting(false)
@@ -2672,22 +2673,25 @@ private struct SnappedApproachHeight: Layout {
     }
 }
 
-/// Decorative down mark. The system symbol would publish an image named "Go Down"; this view does not.
-private struct DecorativeChevron: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIImageView {
-        let imageView = UIImageView()
-        let symbol = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
-        imageView.image = UIImage(systemName: "chevron.down", withConfiguration: symbol)
-        imageView.tintColor = UIColor(red: 0.969, green: 0.953, blue: 0.918, alpha: 1)
-        imageView.contentMode = .center
-        imageView.isAccessibilityElement = false
-        imageView.accessibilityElementsHidden = true
-        return imageView
+/// Drawn mark. A `chevron.down` symbol is an image VoiceOver names "Go Down", and hiding that image did not remove it.
+private struct ApproachChevronMark: View {
+    var body: some View {
+        ApproachChevronShape()
+            .stroke(HybridColor.cream, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+            .frame(width: 11, height: 6)
+            .frame(maxWidth: .infinity)
+            .frame(height: ApproachLineGrid.chevronRow)
+            .accessibilityHidden(true)
     }
+}
 
-    func updateUIView(_ imageView: UIImageView, context: Context) {
-        imageView.isAccessibilityElement = false
-        imageView.accessibilityElementsHidden = true
+private struct ApproachChevronShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
     }
 }
 
