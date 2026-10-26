@@ -383,6 +383,43 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertTrue(model.playing)
     }
 
+    /// Reaching the end of the Cab Cam run opens closest approach instead of the end card.
+    /// Play from that card still rewinds to the start of the run.
+    @MainActor
+    func testCabSpanEndContinuesIntoClosestApproach() throws {
+        let model = PlaybackModel()
+        let cab = try XCTUnwrap(model.timeline?.cabRun)
+        let landing = try XCTUnwrap(model.closestApproach)
+        model.showCabRun()
+        model.playing = true
+        model.utc = cab.end
+        model.advanceDisplayLinkForTest(to: 1)
+        XCTAssertFalse(model.ended)
+        XCTAssertFalse(model.playing)
+        XCTAssertFalse(model.approachInformational)
+        XCTAssertEqual(model.approachGap, landing.gap)
+        XCTAssertEqual(model.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+        XCTAssertEqual(model.range, .cab)
+        XCTAssertEqual(model.window, .cab)
+
+        model.play()
+        XCTAssertNil(model.approachGap)
+        XCTAssertFalse(model.approachInformational)
+        XCTAssertEqual(model.utc, cab.start)
+        XCTAssertTrue(model.playing)
+
+        let flyby = PlaybackModel()
+        let span = try XCTUnwrap(flyby.activeSpan)
+        flyby.seek(to: span.end)
+        XCTAssertTrue(flyby.ended)
+        XCTAssertNil(flyby.approachGap)
+        flyby.play()
+        XCTAssertFalse(flyby.ended)
+        XCTAssertEqual(flyby.approachGap, landing.gap)
+        XCTAssertEqual(flyby.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+        XCTAssertFalse(flyby.playing)
+    }
+
     @MainActor
     func testMissingApproachNoteExplainsTheTable() throws {
         let note = try XCTUnwrap(ClosestApproachLanding.missingNote())

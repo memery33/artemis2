@@ -351,6 +351,10 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(open.waitForExistence(timeout: 15))
         open.tap()
 
+        if category == nil || category == "UICTContentSizeCategoryAccessibilityXXXL" {
+            assertBarApproach(app, category: category)
+        }
+
         let row = app.buttons["milestone-approach"]
         if category != nil {
             let scroll = app.scrollViews["panel-scroll"]
@@ -360,6 +364,7 @@ final class LayoutFrameUITests: XCTestCase {
             XCTAssertTrue(row.waitForExistence(timeout: 8))
         }
         XCTAssertTrue(row.isHittable)
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44 - 0.5)
         row.tap()
 
         let gap = element(named: "approach-gap", in: app)
@@ -381,6 +386,30 @@ final class LayoutFrameUITests: XCTestCase {
             || category == "UICTContentSizeCategoryAccessibilityXXXL" {
             assertApproachChevronIsHidden(app)
         }
+    }
+
+    /// Approach sits on the bottom bar. At the default size it shares a row with About. Tapping it opens the card.
+    private func assertBarApproach(_ app: XCUIApplication, category: String?) {
+        let bar = app.buttons["bar-approach"]
+        if category != nil {
+            let scroll = app.scrollViews["panel-scroll"]
+            XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+            reveal(bar, app: app, scroll: scroll)
+        } else {
+            XCTAssertTrue(bar.waitForExistence(timeout: 8))
+        }
+        XCTAssertTrue(bar.isHittable)
+        XCTAssertGreaterThanOrEqual(bar.frame.height, 44 - 0.5)
+        XCTAssertGreaterThanOrEqual(bar.frame.minX, -0.5)
+        XCTAssertLessThanOrEqual(bar.frame.maxX, app.frame.width + 0.5)
+        if category == nil {
+            let about = app.buttons["about-button"]
+            XCTAssertTrue(about.waitForExistence(timeout: 4))
+            XCTAssertEqual(bar.frame.midY, about.frame.midY, accuracy: 8)
+        }
+        bar.tap()
+        let gap = element(named: "approach-gap", in: app)
+        XCTAssertTrue(gap.waitForExistence(timeout: 8))
     }
 
     /// The chevron is painted as an overlay and stays out of the accessibility tree.
@@ -660,6 +689,7 @@ final class LayoutFrameUITests: XCTestCase {
         assertSquareHitTarget(about, minimumSide: minimumSide)
         assertSquareHitTarget(app.buttons["lines-button"], minimumSide: minimumSide)
         assertSquareHitTarget(app.buttons["moments-button"], minimumSide: minimumSide)
+        assertSquareHitTarget(app.buttons["bar-approach"], minimumSide: minimumSide)
         for name in ["Wiseman", "Glover", "Koch", "Hansen"] {
             assertSquareHitTarget(app.buttons["crew-\(name)"], minimumSide: minimumSide)
         }

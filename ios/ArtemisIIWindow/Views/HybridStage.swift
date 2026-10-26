@@ -1455,18 +1455,24 @@ struct ControlPanel: View {
     private var secondaryRow: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 8) {
-                textButton("Lines", identifier: "lines-button") { transcript = true }
-                textButton("Moments", identifier: "moments-button") { moments = true }
-                textButton("About", identifier: "about-button") { about = true }
+                barButtons
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
+            // One row at the default size on a 402 pt phone. Each label keeps its own width and can shrink; the row does not clip.
             HStack(spacing: 8) {
-                textButton("Lines", identifier: "lines-button") { transcript = true }
-                textButton("Moments", identifier: "moments-button") { moments = true }
-                textButton("About", identifier: "about-button") { about = true }
+                barButtons
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private var barButtons: some View {
+        textButton("Lines", identifier: "lines-button") { transcript = true }
+        textButton("Moments", identifier: "moments-button") { moments = true }
+        textButton("About", identifier: "about-button") { about = true }
+        textButton("Approach", identifier: "bar-approach") { model.showClosestApproach() }
     }
 
     private func textButton(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
@@ -1493,7 +1499,7 @@ struct ControlPanel: View {
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         } else {
             // Content width, one shared size. An equal-width slot scales "Moments" down
-            // and leaves Lines and About larger.
+            // and leaves Lines and About larger. The label shrinks before it clips.
             ZStack {
                 Color.clear.frame(width: 44, height: 44)
                 Text(title)
@@ -1501,6 +1507,7 @@ struct ControlPanel: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(HybridColor.cream)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.65)
                     .padding(.horizontal, 4)
             }
             .fixedSize()
@@ -1714,11 +1721,15 @@ struct FlybyRuler: View {
                     .offset(y: y(milestone.date, height: height))
             }
             ForEach(RulerLabelMarks.dates(timeline: timeline, approach: approachDate), id: \.timeIntervalSinceReferenceDate) { date in
-                Capsule()
-                    .fill(HybridColor.cream.opacity(0.9))
-                    .frame(width: 10, height: 1)
-                    .padding(.trailing, 14)
-                    .offset(y: y(date, height: height))
+                if isApproach(date) {
+                    destinationMark(at: date, height: height)
+                } else {
+                    Capsule()
+                        .fill(HybridColor.cream.opacity(0.9))
+                        .frame(width: 10, height: 1)
+                        .padding(.trailing, 14)
+                        .offset(y: y(date, height: height))
+                }
             }
             Capsule()
                 .fill(HybridColor.cream)
@@ -1728,6 +1739,27 @@ struct FlybyRuler: View {
                 .shadow(color: HybridColor.gold.opacity(0.9), radius: 4)
         }
         .allowsHitTesting(false)
+    }
+
+    /// Gold tick and dot, the same gold as the active span bracket, so closest approach reads as the destination.
+    private func destinationMark(at date: Date, height: CGFloat) -> some View {
+        let tick = y(date, height: height)
+        return ZStack(alignment: .trailing) {
+            Capsule()
+                .fill(HybridColor.gold)
+                .frame(width: 18, height: 2)
+            Circle()
+                .fill(HybridColor.gold)
+                .frame(width: 8, height: 8)
+        }
+        .frame(width: 22, height: 8)
+        .padding(.trailing, 10)
+        .offset(y: tick - 4)
+    }
+
+    private func isApproach(_ date: Date) -> Bool {
+        guard let approach = approachDate else { return false }
+        return abs(date.timeIntervalSince(approach)) < 0.5
     }
 
     private func spanBar(from start: Date, to end: Date, height: CGFloat, width: CGFloat, trailing: CGFloat, color: Color) -> some View {
@@ -1793,13 +1825,15 @@ struct FlybyRuler: View {
         name: String,
         now: Bool,
         identifier: String,
+        accent: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            rulerLabel(time: time, name: name, now: now)
+            rulerLabel(time: time, name: name, now: now, accent: accent)
                 .contentShape(RulerHitShape())
         }
         .buttonStyle(.plain)
+        .frame(minHeight: 44)
         .accessibilityIdentifier(identifier)
         .accessibilityLabel(name)
     }
@@ -1828,19 +1862,22 @@ struct FlybyRuler: View {
                 time: time,
                 name: "Closest approach",
                 now: isNow(model.closestApproach?.date ?? date),
-                identifier: "milestone-approach"
+                identifier: "milestone-approach",
+                accent: true
             ) {
                 model.showClosestApproach()
             }
+            .frame(minHeight: 44)
             .accessibilityHint("Nearest crew photo")
         } else {
             Button {
                 model.showClosestApproach()
             } label: {
-                rulerLabel(time: time, name: "Closest approach", now: false)
+                rulerLabel(time: time, name: "Closest approach", now: false, accent: true)
                     .contentShape(RulerHitShape())
             }
             .buttonStyle(.plain)
+            .frame(minHeight: 44)
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("milestone-approach")
             .accessibilityLabel("Closest approach")
@@ -1860,17 +1897,18 @@ struct FlybyRuler: View {
         )
     }
 
-    private func rulerLabel(time: String, name: String, now: Bool) -> some View {
-        Text(time)
+    private func rulerLabel(time: String, name: String, now: Bool, accent: Bool = false) -> some View {
+        let tone = accent || now ? HybridColor.gold : HybridColor.cream
+        return Text(time)
             .font(HybridFont.text(11, relativeTo: .caption2).monospacedDigit())
             .fontWeight(.semibold)
-            .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
+            .foregroundStyle(tone)
             .frame(maxWidth: .infinity, minHeight: RulerLabelLayout.timeBand, alignment: .trailing)
             .frame(maxWidth: .infinity, minHeight: RulerLabelLayout.timeLine, alignment: .top)
             .overlay(alignment: .topTrailing) {
                 Text(name)
                     .font(HybridFont.text(11, relativeTo: .caption2))
-                    .foregroundStyle(now ? HybridColor.gold : HybridColor.cream)
+                    .foregroundStyle(tone)
                     .lineLimit(3)
                     .multilineTextAlignment(.trailing)
                     .fixedSize(horizontal: false, vertical: true)
