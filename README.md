@@ -135,10 +135,11 @@ Code follows the archive, not the guide, where they disagree (`_saw3_raw_` rathe
 ## Tests
 
 ```bash
+pip install -e '.[dev]'
 python -m pytest
 ```
 
-Fixtures are real sample products, including the `art002a000033` M4A, its label and transcript, the Orientale processed label, both voice-loop CSVs, the fd04 duplicate labels, the PCD inventory, and the outgoing target list.
+`tests/test_present.py` launches the installed Google Chrome through Playwright (`channel="chrome"`) and drives the static demo. The other tests use the fixtures on disk: the `art002a000033` M4A, its label and transcript, the Orientale processed label, both voice-loop CSVs, the fd04 duplicate labels, the PCD inventory, and the outgoing target list. The page itself has no build step.
 
 ## Licenses and usage
 
