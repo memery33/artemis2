@@ -2202,6 +2202,10 @@ private struct ApproachCard: View {
 
     private var fill: Color { Color.black.opacity(0.92) }
 
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+    }
+
     var body: some View {
         Group {
             if mayScroll {
@@ -2211,8 +2215,7 @@ private struct ApproachCard: View {
                         CappedApproachText(
                             gap: gap,
                             informational: informational,
-                            width: width,
-                            fill: fill
+                            width: width
                         )
                     }
                 }
@@ -2220,11 +2223,9 @@ private struct ApproachCard: View {
                 copy
             }
         }
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(fill)
-        }
-        .clipped()
+        // One plate for the sentence and the chevron. The clip matches the fill, so the bottom corners stay round.
+        .background { cardShape.fill(fill) }
+        .clipShape(cardShape)
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("approach-gap")
         .accessibilityLabel(gap)
@@ -2270,7 +2271,6 @@ private struct CappedApproachText: View {
     var gap: String
     var informational: Bool
     var width: CGFloat
-    var fill: Color
     @State private var lineHeight: CGFloat = 0
 
     var body: some View {
@@ -2289,7 +2289,6 @@ private struct CappedApproachText: View {
                     .foregroundStyle(HybridColor.cream)
                     .frame(maxWidth: .infinity)
                     .frame(height: ApproachLineGrid.chevronRow)
-                    .background(fill)
                     .accessibilityHidden(true)
             }
         }
