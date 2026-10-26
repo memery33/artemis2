@@ -213,11 +213,12 @@ enum FlybyPath {
         )
     }
 
-    /// Time and altitude of closest approach from the tabulated geometric ranges.
+    /// Time and altitude of closest approach from the tabulated apparent ranges.
     ///
-    /// The vertex of the parabola through the lowest sample and its two neighbors
-    /// is the refined instant. Altitude is that range minus the radius in the
-    /// Horizons header, which the caller passes in from the file.
+    /// Horizons quantity 20 is apparent range, not a geometric range. The vertex
+    /// of the parabola through the lowest sample and its two neighbors is the
+    /// refined instant. Altitude is that range minus the radius in the Horizons
+    /// header, which the caller passes in from the file.
     static func closestApproach(_ samples: [PathSample], radiusKm: Double) -> ClosestApproach? {
         guard let lowest = samples.enumerated().min(by: { $0.element.rangeKm < $1.element.rangeKm }) else {
             return nil
@@ -454,9 +455,7 @@ struct ClosestApproachLanding: Equatable, Sendable {
         }
         guard let seek = best, let placed = span(containing: seek, timeline: timeline) else { return nil }
         let side = window(at: seek, timeline: timeline)
-        let track = timeline.segments.min { lhs, rhs in
-            audioDistance(lhs, to: approach.date) < audioDistance(rhs, to: approach.date)
-        }?.track ?? (placed.range == .cab ? "pcd2" : "pcd3")
+        let track = trackID(for: placed.range, timeline: timeline, approach: approach.date)
         let shown = HybridFrames.shown(at: seek, side: side, timeline: timeline, span: placed.span)
         let taken = shown?.date ?? seek
         return ClosestApproachLanding(
@@ -482,14 +481,37 @@ struct ClosestApproachLanding: Equatable, Sendable {
         }
     }
 
+    /// Closed at both ends, so a frame timestamped on the span end still lands inside it.
     private static func span(containing date: Date, timeline: Timeline) -> (range: MissionRange, span: TimeSpan)? {
-        if let cab = timeline.cabRun, date >= cab.start, date <= cab.end {
+        if let cab = timeline.cabRun, contains(date, cab) {
             return (.cab, cab)
         }
-        if date >= timeline.window.start, date <= timeline.window.end {
+        if contains(date, timeline.window) {
             return (.flyby, timeline.window)
         }
         return nil
+    }
+
+    private static func contains(_ date: Date, _ span: TimeSpan) -> Bool {
+        date >= span.start && date <= span.end
+    }
+
+    /// Audio for the span the photograph is in. An empty span uses that span's track.
+    private static func trackID(for range: MissionRange, timeline: Timeline, approach: Date) -> String {
+        let rows = timeline.segments.filter { segmentRange($0, timeline: timeline) == range }
+        if let nearest = rows.min(by: {
+            audioDistance($0, to: approach) < audioDistance($1, to: approach)
+        }) {
+            return nearest.track
+        }
+        return range == .cab ? "pcd2" : "pcd3"
+    }
+
+    private static func segmentRange(_ segment: Segment, timeline: Timeline) -> MissionRange {
+        if let cab = timeline.cabRun, segment.start <= cab.end, segment.end >= cab.start {
+            return .cab
+        }
+        return .flyby
     }
 
     private static func closestPoint(on segment: Segment, to date: Date) -> Date {
@@ -520,7 +542,7 @@ struct ClosestApproachLanding: Equatable, Sendable {
         return nearest.instrument == "cab2" ? .cab : .nikon
     }
 
-    private static func prefers(
+    static func prefers(
         _ candidate: Date,
         distance: TimeInterval,
         over current: Date,
@@ -534,9 +556,15 @@ struct ClosestApproachLanding: Equatable, Sendable {
         return candidate < current
     }
 
+    /// The Horizons vertex rounded once, to the nearest second. The printed clock
+    /// and the gap to the photograph both use this instant.
+    static func displayedInstant(_ date: Date) -> Date {
+        Date(timeIntervalSinceReferenceDate: date.timeIntervalSinceReferenceDate.rounded())
+    }
+
     private static func gap(approach: ClosestApproach, taken: Date) -> String {
         let sentence = headline(approach)
-        let delta = approach.date.timeIntervalSince(taken)
+        let delta = displayedInstant(approach.date).timeIntervalSince(taken)
         if abs(delta) < 2 { return sentence }
         let phrase = FrameSelection.spanPhrase(abs(delta))
         if delta > 0 {
@@ -546,9 +574,22 @@ struct ClosestApproachLanding: Equatable, Sendable {
     }
 
     /// Whole kilometers. 6,545.22 km from the vertex is the sourced 6,545 km.
+    /// The radius is the Horizons center radius, not a separate surface model.
     private static func headline(_ approach: ClosestApproach) -> String {
         let altitude = surfaceKilometers(approach.altitudeKm)
-        return "Closest approach: \(ClockMath.utcText(approach.date)), \(altitude) km above the surface (NASA/JPL Horizons)."
+        let radius = radiusKilometers(approach.radiusKm)
+        let clock = ClockMath.utcText(displayedInstant(approach.date))
+        return "Closest approach: \(clock), \(altitude) km above the Moon's \(radius) km mean radius (NASA/JPL Horizons)."
+    }
+
+    private static func radiusKilometers(_ radiusKm: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 1
+        formatter.maximumFractionDigits = 1
+        formatter.roundingMode = .halfUp
+        return formatter.string(from: NSNumber(value: radiusKm)) ?? String(format: "%.1f", radiusKm)
     }
 
     private static func surfaceKilometers(_ altitudeKm: Double) -> String {

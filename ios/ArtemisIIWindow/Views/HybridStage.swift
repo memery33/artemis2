@@ -64,12 +64,18 @@ struct HybridStage: View {
     /// Finger travel while the sheet is tracking. Zero once it snaps.
     @State private var dragTranslation: CGFloat = 0
     @State private var crater: CraterKind?
-    /// Window bottom inset. The geometry reader below ignores the safe area, so its own inset is always 0.
-    /// Seeded from the window before the first frame, then updated when the inset changes.
+    /// Window insets. The geometry reader below ignores the safe area, so its own insets are always 0.
+    /// Seeded from the window before the first frame, then updated when the insets change.
+    @State private var safeTop: CGFloat
     @State private var safeBottom: CGFloat
 
     init() {
+        _safeTop = State(initialValue: Self.seededSafeTop())
         _safeBottom = State(initialValue: Self.seededSafeBottom())
+    }
+
+    private static func seededSafeTop() -> CGFloat {
+        MainActor.assumeIsolated { WindowSafeArea.top }
     }
 
     private static func seededSafeBottom() -> CGFloat {
@@ -106,7 +112,11 @@ struct HybridStage: View {
                     }
                 }
                 safeAreaEdge
-                WindowSafeAreaReader { bottom in
+                safeAreaTop
+                WindowSafeAreaReader { top, bottom in
+                    if top != safeTop {
+                        safeTop = top
+                    }
                     if bottom != safeBottom {
                         safeBottom = bottom
                     }
@@ -148,6 +158,21 @@ struct HybridStage: View {
                 .accessibilityLabel("Safe area bottom")
         }
         .padding(.bottom, safeBottom)
+        .allowsHitTesting(false)
+    }
+
+    /// One-point mark at the window's top safe-area edge. The closest-approach card starts below it.
+    private var safeAreaTop: some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement()
+                .accessibilityIdentifier("safe-area-top")
+                .accessibilityLabel("Safe area top")
+            Spacer(minLength: 0)
+        }
+        .padding(.top, safeTop)
         .allowsHitTesting(false)
     }
 
@@ -253,12 +278,18 @@ struct HybridStage: View {
                     approachCard(
                         gap,
                         width: min(320, max(0, size.width - 40)),
-                        maxHeight: ClosedCaptionMetrics.approachCardCap(
-                            dynamicType: dynamicTypeSize,
-                            screenHeight: size.height
-                        )
+                        mayScroll: capsApproachCard
                     )
-                        .padding(.top, ClosedCaptionMetrics.approachCardTopInset)
+                        .frame(
+                            maxHeight: ClosedCaptionMetrics.approachCardCap(
+                                dynamicType: dynamicTypeSize,
+                                availableHeight: size.height - ClosedCaptionMetrics.bottomClearance,
+                                safeTop: safeTop,
+                                captionHeight: 0
+                            ),
+                            alignment: .top
+                        )
+                        .padding(.top, ClosedCaptionMetrics.approachCardTopInset(safeTop: safeTop))
                         .padding(.horizontal, 20)
                     Spacer(minLength: 0)
                 }
@@ -295,20 +326,14 @@ struct HybridStage: View {
         if let gap = model.approachGap {
             ApproachColumn(
                 spacing: 12,
-                cardCap: ClosedCaptionMetrics.approachCardCap(
-                    dynamicType: dynamicTypeSize,
-                    screenHeight: size.height
-                )
+                safeTop: safeTop,
+                dynamicType: dynamicTypeSize
             ) {
                 approachCard(
                     gap,
                     width: min(320, max(0, size.width - 40)),
-                    maxHeight: ClosedCaptionMetrics.approachCardCap(
-                        dynamicType: dynamicTypeSize,
-                        screenHeight: size.height
-                    )
+                    mayScroll: capsApproachCard
                 )
-                    .padding(.top, ClosedCaptionMetrics.approachCardTopInset)
                 DocumentaryCaption(compact: false, includeCredit: true, fitOfferedHeight: true)
                     .frame(maxWidth: captionWidth, maxHeight: .infinity, alignment: .bottomLeading)
                     .clipped()
@@ -342,12 +367,21 @@ struct HybridStage: View {
         }
     }
 
-    private func approachCard(_ gap: String, width: CGFloat, maxHeight: CGFloat? = nil) -> some View {
+    private var capsApproachCard: Bool {
+        switch dynamicTypeSize {
+        case .accessibility4, .accessibility5:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func approachCard(_ gap: String, width: CGFloat, mayScroll: Bool) -> some View {
         ApproachCard(
             gap: gap,
             informational: model.approachInformational,
             width: width,
-            maxHeight: maxHeight
+            mayScroll: mayScroll
         )
     }
 
@@ -655,14 +689,6 @@ enum HybridClock {
         } ?? timeline.window.end
     }
 
-    /// The Horizons closest approach, only when that instant is inside a playable span.
-    static func playableApproach(timeline: Timeline) -> Date? {
-        let date = approachDate(timeline: timeline)
-        if date >= timeline.window.start, date < timeline.window.end { return date }
-        if let cab = timeline.cabRun, date >= cab.start, date < cab.end { return date }
-        return nil
-    }
-
     static func pieces(timeline: Timeline) -> [RulerPiece] {
         let window = timeline.window
         let approach = approachDate(timeline: timeline)
@@ -962,7 +988,12 @@ struct DocumentaryCaption: View {
     }
 
     private var line: TranscriptLine? {
-        LyricFocus.focus(at: model.utc, track: model.trackID, lines: model.timeline?.lines ?? []).current
+        LyricFocus.focus(
+            at: model.utc,
+            track: model.trackID,
+            lines: model.timeline?.lines ?? [],
+            segments: model.timeline?.segments ?? []
+        ).current
     }
 
     private var frame: Frame? {
@@ -1491,8 +1522,9 @@ struct AccessibilityMomentList: View {
                 }
             }
             if let approach = approachDate {
-                let time = ClockMath.utcText(approach).replacingOccurrences(of: " UTC", with: "")
-                if let landing = model.timeline.flatMap({ ClosestApproachLanding.make(timeline: $0) }) {
+                let time = ClockMath.utcText(ClosestApproachLanding.displayedInstant(approach))
+                    .replacingOccurrences(of: " UTC", with: "")
+                if let landing = model.closestApproach {
                     momentRow(
                         time: time,
                         name: "Closest approach",
@@ -1526,8 +1558,7 @@ struct AccessibilityMomentList: View {
         return FlybyPath.closestApproach(bundled.samples, radiusKm: bundled.document.radiusKm)?.date
     }
 
-    /// One VoiceOver stop. Playable rows are buttons. A closest-approach row that
-    /// has no recording is not a button; the hint carries the explanation.
+    /// One VoiceOver stop. Every row is a button, including a closest approach with no recording.
     @ViewBuilder
     private func momentRow(
         time: String,
@@ -1538,25 +1569,15 @@ struct AccessibilityMomentList: View {
         action: @escaping () -> Void
     ) -> some View {
         let label = momentLabel(time: time, name: name, informational: informational)
-        if informational {
+        Button(action: action) {
             label
-                .contentShape(Rectangle())
-                .onTapGesture(perform: action)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(time), \(name)")
-                .accessibilityIdentifier(identifier)
-                .modifier(MomentHint(hint: hint))
-        } else {
-            Button(action: action) {
-                label
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(time), \(name)")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityIdentifier(identifier)
-            .modifier(MomentHint(hint: hint))
         }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(time), \(name)")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier(identifier)
+        .modifier(MomentHint(hint: hint))
     }
 
     private func momentLabel(time: String, name: String, informational: Bool) -> some View {
@@ -1771,25 +1792,30 @@ struct FlybyRuler: View {
     /// mark is a quieter note and the card explains the table.
     @ViewBuilder
     private func approachMark(_ date: Date) -> some View {
-        let time = ClockMath.utcText(date).replacingOccurrences(of: " UTC", with: "")
-        if let landing = model.timeline.flatMap({ ClosestApproachLanding.make(timeline: $0) }) {
+        let time = ClockMath.utcText(ClosestApproachLanding.displayedInstant(date))
+            .replacingOccurrences(of: " UTC", with: "")
+        if model.closestApproach != nil {
             labelButton(
                 time: time,
                 name: "Closest approach",
-                now: isNow(landing.date),
+                now: isNow(model.closestApproach?.date ?? date),
                 identifier: "milestone-approach"
             ) {
                 model.showClosestApproach()
             }
-            .accessibilityHint(landing.gap)
+            .accessibilityHint("Nearest crew photo")
         } else {
-            rulerLabel(time: time, name: "Closest approach", now: false)
-                .contentShape(RulerHitShape())
-                .onTapGesture { model.showClosestApproach() }
-                .accessibilityElement(children: .ignore)
-                .accessibilityIdentifier("milestone-approach")
-                .accessibilityLabel("Closest approach")
-                .accessibilityHint(ClosestApproachLanding.missingNote() ?? "No crew recording at closest approach")
+            Button {
+                model.showClosestApproach()
+            } label: {
+                rulerLabel(time: time, name: "Closest approach", now: false)
+                    .contentShape(RulerHitShape())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("milestone-approach")
+            .accessibilityLabel("Closest approach")
+            .accessibilityHint(ClosestApproachLanding.missingNote() ?? "No crew recording at closest approach")
         }
     }
 
@@ -2062,28 +2088,29 @@ struct CraterPage: View {
     }
 }
 
-/// The stage ignores the safe area, so a geometry reader on it reports a zero bottom inset.
-/// This reads the window inset instead and reports it once the view is in a window.
+/// The stage ignores the safe area, so a geometry reader on it reports zero insets.
+/// This reads the window insets instead and reports them once the view is in a window.
 struct WindowSafeAreaReader: UIViewRepresentable {
-    var onBottom: @MainActor (CGFloat) -> Void
+    var onInsets: @MainActor (CGFloat, CGFloat) -> Void
 
     func makeUIView(context: Context) -> Probe {
         let view = Probe()
-        view.onBottom = onBottom
+        view.onInsets = onInsets
         view.isUserInteractionEnabled = false
         view.backgroundColor = .clear
         return view
     }
 
     func updateUIView(_ view: Probe, context: Context) {
-        view.onBottom = onBottom
+        view.onInsets = onInsets
         view.report()
     }
 
     @MainActor
     final class Probe: UIView {
-        var onBottom: (@MainActor (CGFloat) -> Void)?
-        private var reported: CGFloat = -1
+        var onInsets: (@MainActor (CGFloat, CGFloat) -> Void)?
+        private var reportedTop: CGFloat = -1
+        private var reportedBottom: CGFloat = -1
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -2102,51 +2129,59 @@ struct WindowSafeAreaReader: UIViewRepresentable {
 
         func report() {
             guard let window else { return }
+            let top = window.safeAreaInsets.top
             let bottom = window.safeAreaInsets.bottom
-            guard bottom != reported else { return }
-            reported = bottom
-            let send = onBottom
+            guard top != reportedTop || bottom != reportedBottom else { return }
+            reportedTop = top
+            reportedBottom = bottom
+            let send = onInsets
             Task { @MainActor in
-                send?(bottom)
+                send?(top, bottom)
             }
         }
     }
 }
 
-/// Bottom inset of the key window, read synchronously so the first frame is not laid out at 0.
+/// Key-window insets, read synchronously so the first frame is not laid out at 0.
 @MainActor
 enum WindowSafeArea {
-    static var bottom: CGFloat {
+    static var top: CGFloat { keyWindow?.safeAreaInsets.top ?? 0 }
+    static var bottom: CGFloat { keyWindow?.safeAreaInsets.bottom ?? 0 }
+
+    private static var keyWindow: UIWindow? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         for scene in scenes {
             if let window = scene.keyWindow ?? scene.windows.first(where: \.isKeyWindow) ?? scene.windows.first {
-                return window.safeAreaInsets.bottom
+                return window
             }
         }
-        return 0
+        return nil
     }
 }
 
-/// Closest-approach sentence. The capped card scrolls, and the text stays a text element
-/// so the contrast audit can read it. The container's frame is the visible card.
+/// Closest-approach sentence. One accessibility element, so VoiceOver reads the card once.
 private struct ApproachCard: View {
     var gap: String
     var informational: Bool
     var width: CGFloat
-    var maxHeight: CGFloat?
+    var mayScroll: Bool
 
     private var fill: Color { Color.black.opacity(0.92) }
 
     var body: some View {
         Group {
-            if let maxHeight {
-                CappedApproachText(
-                    gap: gap,
-                    informational: informational,
-                    width: width,
-                    maxHeight: maxHeight,
-                    fill: fill
-                )
+            if mayScroll {
+                ViewThatFits(in: .vertical) {
+                    copy
+                    FitsProposal {
+                        CappedApproachText(
+                            gap: gap,
+                            informational: informational,
+                            width: width,
+                            fill: fill
+                        )
+                    }
+                }
             } else {
                 copy
             }
@@ -2155,9 +2190,11 @@ private struct ApproachCard: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(fill)
         }
-        .accessibilityElement(children: .contain)
+        .clipped()
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("approach-gap")
         .accessibilityLabel(gap)
+        .accessibilityAddTraits(.isStaticText)
     }
 
     private var copy: some View {
@@ -2172,62 +2209,91 @@ private struct ApproachCard: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: width, alignment: .leading)
             .padding(12)
-            .accessibilityAddTraits(.isStaticText)
     }
 }
 
-/// AX4 and AX5. The sentence is taller than the cap, so the bottom edge fades and shows a chevron.
+/// Reports the proposed height, so ViewThatFits keeps the natural sentence when it fits.
+private struct FitsProposal: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        if let height = proposal.height {
+            return CGSize(width: proposal.width ?? 0, height: height)
+        }
+        let child = subviews.first?.sizeThatFits(proposal) ?? .zero
+        return CGSize(width: proposal.width ?? child.width, height: child.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        subviews.first?.place(
+            at: bounds.origin,
+            proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+        )
+    }
+}
+
+/// AX4 and AX5, once the sentence is taller than the cap. The chevron is its own row.
 private struct CappedApproachText: View {
     var gap: String
     var informational: Bool
     var width: CGFloat
-    var maxHeight: CGFloat
     var fill: Color
     @State private var contentHeight: CGFloat = 0
 
+    private let chevronRow: CGFloat = 22
+
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            Text(gap)
-                .font(
-                    informational
-                        ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
-                        : HybridFont.text(15, relativeTo: .subheadline)
-                )
-                .foregroundStyle(HybridColor.cream)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: width, alignment: .leading)
-                .padding(12)
-                .accessibilityAddTraits(.isStaticText)
-                .background {
-                    GeometryReader { geo in
-                        Color.clear.preference(key: ApproachCardHeightKey.self, value: geo.size.height)
+        GeometryReader { geo in
+            let showsChevron = contentHeight > geo.size.height + 1
+            let reserved: CGFloat = showsChevron ? chevronRow : 0
+            VStack(spacing: 0) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    sentence
+                        .background {
+                            GeometryReader { textGeo in
+                                Color.clear.preference(key: ApproachCardHeightKey.self, value: textGeo.size.height)
+                            }
+                        }
+                }
+                .frame(height: max(0, geo.size.height - reserved))
+                .overlay(alignment: .bottom) {
+                    if showsChevron {
+                        LinearGradient(
+                            colors: [fill.opacity(0), fill],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 14)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                     }
                 }
-        }
-        .onPreferenceChange(ApproachCardHeightKey.self) { contentHeight = $0 }
-        .frame(width: width, height: maxHeight, alignment: .top)
-        .clipped()
-        .overlay(alignment: .bottom) {
-            if contentHeight > maxHeight + 1 {
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [fill.opacity(0), fill],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 18)
+                if showsChevron {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(HybridColor.cream)
                         .frame(maxWidth: .infinity)
-                        .padding(.bottom, 5)
+                        .frame(height: chevronRow)
                         .background(fill)
+                        .accessibilityHidden(true)
                 }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
             }
         }
+        .onPreferenceChange(ApproachCardHeightKey.self) { [$contentHeight] in
+            $contentHeight.wrappedValue = $0
+        }
+    }
+
+    private var sentence: some View {
+        Text(gap)
+            .font(
+                informational
+                    ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
+                    : HybridFont.text(15, relativeTo: .subheadline)
+            )
+            .foregroundStyle(HybridColor.cream)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: width, alignment: .leading)
+            .padding(12)
     }
 }
 
@@ -2238,10 +2304,11 @@ private struct ApproachCardHeightKey: PreferenceKey {
     }
 }
 
-/// Card on top, caption in whatever height remains. The caption is not offered the card's rect.
+/// Card below the top safe area, caption in whatever height remains.
 private struct ApproachColumn: Layout {
     var spacing: CGFloat
-    var cardCap: CGFloat?
+    var safeTop: CGFloat
+    var dynamicType: DynamicTypeSize
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
@@ -2250,21 +2317,28 @@ private struct ApproachColumn: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
         guard let card = subviews.first else { return }
         let width = bounds.width
-        // The closed card adds a top inset outside the capped text. Keep that inset,
-        // and stop the measured text from taking the rest of the phone.
-        let limit = cardCap.map { min($0 + ClosedCaptionMetrics.approachCardTopInset, bounds.height) }
-        let cardSize = card.sizeThatFits(ProposedViewSize(width: width, height: limit))
-        var cardHeight = max(0, cardSize.height)
-        if let limit {
-            cardHeight = min(cardHeight, limit)
+        let top = ClosedCaptionMetrics.approachCardTopInset(safeTop: safeTop)
+        let captionIdeal: CGFloat
+        if subviews.count > 1 {
+            captionIdeal = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        } else {
+            captionIdeal = 0
         }
-        cardHeight = min(cardHeight, bounds.height)
+        let cap = ClosedCaptionMetrics.approachCardCap(
+            dynamicType: dynamicType,
+            availableHeight: bounds.height,
+            safeTop: safeTop,
+            captionHeight: captionIdeal
+        )
+        let cardIdeal = card.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        let room = max(0, bounds.height - top)
+        let cardHeight = min(cardIdeal, cap ?? cardIdeal, room)
         card.place(
-            at: CGPoint(x: bounds.minX, y: bounds.minY),
+            at: CGPoint(x: bounds.minX, y: bounds.minY + top),
             proposal: ProposedViewSize(width: width, height: cardHeight)
         )
         guard subviews.count > 1 else { return }
-        let captionY = bounds.minY + cardHeight + spacing
+        let captionY = bounds.minY + top + cardHeight + spacing
         let captionHeight = max(0, bounds.maxY - captionY)
         subviews[1].place(
             at: CGPoint(x: bounds.minX, y: captionY),
@@ -2290,23 +2364,36 @@ enum ClosedCaptionMetrics {
     }
     /// Bottom of the credit sits on the top of the Controls strip.
     static var bottomClearance: CGFloat { controlsBottomInset + controlsStripHeight }
-    /// Gap between the top of the closed stage and the closest-approach card.
-    static let approachCardTopInset: CGFloat = 12
+    /// Gap under the top safe area before the closest-approach card.
+    static let approachCardGap: CGFloat = 12
 
-    /// AX4 and AX5 only. The full sentence stays in the card and scrolls.
-    /// Smaller sizes keep the card at its natural height.
-    static func approachCardCap(dynamicType: DynamicTypeSize, screenHeight: CGFloat) -> CGFloat? {
-        let reserve: CGFloat
+    static func approachCardTopInset(safeTop: CGFloat) -> CGFloat {
+        approachCardGap + max(0, safeTop)
+    }
+
+    /// AX4 and AX5 only. The cap is the room above the measured caption, after the
+    /// top safe area. Smaller sizes keep the card at its natural height.
+    /// Returns nil when the card should not scroll.
+    static func approachCardCap(
+        dynamicType: DynamicTypeSize,
+        availableHeight: CGFloat,
+        safeTop: CGFloat,
+        captionHeight: CGFloat
+    ) -> CGFloat? {
         switch dynamicType {
-        case .accessibility5:
-            reserve = 500
-        case .accessibility4:
-            reserve = 440
+        case .accessibility4, .accessibility5:
+            break
         default:
             return nil
         }
-        let available = max(0, screenHeight - bottomClearance - 36)
-        return min(200, max(96, available - reserve))
+        let top = approachCardTopInset(safeTop: safeTop)
+        let budget = max(0, availableHeight - top - approachCardGap)
+        guard captionHeight > 0 else { return budget }
+        if captionHeight < budget {
+            return max(0, budget - captionHeight)
+        }
+        let floor = min(captionHeight, max(44, budget * 0.28))
+        return max(0, budget - floor)
     }
 }
 

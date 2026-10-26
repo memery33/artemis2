@@ -70,6 +70,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var approachGap: String?
     /// The gap is an explanation. The row is not offering a seek.
     @Published var approachInformational = false
+    /// Nearest in-span photograph to Horizons closest approach. Computed when the timeline loads.
+    private(set) var closestApproach: ClosestApproachLanding?
 
     /// Created on first use. The unit-test host never reads these, so it never builds an audio graph.
     private lazy var engine = AVAudioEngine()
@@ -242,6 +244,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     func play(fromHold: Bool = false) {
         clearSilentClock()
         guard timeline != nil else { return }
+        approachGap = nil
+        approachInformational = false
         if let end = activeSpan?.end, utc >= end, let start = activeSpan?.start {
             utc = start
             currentFile = nil
@@ -400,7 +404,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// When nothing in a playable span is real, the row only explains that.
     func showClosestApproach() {
         guard let timeline else { return }
-        guard let landing = ClosestApproachLanding.make(timeline: timeline) else {
+        guard let landing = closestApproach else {
             approachInformational = true
             approachGap = ClosestApproachLanding.missingNote()
             return
@@ -423,19 +427,22 @@ final class PlaybackModel: NSObject, ObservableObject {
         if window != landing.window {
             setWindow(landing.window)
         }
+        // Closed, matching ClosestApproachLanding's span. The photograph on the span end counts.
         let audible = timeline.segments.contains { segment in
-            segment.track == landing.trackID && landing.date >= segment.start && landing.date < segment.end
+            segment.track == landing.trackID && landing.date >= segment.start && landing.date <= segment.end
         }
         holdUntil = nil
         scrubbing = false
         if audible {
             playing = true
+        } else {
+            playing = false
         }
         seek(to: landing.date, markEnd: false)
         if audible, !ended {
             engagePlayback()
         } else {
-            playing = false
+            refreshNowPlaying(force: true)
         }
         approachGap = landing.gap
         approachInformational = false
@@ -716,15 +723,20 @@ final class PlaybackModel: NSObject, ObservableObject {
             return
         }
         do {
-            let parsed = try Timeline(data: Data(contentsOf: bundled))
-            timeline = parsed
-            utc = parsed.window.start
-            if let first = parsed.crew.first {
-                crewID = first.id
-                trackID = first.track
-            }
+            adopt(try Timeline(data: Data(contentsOf: bundled)))
         } catch {
             loadError = "Timeline was not copied into the app."
+        }
+    }
+
+    /// Installs a timeline and caches its closest-approach landing. The app calls this once at launch.
+    func adopt(_ timeline: Timeline) {
+        self.timeline = timeline
+        closestApproach = ClosestApproachLanding.make(timeline: timeline)
+        utc = timeline.window.start
+        if let first = timeline.crew.first {
+            crewID = first.id
+            trackID = first.track
         }
     }
 
@@ -1594,7 +1606,12 @@ final class PlaybackModel: NSObject, ObservableObject {
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
         let milestone = FlybyActivityCopy.nextLabel(after: utc, milestones: milestones)
-        let currentSpeaker: String? = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker
+        let currentSpeaker: String? = LyricFocus.focus(
+            at: utc,
+            track: trackID,
+            lines: timeline?.lines ?? [],
+            segments: timeline?.segments ?? []
+        ).current?.speaker
         let speaker: String
         if let currentSpeaker {
             speaker = SpeakerLabel.display(currentSpeaker) ?? ""

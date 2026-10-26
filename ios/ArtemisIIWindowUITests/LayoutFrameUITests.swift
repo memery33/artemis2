@@ -326,6 +326,16 @@ final class LayoutFrameUITests: XCTestCase {
         assertApproachCardClearsCaption(category: "UICTContentSizeCategoryAccessibilityXXXL")
     }
 
+    /// Default size. The card starts at or below the window's top safe area, read from the app.
+    func testClosestApproachCardClearsTheTopSafeArea() {
+        assertApproachCardClearsCaption(category: nil)
+    }
+
+    /// AX5. The same safe-area edge, not a typed-in inset.
+    func testClosestApproachCardClearsTheTopSafeAreaAtAccessibility5() {
+        assertApproachCardClearsCaption(category: "UICTContentSizeCategoryAccessibilityXXXL")
+    }
+
     private func assertClosestApproachTap(category: String?) {
         var arguments: [String] = []
         if let category {
@@ -354,7 +364,7 @@ final class LayoutFrameUITests: XCTestCase {
 
         let gap = element(named: "approach-gap", in: app)
         XCTAssertTrue(gap.waitForExistence(timeout: 8))
-        XCTAssertTrue(gap.label.contains("Closest approach: 23:00:46 UTC, 6,545 km above the surface (NASA/JPL Horizons)."))
+        XCTAssertTrue(gap.label.contains("Closest approach: 23:00:47 UTC, 6,545 km above the Moon's 1,737.4 km mean radius (NASA/JPL Horizons)."))
         XCTAssertTrue(gap.label.contains("The nearest crew photo was taken 16 min 14 s earlier."))
         XCTAssertFalse(gap.label.contains("this clock"))
         XCTAssertFalse(gap.label.contains("Not moved"))
@@ -406,6 +416,11 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         XCTAssertTrue(caption.waitForExistence(timeout: 8))
 
+        let checksIsland = category == nil || category == "UICTContentSizeCategoryAccessibilityXXXL"
+        let island = element(named: "safe-area-top", in: app)
+        if checksIsland {
+            XCTAssertTrue(island.waitForExistence(timeout: 4))
+        }
         let deadline = Date().addingTimeInterval(3)
         var cardFrame = card.frame
         var captionFrame = caption.frame
@@ -413,9 +428,11 @@ final class LayoutFrameUITests: XCTestCase {
             cardFrame = card.frame
             captionFrame = caption.frame
             let overlap = cardFrame.intersection(captionFrame)
+            let belowIsland = !checksIsland || cardFrame.minY >= island.frame.minY - 0.5
             let apart = cardFrame.height > 1
                 && captionFrame.height > 1
                 && cardFrame.maxY <= captionFrame.minY + 1
+                && belowIsland
                 && (overlap.isNull || overlap.width < 1 || overlap.height < 1)
             if apart { break }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -431,6 +448,9 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertLessThanOrEqual(captionFrame.maxX, app.frame.width + 0.5)
         XCTAssertLessThanOrEqual(cardFrame.maxY, captionFrame.minY + 1)
         XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1)
+        if category == nil || category == "UICTContentSizeCategoryAccessibilityXXXL" {
+            assertApproachCardClearsTheTopSafeArea(app: app, cardFrame: cardFrame)
+        }
         if category == "UICTContentSizeCategoryAccessibilityXXXL" {
             assertCaptionClearsControls(app: app, card: card, caption: caption)
         }
@@ -471,14 +491,14 @@ final class LayoutFrameUITests: XCTestCase {
                 && captionFrame.maxY <= bottom
                 && idFrame.maxY <= bottom
                 && creditFrame.maxY <= bottom
-                && cardFrame.height < app.frame.height * 0.5
+                && cardFrame.maxY <= captionFrame.minY + 1
             if clear { break }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         let limit = controlsTop + 1
         let bottom = app.frame.maxY + 0.5
         XCTAssertGreaterThan(controls.frame.height, 1)
-        XCTAssertLessThan(cardFrame.height, app.frame.height * 0.5)
+        XCTAssertLessThanOrEqual(cardFrame.maxY, captionFrame.minY + 1)
         XCTAssertLessThanOrEqual(captionFrame.maxY, limit)
         XCTAssertLessThanOrEqual(idFrame.maxY, limit)
         XCTAssertLessThanOrEqual(creditFrame.maxY, limit)
@@ -488,6 +508,14 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertLessThanOrEqual(creditFrame.maxY, bottom)
         XCTAssertGreaterThanOrEqual(idFrame.minY, -0.5)
         XCTAssertGreaterThanOrEqual(creditFrame.minY, -0.5)
+    }
+
+    /// `safe-area-top` is a one-point mark at the window inset. The card's top is that mark or lower.
+    private func assertApproachCardClearsTheTopSafeArea(app: XCUIApplication, cardFrame: CGRect) {
+        let island = element(named: "safe-area-top", in: app)
+        XCTAssertTrue(island.waitForExistence(timeout: 4))
+        XCTAssertGreaterThan(island.frame.height, 0)
+        XCTAssertGreaterThanOrEqual(cardFrame.minY, island.frame.minY - 0.5)
     }
 
     private func reveal(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {

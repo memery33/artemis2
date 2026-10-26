@@ -8,7 +8,8 @@ struct CrewRow: View {
         LyricFocus.focus(
             at: model.utc,
             track: model.trackID,
-            lines: model.timeline?.lines ?? []
+            lines: model.timeline?.lines ?? [],
+            segments: model.timeline?.segments ?? []
         ).current?.speaker
     }
 
@@ -55,8 +56,9 @@ struct CrewRow: View {
                     .font(HybridFont.text(10, relativeTo: .caption2))
                     .fontWeight(.medium)
                     .foregroundStyle(HybridColor.cream)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
             .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44)
@@ -80,8 +82,8 @@ struct CrewRow: View {
                     .font(HybridFont.text(15, relativeTo: .body))
                     .fontWeight(.semibold)
                     .foregroundStyle(HybridColor.cream)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.4)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
