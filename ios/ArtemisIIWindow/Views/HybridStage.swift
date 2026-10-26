@@ -267,19 +267,19 @@ struct HybridStage: View {
                         CreditLine()
                             .frame(maxWidth: max(0, size.width - 40), alignment: .leading)
                             .padding(.leading, 20)
-                            .padding(.bottom, revealed + 10)
+                            .padding(.bottom, revealed + ClosedCaptionMetrics.openCreditLift)
                     } else {
                         HStack {
                             CreditLine()
                             Spacer()
                         }
                         .padding(.leading, 20)
-                        .padding(.bottom, revealed + 10)
+                        .padding(.bottom, revealed + ClosedCaptionMetrics.openCreditLift)
                     }
                 }
             }
-            // The caption is off the stage, but the credit stays above the sheet.
-            // The card ends on or above that credit, and the closed stage still reserves room for both.
+            // The caption is off the stage. The card stops a gap above the credit and the sheet
+            // at every text size. The closed stage still sizes the card from the caption.
             if crater == nil, revealed >= 80, let gap = model.approachGap {
                 let creditWidth = max(0, size.width - 40)
                 let creditHeight = CreditLine.height(fitting: creditWidth)
@@ -287,14 +287,14 @@ struct HybridStage: View {
                     approachCard(
                         gap,
                         width: min(320, max(0, size.width - 40)),
-                        mayScroll: capsApproachCard
+                        mayScroll: true
                     )
                         .frame(
-                            maxHeight: ClosedCaptionMetrics.approachCardCap(
-                                dynamicType: dynamicTypeSize,
-                                availableHeight: size.height - revealed - creditHeight - 22,
-                                safeTop: safeTop,
-                                captionHeight: 0
+                            maxHeight: ClosedCaptionMetrics.openApproachCardMaxHeight(
+                                screenHeight: size.height,
+                                revealed: revealed,
+                                creditHeight: creditHeight,
+                                safeTop: safeTop
                             ),
                             alignment: .top
                         )
@@ -2441,9 +2441,27 @@ enum ClosedCaptionMetrics {
     static var bottomClearance: CGFloat { controlsBottomInset + controlsStripHeight }
     /// Gap under the top safe area before the closest-approach card.
     static let approachCardGap: CGFloat = 12
+    /// Space between the open credit's bottom and the top of the sheet.
+    static let openCreditLift: CGFloat = 10
 
     static func approachCardTopInset(safeTop: CGFloat) -> CGFloat {
         approachCardGap + max(0, safeTop)
+    }
+
+    /// Open panel, every text size. The returned height is the card itself; the caller
+    /// pads by `approachCardTopInset`. The bottom is one gap above the credit and the sheet.
+    /// A shorter sentence keeps its natural height. A taller one uses the whole-line scrollport.
+    static func openApproachCardMaxHeight(
+        screenHeight: CGFloat,
+        revealed: CGFloat,
+        creditHeight: CGFloat,
+        safeTop: CGFloat
+    ) -> CGFloat {
+        let top = approachCardTopInset(safeTop: safeTop)
+        let panelTop = screenHeight - revealed
+        let creditTop = panelTop - openCreditLift - max(0, creditHeight)
+        let bottom = min(creditTop, panelTop) - approachCardGap
+        return max(0, bottom - top)
     }
 
     /// AX4 and AX5 only. The cap is the room above the measured caption, after the

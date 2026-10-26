@@ -376,13 +376,10 @@ final class LayoutFrameUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "art002e041365")
         ).firstMatch
         XCTAssertTrue(frame.waitForExistence(timeout: 8))
-        if category == "UICTContentSizeCategoryAccessibilityXXL"
-            || category == "UICTContentSizeCategoryAccessibilityXXXL" {
-            assertOpenApproachCardClearsCreditAndPanel(app: app, card: gap)
-        }
+        assertOpenApproachCardClearsCreditAndPanel(app: app, card: gap)
     }
 
-    /// The open card's bottom stays at or above the credit and the sheet.
+    /// The open card's bottom stays at or above the credit and the sheet at every text size.
     private func assertOpenApproachCardClearsCreditAndPanel(app: XCUIApplication, card: XCUIElement) {
         let credit = element(named: "photo-credit", in: app)
         let panel = element(named: "control-panel", in: app)
