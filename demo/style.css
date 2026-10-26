@@ -22,6 +22,7 @@
 html, body {
   margin: 0;
   height: 100%;
+  height: 100dvh;
   background: var(--cabin);
   color: var(--ink);
   overflow: hidden;
@@ -29,7 +30,37 @@ html, body {
 
 button, input { font: inherit; color: inherit; }
 
-#stage { position: relative; height: 100%; }
+button, input[type="range"] { touch-action: manipulation; }
+
+#stage {
+  position: relative;
+  height: 100%;
+  height: 100dvh;
+  touch-action: pan-y pinch-zoom;
+  /* Credit inset from the bottom of the glass. The dock is not on the glass
+     unless a touch layout's window actually reaches it. */
+  --dock-clear: max(10px, env(safe-area-inset-bottom));
+  /* One credit line, plus the desktop chip's 3px + 4px padding.
+     The card uses this until the credit box has been measured. */
+  --credit-h: calc(11px * 1.35 + 7px);
+  /* How far the glass sits inside the window: padding on .thermal,
+     .pressure, and .acrylic. */
+  --glass-inset: calc(
+    clamp(14px, 1.7vw, 28px)
+    + clamp(12px, 1.5vw, 22px)
+    + clamp(5px, 0.45vw, 9px)
+  );
+}
+
+#stage.touch {
+  --dock-clear: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
+  --credit-h: calc(11px * 1.35);
+}
+
+#stage.compact,
+#stage.fold {
+  --dock-clear: max(10px, env(safe-area-inset-bottom));
+}
 
 /* The viewport is the inner face of a cone panel, not a page with a
    picture frame on it. Aluminum pressure-vessel cone: NASA crew-module
@@ -80,6 +111,7 @@ button, input { font: inherit; color: inherit; }
   /* Face near the glass. 1.58 is the landscape rounded rectangle from
      jsc2022e045980, not a measured clear aperture. */
   width: min(96vw, calc(104vh * 1.58));
+  width: min(96vw, calc(104dvh * 1.58));
   aspect-ratio: 1.58 / 1;
   transform: translate(-50%, -50%);
   will-change: transform;
@@ -174,11 +206,20 @@ button, input { font: inherit; color: inherit; }
   position: relative;
   height: 100%;
   border-radius: clamp(12px, 1.8vw, 30px);
-  overflow: hidden;
+  /* The photograph is clipped by #aperture. From 320px up the subtitle
+     stays in this box. Narrower fine-pointer windows move it onto the bezel. */
+  overflow: visible;
   background: #000;
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.65),
     inset 0 18px 28px rgba(0, 0, 0, 0.28);
+}
+
+#aperture {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 #glass img {
@@ -249,16 +290,111 @@ button, input { font: inherit; color: inherit; }
   color: rgba(244, 241, 234, 0.78);
 }
 
+/* Dock is a 44px row inset 8px. Phones keep the card above that row.
+   A large touch window reaches the dock, so this pin alone is not enough. */
+#stage.touch #glance {
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
+}
+
+/* The card stops at the credit band's top: leftover viewport under the
+   window, then --glass-inset (the .thermal, .pressure, and .acrylic
+   padding). Then --dock-clear and the credit's measured box (one line
+   until that box exists). 16px covers the window's drift. Compact phones
+   and the open fold keep the positions above and below. */
+#stage:not(.compact):not(.fold) #glance {
+  bottom: max(
+    16px,
+    3vh,
+    calc(
+      max(-2vh, 50vh - 48vw / 1.58)
+      + var(--glass-inset)
+      + var(--dock-clear)
+      + var(--credit-measured, var(--credit-h))
+      + 16px
+    )
+  );
+}
+
 #subs {
   position: absolute;
   left: 50%;
-  bottom: 7%;
-  z-index: 2;
+  bottom: max(7%, calc(var(--dock-clear) + 2em));
+  z-index: 3;
   width: max-content;
   max-width: 62%;
   transform: translateX(-50%);
   text-align: center;
   pointer-events: none;
+}
+
+/* #subs lives inside #glass, so its bottom is already inside the bezel.
+   Every fine-pointer width clears the credit's measured box by 16px.
+   --subs-fit gives back a few pixels only when that box would leave the
+   window. Touch layouts keep the percentage above. */
+#stage:not(.touch) #subs {
+  bottom: calc(
+    var(--dock-clear)
+    + var(--credit-measured, var(--credit-h))
+    + 16px
+    - var(--subs-fit, 0px)
+  );
+}
+
+/* The card shares the subtitle's band. --subs-left is the card's measured
+   right edge, plus 16px, in glass coordinates. The line then runs to the
+   window edge. width: auto is what lets left and right stretch. */
+#stage.subs-beside:not(.touch) #subs {
+  left: var(--subs-left, 0px);
+  right: max(16px, 2vw);
+  width: auto;
+  max-width: none;
+  transform: none;
+  text-align: center;
+}
+
+/* The column beside the card is under 160px, or the quote would wrap past
+   three lines. The card sits above the subtitle and the line uses the glass.
+   subs-wide is the same full-glass line when no card sits beside it. */
+#stage.subs-stack:not(.touch) #subs,
+#stage.subs-wide:not(.touch) #subs {
+  left: max(16px, 2vw);
+  right: max(16px, 2vw);
+  width: auto;
+  max-width: none;
+  transform: none;
+  text-align: center;
+}
+
+/* When the glass cannot hold the quote in three lines, the line sits on the
+   bezel, above the pane. Width is the viewport minus padding, so a
+   window-width inset cannot run the words off the screen. The quote wraps.
+   --subs-bezel-left and --subs-bezel-right are that padding in glass
+   coordinates. The left edge moves past the cabin card when the card is open. */
+#stage.subs-bezel:not(.touch) #subs {
+  left: var(--subs-bezel-left, max(16px, 2vw));
+  right: var(--subs-bezel-right, max(16px, 2vw));
+  bottom: calc(100% + 8px);
+  width: auto;
+  max-width: none;
+  transform: none;
+  text-align: center;
+  z-index: 4;
+}
+
+#stage.subs-stack:not(.touch):not(.compact):not(.fold) #glance {
+  bottom: max(
+    16px,
+    3vh,
+    calc(
+      max(-2vh, 50vh - 48vw / 1.58)
+      + var(--glass-inset)
+      + var(--dock-clear)
+      + var(--credit-measured, var(--credit-h))
+      + 16px
+      + var(--subs-measured, 0px)
+      + 16px
+    )
+  );
 }
 
 /* A dim that hugs the words. The wide plate across the Moon is gone.
@@ -300,9 +436,12 @@ button, input { font: inherit; color: inherit; }
 #subs .say {
   display: block;
   margin-top: 3px;
+  /* A hidden overflow clipped crew words that ran past the line. Wrap them. */
+  overflow: visible;
+  overflow-wrap: break-word;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-weight: 400;
-  font-size: clamp(14px, 1.45vw, 20px);
+  font-size: calc(clamp(14px, 1.45vw, 20px) * var(--subs-scale, 1));
   line-height: 1.35;
   color: #f7f7f5;
 }
@@ -321,7 +460,21 @@ button, input { font: inherit; color: inherit; }
   text-shadow: 0 1px 6px #000;
 }
 
-#credit { bottom: 10px; text-align: left; }
+#credit {
+  bottom: var(--dock-clear);
+  z-index: 4;
+  line-height: 1.35;
+  text-align: left;
+}
+
+/* Same faint chip as the clock, only as wide as the line. Not a band. */
+#stage:not(.touch) #credit {
+  right: auto;
+  max-width: calc(100% - 32px);
+  padding: 3px 8px 4px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.58);
+}
 
 #taken {
   position: absolute;
@@ -355,6 +508,7 @@ button, input { font: inherit; color: inherit; }
 
 #stage.cab #window {
   width: min(96vw, calc(100vh * 4 / 3));
+  width: min(96vw, calc(100dvh * 4 / 3));
   aspect-ratio: 4 / 3;
 }
 
@@ -405,9 +559,9 @@ button, input { font: inherit; color: inherit; }
 #clocks {
   position: absolute;
   z-index: 5;
-  top: 14px;
-  right: 16px;
-  max-width: min(28rem, calc(100% - 32px));
+  top: max(14px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  max-width: min(28rem, calc(100% - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   padding: 4px 9px 5px;
   border-radius: 8px;
   /* A chip behind the three times only. Not a band across the frame. */
@@ -433,7 +587,7 @@ button, input { font: inherit; color: inherit; }
   position: absolute;
   z-index: 5;
   left: 50%;
-  bottom: 22px;
+  bottom: max(22px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
   margin: 0;
   padding: 6px 10px;
@@ -536,7 +690,64 @@ button.on, button[aria-pressed="true"] {
   gap: 8px;
 }
 
+.scrubwrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+#coverage {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(244, 241, 234, 0.15);
+  overflow: hidden;
+}
+#coverage .audio {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(244, 241, 234, 0.72);
+}
+#coverage .photo {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #d7b15e;
+}
 #scrub, #offset { flex: 1; accent-color: #f4f1ea; }
+#moments-panel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Own line under the Moments button, which is its previous sibling. */
+  flex-basis: 100%;
+  align-self: stretch;
+  min-width: 0;
+  overflow: auto;
+  /* 240px on a tall screen. On a short one, stop 8px above the viewport
+     and scroll the rows. --moments-top is the panel's top edge. */
+  max-height: min(240px, calc(100dvh - var(--moments-top, 0px) - max(8px, env(safe-area-inset-bottom))));
+}
+#moments-panel button {
+  text-align: left;
+  white-space: pre-line;
+  line-height: 1.35;
+}
+/* A narrow controls column lets the list run past the viewport. Pin it. */
+@media (max-width: 480px) {
+  #moments-panel:not([hidden]) {
+    position: fixed;
+    z-index: 8;
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    max-width: none;
+    max-height: min(240px, calc(100dvh - 16px));
+  }
+}
 .offset {
   display: flex;
   gap: 10px;
@@ -560,8 +771,96 @@ button.on, button[aria-pressed="true"] {
   width: min(98vw, calc(108vh * 1.58));
 }
 
-@media (max-width: 800px) {
-  #window { width: min(118vw, calc(96vh * 1.58)); top: 50%; }
+#dock {
+  display: none;
+}
+
+#stage.touch #dock {
+  display: flex;
+  position: absolute;
+  z-index: 6;
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  gap: 6px;
+  justify-content: center;
+  align-items: stretch;
+  pointer-events: auto;
+}
+
+#stage.touch #dock button {
+  flex: 1 1 0;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  background: rgba(8, 9, 12, 0.78);
+  border-radius: 999px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+}
+
+#stage.touch #dock button.on {
+  background: #f4f1ea;
+  color: #14151a;
+  border-color: #f4f1ea;
+}
+
+#stage.touch #hint {
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 56px);
+}
+
+/* The collapsed map is a sibling of the HUD, so it stays up while the
+   controls fade. It hides again while that panel is open. */
+#stage.compact #map {
+  position: absolute;
+  z-index: 5;
+  width: 186px;
+  height: 176px;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  border-radius: 10px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#stage.compact:has(#hud.show) #map { opacity: 0; }
+
+@media (orientation: portrait) {
+  #stage.compact #map {
+    width: 240px;
+    height: 160px;
+    top: auto;
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 60px);
+  }
+  #stage.compact #subs {
+    bottom: max(10%, calc(var(--dock-clear) + 2.4em));
+    max-width: 78%;
+  }
+  /* The portrait map fills the lower left. The credit sits in the lower right, above the dock. */
+  #stage.touch.compact #glance {
+    left: auto;
+    right: max(10px, env(safe-area-inset-right));
+    width: min(120px, calc(100vw - 268px));
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
+  }
+}
+
+#stage.touch button[data-crew],
+#stage.touch button[data-cam],
+#stage.touch button[data-track],
+#stage.touch button[data-win],
+#stage.touch #play,
+#stage.touch #full,
+#stage.touch #cabrun,
+#stage.touch #backfly,
+#stage.touch #scrub {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 800px) and (pointer: coarse) {
+  #window { width: min(118vw, calc(96vh * 1.58)); width: min(118vw, calc(96dvh * 1.58)); top: 50%; }
   #near { padding: 16px; border-radius: 28px; filter: blur(1.6px); }
   .thermal { padding: 10px; border-radius: 24px; }
   .pressure { padding: 7px; border-radius: 18px; }
@@ -570,6 +869,163 @@ button.on, button[aria-pressed="true"] {
   #map { width: 100%; }
   #enter .title { font-size: 28px; }
   #glance { width: min(160px, 42vw); }
+}
+
+/* After the 800px block so a phone keeps the glass on screen.
+   A fine pointer at this size keeps the desktop window. */
+@media (orientation: portrait) and (max-width: 932px) and (pointer: coarse) {
+  #window {
+    top: 42%;
+    width: min(94vw, calc(70vh * 1.58));
+    width: min(94vw, calc(70dvh * 1.58));
+  }
+  #stage.cab #window {
+    width: min(94vw, calc(70vh * 4 / 3));
+    width: min(94vw, calc(70dvh * 4 / 3));
+  }
+}
+
+@media (max-height: 500px) and (pointer: coarse) {
+  #window {
+    top: calc(50% - 6px);
+    width: min(78vw, calc((100vh - 108px) * 1.58));
+    width: min(78vw, calc((100dvh - 108px) * 1.58));
+  }
+  #stage.cab #window {
+    width: min(72vw, calc((100vh - 108px) * 4 / 3));
+    width: min(72vw, calc((100dvh - 108px) * 4 / 3));
+  }
+  #stage.compact #clocks {
+    max-width: calc(100% - 210px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  }
+  #stage.compact #subs {
+    bottom: max(12%, calc(var(--dock-clear) + 2.4em));
+    max-width: 68%;
+  }
+  /* The landscape map is the upper left. The credit sits lower right, above the dock. */
+  #stage.touch.compact #glance {
+    left: auto;
+    right: max(16px, 2vw);
+    width: min(168px, 22vw);
+  }
+}
+
+#rail { display: none; }
+
+/* Open fold: wider than tall, taller than a phone on its side, narrower than a desktop,
+   and a coarse pointer. 890×626 CSS px on a phone matches. A 1024×768 desktop window does not. */
+@media (min-aspect-ratio: 6/5) and (max-aspect-ratio: 8/5) and (min-height: 520px) and (max-width: 1200px) and (pointer: coarse) {
+  #window {
+    left: 33%;
+    top: 46%;
+    width: min(64vw, calc((100vh - 56px) * 1.58));
+    width: min(64vw, calc((100dvh - 56px) * 1.58));
+  }
+  #stage.cab #window {
+    width: min(58vw, calc((100vh - 56px) * 4 / 3));
+    width: min(58vw, calc((100dvh - 56px) * 4 / 3));
+  }
+  #clocks {
+    top: max(12px, env(safe-area-inset-top));
+    right: auto;
+    left: max(12px, env(safe-area-inset-left));
+    text-align: left;
+  }
+  #rail {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    z-index: 5;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: min(268px, 30vw);
+    gap: 8px;
+    /* The transcript used to paint past this box onto the dock. 3px keeps
+       the companion's focus ring inside the clip. */
+    padding: 3px;
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  /* The dock lift would drop the cabin card onto the subtitle. Sit it in the
+     right column, above the transcript, with the photo capped so the credit fits. */
+  #stage.touch #glance {
+    left: auto;
+    right: max(12px, env(safe-area-inset-right));
+    top: max(12px, env(safe-area-inset-top));
+    bottom: auto;
+    width: min(268px, 30vw);
+    max-height: 168px;
+    z-index: 6;
+    overflow: hidden;
+  }
+  #stage.touch #glance img {
+    height: 64px;
+    object-fit: cover;
+  }
+  #stage.touch #rail {
+    top: calc(max(12px, env(safe-area-inset-top)) + 176px);
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 60px);
+  }
+}
+
+#companion {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(8, 9, 12, 0.78);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+#companion img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #07080c;
+}
+
+#stage.cab #companion img { aspect-ratio: 1.58 / 1; }
+
+#companionCap {
+  display: block;
+  padding: 8px 10px 0;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+#transcript {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(8, 9, 12, 0.55);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+  color: rgba(244, 241, 234, 0.88);
+}
+
+#transcript .line { margin: 0 0 8px; }
+#transcript .line.now { color: #fff; }
+#transcript .who {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244, 241, 234, 0.7);
 }
 
 @media (prefers-reduced-motion: reduce) {

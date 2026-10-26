@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <link rel="icon" href="data:,">
   <title>Artemis II — Orion window</title>
   <link rel="stylesheet" href="style.css">
@@ -27,10 +27,12 @@
           <div class="reveal pressure">
             <div class="reveal acrylic">
               <div id="glass">
-                <img id="photoA" alt="" />
-                <img id="photoB" alt="" />
-                <div class="reflect" aria-hidden="true"></div>
-                <div class="vignette" aria-hidden="true"></div>
+                <div id="aperture">
+                  <img id="photoA" alt="" />
+                  <img id="photoB" alt="" />
+                  <div class="reflect" aria-hidden="true"></div>
+                  <div class="vignette" aria-hidden="true"></div>
+                </div>
                 <div id="empty" hidden></div>
                 <div id="taken"></div>
                 <div id="subs"></div>
@@ -48,11 +50,26 @@
 
     <button id="enter" type="button">Click or press any key to look out the window</button>
     <p id="hint" hidden>Space pause · ← → windows · 1–4 crew · F full screen · Esc controls</p>
+    <div id="dock">
+      <button type="button" id="dock-play" aria-label="Play or pause">Play</button>
+      <button type="button" id="dock-w2" aria-label="Window 2" aria-pressed="true">2</button>
+      <button type="button" id="dock-w3" aria-label="Window 3" aria-pressed="false">3</button>
+      <button type="button" id="dock-crew" aria-label="Cycle crew narration">Crew</button>
+      <button type="button" id="dock-full" aria-label="Full screen">Full</button>
+      <button type="button" id="dock-more" aria-label="Show controls">More</button>
+    </div>
     <div id="clocks">
       <span id="utc">19:33:00 UTC</span>
       <span id="et">15:33:00 EDT</span>
       <span id="met"></span>
     </div>
+    <aside id="rail" aria-label="Other window and transcript">
+      <button type="button" id="companion">
+        <img id="companionImg" alt="" />
+        <span id="companionCap">Other window</span>
+      </button>
+      <div id="transcript" aria-live="polite"></div>
+    </aside>
 
     <div id="hud" hidden>
       <header class="top">
@@ -72,7 +89,10 @@
         <div class="controls">
           <div class="row">
             <button type="button" id="play" aria-label="Play or pause">Play</button>
-            <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Mission clock" />
+            <div class="scrubwrap">
+              <div id="coverage" aria-hidden="true"></div>
+              <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Mission clock" />
+            </div>
             <button type="button" id="full">Full screen</button>
           </div>
           <div class="row windows" role="group" aria-label="Window">
@@ -81,6 +101,8 @@
           </div>
           <div class="row">
             <button type="button" id="cabrun">Cab Cam run · 22:36 UTC</button>
+            <button type="button" id="moments" aria-expanded="false" aria-controls="moments-panel">Moments</button>
+            <div id="moments-panel" role="region" aria-label="Moments" hidden></div>
             <button type="button" id="backfly" hidden>Back to the flyby</button>
           </div>
           <div class="row cameras" role="group" aria-label="Camera">

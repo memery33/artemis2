@@ -78,6 +78,10 @@ def main() -> None:
             )
     timeline_path.write_text(json.dumps(document, separators=(", ", ": ")))
     _restore_cab(hold)
+    from make_narrow_images import make_narrow
+
+    narrow = make_narrow(DEMO / "images")
+    print(f"narrow webp {narrow}")
     from merge_cab_cam import merge
 
     document = json.loads(timeline_path.read_text())

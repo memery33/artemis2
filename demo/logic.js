@@ -118,9 +118,10 @@
     return placed;
   }
 
-  function chooseFont(names, mapWidth, basePx, measure) {
+  function chooseFont(names, mapWidth, basePx, measure, widthRatio) {
     let px = basePx;
-    const limit = mapWidth * 0.46;
+    const ratio = Number.isFinite(widthRatio) ? widthRatio : 0.46;
+    const limit = mapWidth * ratio;
     while (px > 8) {
       let widest = 0;
       for (const name of names) widest = Math.max(widest, measure(name, px));
@@ -201,6 +202,436 @@
     };
   }
 
+  const GATE_DESKTOP = "Click or press any key to look out the window";
+  const GATE_TOUCH = "Tap to begin";
+
+  function gateLabel(touch) {
+    return touch ? GATE_TOUCH : GATE_DESKTOP;
+  }
+
+  // Dock and the tap gate follow the primary pointer. A fine pointer keeps
+  // mousemove reveal even when the screen also reports touch points, which
+  // is a touchscreen laptop. Touch points are not an argument.
+  function isTouchDevice(coarse, hoverNone, fine) {
+    if (fine === true) return false;
+    return coarse === true || hoverNone === true;
+  }
+
+  // Horizontal swipe between the two windows. A short drag, a vertical drag,
+  // and a pinch (more than one finger — the caller passes null) do nothing.
+  function swipeWindow(dx, dy, threshold) {
+    const limit = Number.isFinite(threshold) && threshold > 0 ? threshold : 48;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+    if (Math.abs(dx) < limit || Math.abs(dx) <= Math.abs(dy)) return null;
+    return dx < 0 ? "3" : "2";
+  }
+
+  // Sibling of the shipped WebP. Same exposure, long edge 720. Never a new file name
+  // for a non-image, and never a second downscale of an existing 720 sibling.
+  function variantFile(file, useSmall) {
+    if (!useSmall || typeof file !== "string") return file;
+    if (!/\.webp$/i.test(file) || /\.720\.webp$/i.test(file)) return file;
+    return file.replace(/\.webp$/i, ".720.webp");
+  }
+
+  function wantsSmallImage(narrow, saveData, effectiveType, fold, dpr) {
+    if (saveData === true) return true;
+    if (effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g") return true;
+    // The open-fold window is about 570 CSS px. Keep the shipped 1200 px frame
+    // when it is sharper than the 720 sibling. A Duo at 3x is about 1710
+    // device pixels, so it stays on the full frame. At 1x the 720 sibling
+    // already covers the window. An omitted ratio keeps the full frame.
+    // A slow link still uses the smaller sibling, above.
+    if (fold === true) {
+      if (!(Number.isFinite(dpr) && dpr > 0)) return false;
+      return 570 * dpr <= 720;
+    }
+    if (narrow) return true;
+    return false;
+  }
+
+  // An open fold is wider than tall, tall enough not to be a phone on its
+  // side, and narrower than a desktop. 6/5 is 1.2, 8/5 is 1.6. That shape
+  // is also a 1024×768 desktop window, so the fold layout requires a coarse
+  // pointer. Phone and desktop here describe the shape; the page applies
+  // the phone rules only under (pointer: coarse) as well.
+  function screenMode(width, height, coarse) {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return "desktop";
+    const aspect = width / height;
+    if (coarse === true && aspect >= 1.2 && aspect <= 1.6 && height >= 520 && width <= 1200) return "fold";
+    if (aspect < 1 || height <= 500) return "phone";
+    return "desktop";
+  }
+
+  // Real transcript rows already in the timeline. Nothing is added.
+  function transcriptSlice(lines, utcMs, track, beforeMs, afterMs) {
+    const before = Number.isFinite(beforeMs) ? beforeMs : 25000;
+    const after = Number.isFinite(afterMs) ? afterMs : 12000;
+    if (!Array.isArray(lines) || !Number.isFinite(utcMs)) return [];
+    const rows = [];
+    for (const line of lines) {
+      if (!line || typeof line.utc !== "string" || typeof line.text !== "string") continue;
+      if (track && line.track !== track) continue;
+      const t = Date.parse(line.utc);
+      if (!Number.isFinite(t) || t < utcMs - before || t > utcMs + after) continue;
+      rows.push({ utc: line.utc, t: t, speaker: line.speaker || "", text: line.text });
+    }
+    rows.sort((a, b) => a.t - b.t);
+    let currentUtc = null;
+    for (const row of rows) {
+      if (row.t <= utcMs) currentUtc = row.utc;
+    }
+    return rows.map((row) => ({
+      utc: row.utc,
+      speaker: row.speaker,
+      text: row.text,
+      current: row.utc === currentUtc,
+    }));
+  }
+
+  const CABIN_ID = "art002e016183";
+
+  function appearance(frame) {
+    if (!frame) return "";
+    const note = String(frame.exposure_note || "");
+    if (frame.look === "dark" && /bright patch/i.test(note)) {
+      return "Mostly dark short exposure, with a small bright patch near the middle. Not brightened.";
+    }
+    if (frame.look === "surface") {
+      return "Shown as photographed. No window frame is drawn over this picture.";
+    }
+    return "Shown as photographed.";
+  }
+
+  function spanPhrase(seconds) {
+    const whole = Math.round(Math.abs(seconds));
+    const minutes = Math.floor(whole / 60);
+    const secs = whole % 60;
+    if (minutes > 0 && secs > 0) return `${minutes} min ${secs} s`;
+    if (minutes > 0) return `${minutes} min`;
+    return `${secs} s`;
+  }
+
+  function clockGap(nowMs, takenMs) {
+    if (!Number.isFinite(nowMs) || !Number.isFinite(takenMs)) return "";
+    const delta = (nowMs - takenMs) / 1000;
+    if (Math.abs(delta) < 2) return "";
+    const phrase = spanPhrase(delta);
+    if (delta > 0) return `${phrase} before this clock`;
+    return `${phrase} after this clock`;
+  }
+
+  // How far the photograph's own timestamp sits from the Orion clock.
+  function clockOffset(nowMs, takenMs) {
+    const gap = clockGap(nowMs, takenMs);
+    if (!gap) return "";
+    const delta = (nowMs - takenMs) / 1000;
+    if (delta >= 45) return `Photo taken ${gap}. Not moved to match it.`;
+    return `Photo taken ${gap}.`;
+  }
+
+  // Window 3 holds the closest Cab Cam capture inside the span. An equal
+  // distance keeps the frame already taken. Capture times are not moved.
+  function visibleCabPair(frames, timeMs, spanStartMs, spanEndMs, offsetMs) {
+    const shift = offsetMs || 0;
+    const rows = (frames || [])
+      .filter((frame) => frame && frame.instrument === "cab2" && frame.nasa_id !== CABIN_ID && frame.view !== "cabin")
+      .map((frame) => ({ frame, at: Date.parse(frame.utc) + shift }))
+      .filter((row) => Number.isFinite(row.at))
+      .sort((a, b) => a.at - b.at);
+    const spanOK = Number.isFinite(spanStartMs) && Number.isFinite(spanEndMs) && spanEndMs >= spanStartMs;
+    const pack = (current, next, outside) => ({
+      current: current ? current.frame : null,
+      next: next ? next.frame : null,
+      index: current ? Math.max(0, rows.findIndex((row) => row.frame === current.frame)) : 0,
+      outside: !!outside,
+    });
+    if (spanOK) {
+      const inside = rows.filter((row) => row.at >= spanStartMs && row.at <= spanEndMs);
+      if (inside.length) {
+        const chosen = inside.reduce((best, row) => {
+          const left = Math.abs(best.at - timeMs);
+          const right = Math.abs(row.at - timeMs);
+          if (right !== left) return right < left ? row : best;
+          const bestTaken = best.at <= timeMs;
+          const rowTaken = row.at <= timeMs;
+          if (bestTaken !== rowTaken) return rowTaken ? row : best;
+          return row.at < best.at ? row : best;
+        });
+        const next = rows.find((row) => row.at > chosen.at && row.at >= spanStartMs && row.at <= spanEndMs) || null;
+        return pack(chosen, next, false);
+      }
+    }
+    let index = 0;
+    for (; index < rows.length; index += 1) {
+      if (rows[index].at > timeMs) break;
+    }
+    const current = index > 0 ? rows[index - 1] : null;
+    let next = index < rows.length ? rows[index] : null;
+    let outside = false;
+    if (spanOK && current && (current.at < spanStartMs || current.at > spanEndMs)) {
+      outside = true;
+      next = null;
+    }
+    return pack(current, next, outside);
+  }
+
+  function containsWord(text, word) {
+    const haystack = String(text || "").toLowerCase();
+    const needle = String(word || "").toLowerCase();
+    if (!needle) return false;
+    let from = 0;
+    while (from <= haystack.length - needle.length) {
+      const at = haystack.indexOf(needle, from);
+      if (at < 0) return false;
+      const before = at === 0 ? "" : haystack[at - 1];
+      const after = haystack[at + needle.length] || "";
+      const letter = (ch) => ch && /[a-z]/i.test(ch);
+      if (!letter(before) && !letter(after)) return true;
+      from = at + needle.length;
+    }
+    return false;
+  }
+
+  function properNoun(name) {
+    const first = String(name || "").split(/\s+/)[0];
+    return first || name;
+  }
+
+  function inSpan(ms, span) {
+    if (!span) return false;
+    return ms >= Date.parse(span.start) && ms <= Date.parse(span.end);
+  }
+
+  function rangeFor(ms, doc) {
+    if (inSpan(ms, doc.cab_run)) return "cab";
+    if (inSpan(ms, doc.window)) return "flyby";
+    return null;
+  }
+
+  function sourceLabel(source) {
+    const names = {
+      "window.start": "Flyby start",
+      "window.end": "Flyby end",
+      "window.label": "Window name",
+      "cab_run.start": "Cab run start",
+      "cab_run.end": "Cab run end",
+      "cab_run.label": "Cab run name",
+      "segments.start": "Audio start",
+      "segments.end": "Audio end",
+      "segments.nasa_id": "NASA ID",
+      "segments.track": "Audio track",
+      "segments.target_id": "Target",
+      "lines.utc": "Transcript time",
+      "lines.speaker": "Speaker",
+      "lines.text": "Words",
+      "lines.track": "Audio track",
+      "lines.nasa_id": "NASA ID",
+      "targets.name": "Target name",
+      "frames.utc": "Photo time",
+      "frames.nasa_id": "NASA ID",
+      "frames.look": "Look",
+      "frames.camera_label": "Camera",
+      "frames.target_id": "Target",
+      "frames.instrument": "Instrument",
+    };
+    return String(source || "")
+      .split(",")
+      .map((part) => {
+        const field = part.trim();
+        return names[field] || field.replace(/\./g, " ");
+      })
+      .join(", ");
+  }
+
+  // Every row is a timestamp already stored on the timeline. Nothing is added.
+  // Closest approach is omitted when no source field names it.
+  function milestones(doc) {
+    const rows = [];
+    const push = (row) => rows.push(row);
+    if (doc.window) {
+      push({
+        id: "span:window.start",
+        utc: doc.window.start,
+        label: doc.window.label,
+        source: "window.start, window.label",
+        track: null,
+        window: null,
+        range: "flyby",
+        jumpUtc: null,
+      });
+      push({
+        id: "span:window.end",
+        utc: doc.window.end,
+        label: doc.window.label,
+        source: "window.end, window.label",
+        track: null,
+        window: null,
+        range: "flyby",
+        jumpUtc: null,
+      });
+    }
+    if (doc.cab_run) {
+      push({
+        id: "span:cab_run.start",
+        utc: doc.cab_run.start,
+        label: doc.cab_run.label,
+        source: "cab_run.start, cab_run.label",
+        track: null,
+        window: "3",
+        range: "cab",
+        jumpUtc: null,
+      });
+      push({
+        id: "span:cab_run.end",
+        utc: doc.cab_run.end,
+        label: doc.cab_run.label,
+        source: "cab_run.end, cab_run.label",
+        track: null,
+        window: "3",
+        range: "cab",
+        jumpUtc: null,
+      });
+    }
+    const segments = [...(doc.segments || [])].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+    for (const seg of segments) {
+      const target = seg.target_id || "";
+      const where = rangeFor(Date.parse(seg.start), doc) || "flyby";
+      push({
+        id: `audio:${seg.nasa_id}`,
+        utc: seg.start,
+        label: target ? `${target} · ${seg.nasa_id}` : seg.nasa_id,
+        source: "segments.start, segments.nasa_id, segments.track, segments.target_id",
+        track: seg.track,
+        window: where === "cab" ? "3" : null,
+        range: where,
+        jumpUtc: null,
+      });
+    }
+    const names = [];
+    for (const target of doc.targets || []) {
+      if (target.geographic && !names.includes(target.name)) names.push(target.name);
+    }
+    const lines = [...(doc.lines || [])].sort((a, b) => Date.parse(a.utc) - Date.parse(b.utc));
+    for (const name of names) {
+      const token = properNoun(name);
+      const line = lines.find((row) => containsWord(row.text, token));
+      if (!line) continue;
+      const speaker = line.speaker ? `${line.speaker}: ` : "";
+      push({
+        id: `quote:${name}`,
+        utc: line.utc,
+        label: `${speaker}${line.text}`,
+        source: "lines.utc, lines.speaker, lines.text, lines.track, lines.nasa_id, targets.name",
+        track: line.track,
+        window: null,
+        range: rangeFor(Date.parse(line.utc), doc) || "flyby",
+        jumpUtc: null,
+      });
+    }
+    const frames = [...(doc.frames || [])].sort((a, b) => Date.parse(a.utc) - Date.parse(b.utc));
+    const seen = new Set();
+    const addPhoto = (frame, source, jumpUtc) => {
+      if (!frame || seen.has(frame.nasa_id)) return;
+      seen.add(frame.nasa_id);
+      const target = frame.target_id || "";
+      const geographic = names.includes(target);
+      const label = geographic ? `${target} · ${frame.nasa_id}` : `${frame.camera_label} · ${frame.nasa_id}`;
+      const ms = Date.parse(frame.utc);
+      const where = rangeFor(ms, doc);
+      const cab = frame.instrument === "cab2";
+      push({
+        id: `photo:${frame.nasa_id}`,
+        utc: frame.utc,
+        label,
+        source,
+        track: null,
+        window: frame.nasa_id === CABIN_ID ? null : (cab ? "3" : "2"),
+        range: where || "flyby",
+        jumpUtc: jumpUtc || null,
+      });
+    };
+    for (const name of names) {
+      addPhoto(
+        frames.find((frame) => frame.target_id === name),
+        "frames.utc, frames.nasa_id, frames.target_id, frames.instrument",
+        null
+      );
+    }
+    addPhoto(
+      frames.find((frame) => frame.nasa_id === CABIN_ID),
+      "frames.utc, frames.nasa_id, frames.camera_label",
+      null
+    );
+    const windowStart = doc.window ? Date.parse(doc.window.start) : NaN;
+    const held = [...frames].reverse().find((frame) => frame.instrument === "cab2" && Date.parse(frame.utc) < windowStart);
+    addPhoto(
+      held,
+      "frames.utc, frames.nasa_id, frames.look, frames.camera_label, window.start",
+      doc.window ? doc.window.start : null
+    );
+    const looks = [];
+    for (const frame of frames) {
+      if (frame.instrument !== "cab2" || !frame.look || looks.includes(frame.look)) continue;
+      looks.push(frame.look);
+      addPhoto(frame, "frames.utc, frames.nasa_id, frames.look, frames.camera_label", null);
+    }
+    rows.sort((a, b) => Date.parse(a.utc) - Date.parse(b.utc) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return rows;
+  }
+
+  function coverage(doc, rangeKey, track, windowView) {
+    const span = rangeKey === "cab" && doc.cab_run ? doc.cab_run : doc.window;
+    const spanStart = Date.parse(span.start);
+    const spanEnd = Date.parse(span.end);
+    const clips = (doc.segments || [])
+      .filter((seg) => seg.track === track)
+      .map((seg) => {
+        const start = Math.max(Date.parse(seg.start), spanStart);
+        const end = Math.min(Date.parse(seg.end), spanEnd);
+        return end > start ? { start, end } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.start - b.start);
+    const audio = [];
+    for (const clip of clips) {
+      const last = audio[audio.length - 1];
+      if (last && clip.start <= last.end) last.end = Math.max(last.end, clip.end);
+      else audio.push({ start: clip.start, end: clip.end });
+    }
+    const silent = [];
+    let cursor = spanStart;
+    for (const row of audio) {
+      if (row.start > cursor) silent.push({ start: cursor, end: row.start });
+      cursor = Math.max(cursor, row.end);
+    }
+    if (cursor < spanEnd) silent.push({ start: cursor, end: spanEnd });
+    const photos = [];
+    for (const frame of doc.frames || []) {
+      const t = Date.parse(frame.utc);
+      if (t < spanStart || t > spanEnd) continue;
+      const cabin = frame.nasa_id === CABIN_ID;
+      const cab = frame.instrument === "cab2";
+      if (cabin || (windowView === "3" ? cab : !cab)) photos.push(frame.utc);
+    }
+    photos.sort();
+    const iso = (ms) => new Date(ms).toISOString();
+    return {
+      audio: audio.map((row) => ({ start: iso(row.start), end: iso(row.end) })),
+      silent: silent.map((row) => ({ start: iso(row.start), end: iso(row.end) })),
+      photos,
+    };
+  }
+
+  // Cellular waits for the tap before the other window and the first recording.
+  function prefetchBeforeTap(cellular) {
+    return {
+      opener: true,
+      otherWindow: !cellular,
+      audio: !cellular,
+    };
+  }
+
   return {
     project: project,
     placeLabels: placeLabels,
@@ -211,5 +642,22 @@
     crossfade: crossfade,
     holdMotion: holdMotion,
     HOLD_FADE_MS: HOLD_FADE_MS,
+    GATE_DESKTOP: GATE_DESKTOP,
+    GATE_TOUCH: GATE_TOUCH,
+    gateLabel: gateLabel,
+    isTouchDevice: isTouchDevice,
+    swipeWindow: swipeWindow,
+    variantFile: variantFile,
+    wantsSmallImage: wantsSmallImage,
+    prefetchBeforeTap: prefetchBeforeTap,
+    screenMode: screenMode,
+    transcriptSlice: transcriptSlice,
+    appearance: appearance,
+    clockOffset: clockOffset,
+    clockGap: clockGap,
+    visibleCabPair: visibleCabPair,
+    milestones: milestones,
+    sourceLabel: sourceLabel,
+    coverage: coverage,
   };
 });
