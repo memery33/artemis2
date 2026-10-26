@@ -587,6 +587,7 @@ final class LayoutFrameUITests: XCTestCase {
         }
         if category == "UICTContentSizeCategoryAccessibilityXXXL" {
             assertCaptionClearsControls(app: app, card: card, caption: caption)
+            assertApproachChevronIsHidden(app)
         }
     }
 

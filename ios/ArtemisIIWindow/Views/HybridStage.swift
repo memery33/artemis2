@@ -2571,9 +2571,13 @@ private struct CappedApproachText: View {
 
     var body: some View {
         let height = lineHeight > 0 ? lineHeight : ApproachLineGrid.estimatedLineHeight(informational: informational)
-        SnappedApproachHeight(lineHeight: height) {
+        let showsChevron = !scrolledToEnd
+        SnappedApproachHeight(lineHeight: height, showsChevron: showsChevron) {
             GeometryReader { geo in
-                let room = max(0, geo.size.height - ApproachLineGrid.chevronRow)
+                // The scrollport stays the snapped height. Hiding the chevron drops its row
+                // instead of leaving that band under the last line.
+                let reserved = showsChevron ? ApproachLineGrid.chevronRow : 0
+                let room = max(0, geo.size.height - reserved)
                 let viewport = ApproachLineGrid.viewport(room: room, lineHeight: height)
                 ScrollView(.vertical, showsIndicators: false) {
                     sentence
@@ -2589,13 +2593,13 @@ private struct CappedApproachText: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if !scrolledToEnd {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(HybridColor.cream)
+            if showsChevron {
+                DecorativeChevron()
                     .frame(maxWidth: .infinity)
                     .frame(height: ApproachLineGrid.chevronRow)
+                    .accessibilityElement(children: .ignore)
                     .accessibilityHidden(true)
+                    .allowsHitTesting(false)
             }
         }
         .background(alignment: .topLeading) {
@@ -2614,6 +2618,9 @@ private struct CappedApproachText: View {
         .onPreferenceChange(ApproachLineHeightKey.self) { [$lineHeight] in
             $lineHeight.wrappedValue = $0
         }
+        // The sentence is one element on the card. This subtree, including the chevron, stays out of the tree.
+        .accessibilityElement(children: .ignore)
+        .accessibilityHidden(true)
     }
 
     private var sentenceFont: Font {
@@ -2634,8 +2641,10 @@ private struct CappedApproachText: View {
 }
 
 /// The capped plate is the whole-line scrollport plus the chevron row, not the leftover under the last line.
+/// At the end of the scroll the chevron row is gone and the plate ends on that same scrollport.
 private struct SnappedApproachHeight: Layout {
     var lineHeight: CGFloat
+    var showsChevron: Bool
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
         let width = proposal.width ?? subviews.first?.sizeThatFits(proposal).width ?? 0
@@ -2643,15 +2652,42 @@ private struct SnappedApproachHeight: Layout {
             let child = subviews.first?.sizeThatFits(proposal) ?? .zero
             return CGSize(width: width, height: child.height)
         }
-        return CGSize(width: width, height: ApproachLineGrid.plateHeight(offered: offered, lineHeight: lineHeight))
+        return CGSize(width: width, height: plate(offered: offered))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
-        let height = ApproachLineGrid.plateHeight(offered: bounds.height, lineHeight: lineHeight)
+        let height = showsChevron
+            ? ApproachLineGrid.plateHeight(offered: bounds.height, lineHeight: lineHeight)
+            : bounds.height
         subviews.first?.place(
             at: bounds.origin,
             proposal: ProposedViewSize(width: bounds.width, height: height)
         )
+    }
+
+    private func plate(offered: CGFloat) -> CGFloat {
+        showsChevron
+            ? ApproachLineGrid.plateHeight(offered: offered, lineHeight: lineHeight)
+            : ApproachLineGrid.endedPlateHeight(offered: offered, lineHeight: lineHeight)
+    }
+}
+
+/// Decorative down mark. The system symbol would publish an image named "Go Down"; this view does not.
+private struct DecorativeChevron: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIImageView {
+        let imageView = UIImageView()
+        let symbol = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        imageView.image = UIImage(systemName: "chevron.down", withConfiguration: symbol)
+        imageView.tintColor = UIColor(red: 0.969, green: 0.953, blue: 0.918, alpha: 1)
+        imageView.contentMode = .center
+        imageView.isAccessibilityElement = false
+        imageView.accessibilityElementsHidden = true
+        return imageView
+    }
+
+    func updateUIView(_ imageView: UIImageView, context: Context) {
+        imageView.isAccessibilityElement = false
+        imageView.accessibilityElementsHidden = true
     }
 }
 
@@ -2672,6 +2708,11 @@ enum ApproachLineGrid {
     static func plateHeight(offered: CGFloat, lineHeight: CGFloat) -> CGFloat {
         let room = max(0, offered - chevronRow)
         return min(max(0, offered), viewport(room: room, lineHeight: lineHeight) + chevronRow)
+    }
+
+    /// Same snapped scrollport once the chevron has hidden. The row is not left empty under the last line.
+    static func endedPlateHeight(offered: CGFloat, lineHeight: CGFloat) -> CGFloat {
+        viewport(room: max(0, offered - chevronRow), lineHeight: lineHeight)
     }
 
     static func viewport(room: CGFloat, lineHeight: CGFloat) -> CGFloat {

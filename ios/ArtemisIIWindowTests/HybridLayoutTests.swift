@@ -593,10 +593,15 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertEqual(text, CGFloat(Int(floor((room - padding) / line))) * line, accuracy: 0.01)
         XCTAssertLessThanOrEqual(viewport + ApproachLineGrid.chevronRow, cap + 0.001)
         XCTAssertEqual(ApproachLineGrid.viewport(room: 180, lineHeight: 0), 180, accuracy: 0.001)
+        let ended = ApproachLineGrid.endedPlateHeight(offered: cap, lineHeight: line)
+        XCTAssertEqual(ended, viewport, accuracy: 0.01)
+        XCTAssertEqual(ended + ApproachLineGrid.chevronRow, ApproachLineGrid.plateHeight(offered: cap, lineHeight: line), accuracy: 0.01)
+        XCTAssertEqual(ended - padding, CGFloat(Int((ended - padding) / line)) * line, accuracy: 0.01)
     }
 
     /// Open card on a 402×874 phone. The bottom stays one gap above the credit and the sheet
     /// at the default size, AX3, AX4, and AX5. The panel is the limit when it sits above the credit.
+    @MainActor
     func testOpenApproachCardCapClearsCreditAndPanel() throws {
         let screen: CGFloat = 874
         let safeTop: CGFloat = 62
@@ -611,10 +616,10 @@ final class HybridLayoutTests: XCTestCase {
         var previousCredit: CGFloat = 0
         var creditHeights: [CGFloat] = []
         for (name, category) in categories {
-            let traits = UITraitCollection(traitsFrom: [
-                UITraitCollection(userInterfaceIdiom: .phone),
-                UITraitCollection(preferredContentSizeCategory: category),
-            ])
+            let traits = UITraitCollection { traits in
+                traits.userInterfaceIdiom = .phone
+                traits.preferredContentSizeCategory = category
+            }
             let creditHeight = CreditLine.height(fitting: width, compatibleWith: traits)
             XCTAssertGreaterThan(creditHeight, 8, name)
             XCTAssertGreaterThanOrEqual(creditHeight, previousCredit - 0.001, name)
