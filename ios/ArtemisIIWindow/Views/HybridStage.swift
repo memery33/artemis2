@@ -2230,77 +2230,105 @@ private struct FitsProposal: Layout {
     }
 }
 
-/// AX4 and AX5, once the sentence is taller than the cap. The chevron is its own row.
+/// AX4 and AX5, once the sentence is taller than the cap. The chevron is its own row,
+/// and the viewport ends on a line boundary so the last visible line is not cut in half.
 private struct CappedApproachText: View {
     var gap: String
     var informational: Bool
     var width: CGFloat
     var fill: Color
-    @State private var contentHeight: CGFloat = 0
-
-    private let chevronRow: CGFloat = 22
+    @State private var lineHeight: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
-            let showsChevron = contentHeight > geo.size.height + 1
-            let reserved: CGFloat = showsChevron ? chevronRow : 0
+            let height = lineHeight > 0 ? lineHeight : ApproachLineGrid.estimatedLineHeight(informational: informational)
+            let room = max(0, geo.size.height - ApproachLineGrid.chevronRow)
+            let viewport = ApproachLineGrid.viewport(room: room, lineHeight: height)
             VStack(spacing: 0) {
                 ScrollView(.vertical, showsIndicators: false) {
                     sentence
-                        .background {
-                            GeometryReader { textGeo in
-                                Color.clear.preference(key: ApproachCardHeightKey.self, value: textGeo.size.height)
-                            }
-                        }
                 }
-                .frame(height: max(0, geo.size.height - reserved))
-                .overlay(alignment: .bottom) {
-                    if showsChevron {
-                        LinearGradient(
-                            colors: [fill.opacity(0), fill],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 14)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                    }
-                }
-                if showsChevron {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(HybridColor.cream)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: chevronRow)
-                        .background(fill)
-                        .accessibilityHidden(true)
-                }
+                .frame(height: viewport)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(HybridColor.cream)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: ApproachLineGrid.chevronRow)
+                    .background(fill)
+                    .accessibilityHidden(true)
             }
         }
-        .onPreferenceChange(ApproachCardHeightKey.self) { [$contentHeight] in
-            $contentHeight.wrappedValue = $0
+        .background(alignment: .topLeading) {
+            Text("Ag")
+                .font(sentenceFont)
+                .lineLimit(1)
+                .fixedSize()
+                .hidden()
+                .accessibilityHidden(true)
+                .background {
+                    GeometryReader { geo in
+                        Color.clear.preference(key: ApproachLineHeightKey.self, value: geo.size.height)
+                    }
+                }
         }
+        .onPreferenceChange(ApproachLineHeightKey.self) { [$lineHeight] in
+            $lineHeight.wrappedValue = $0
+        }
+    }
+
+    private var sentenceFont: Font {
+        informational
+            ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
+            : HybridFont.text(15, relativeTo: .subheadline)
     }
 
     private var sentence: some View {
         Text(gap)
-            .font(
-                informational
-                    ? HybridFont.display(16, relativeTo: .subheadline, italic: true)
-                    : HybridFont.text(15, relativeTo: .subheadline)
-            )
+            .font(sentenceFont)
             .foregroundStyle(HybridColor.cream)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: width, alignment: .leading)
-            .padding(12)
+            .padding(ApproachLineGrid.textPadding)
     }
 }
 
-private struct ApproachCardHeightKey: PreferenceKey {
+private struct ApproachLineHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// Whole lines inside the capped closest-approach card. The scrollport is the top
+/// padding plus a multiple of the caption line height, so the clip never bisects a line.
+enum ApproachLineGrid {
+    static let textPadding: CGFloat = 12
+    static let chevronRow: CGFloat = 22
+
+    static func viewport(room: CGFloat, lineHeight: CGFloat) -> CGFloat {
+        let room = max(0, room)
+        guard lineHeight > 0 else { return room }
+        let lines = floor((room - textPadding) / lineHeight)
+        guard lines >= 1 else { return min(room, textPadding) }
+        let snapped = textPadding + lines * lineHeight
+        guard snapped <= room + 0.001 else {
+            return textPadding + max(0, lines - 1) * lineHeight
+        }
+        return snapped
+    }
+
+    /// First-frame estimate. The view replaces it with the measured caption line.
+    static func estimatedLineHeight(informational: Bool) -> CGFloat {
+        let size: CGFloat = informational ? 16 : 15
+        let candidates = informational
+            ? ["Fraunces-9ptBlackItalic", "Fraunces"]
+            : ["Inter", "Inter-Regular"]
+        let base = candidates.compactMap { UIFont(name: $0, size: size) }.first
+            ?? UIFont.systemFont(ofSize: size)
+        let scaled = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: base)
+        return max(scaled.lineHeight, 1)
     }
 }
 

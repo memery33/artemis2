@@ -492,6 +492,36 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertNil(LyricFocus.focus(at: heldAt, track: "pcd2", lines: timeline.lines).current)
     }
 
+    /// The capped card's scrollport is top padding plus a whole number of caption lines.
+    func testCappedApproachViewportKeepsWholeLines() {
+        let padding = ApproachLineGrid.textPadding
+        let lineHeights: [CGFloat] = [18, 27.5, 44, 61]
+        let rooms: [CGFloat] = [80, 96, 140, 200, 237.4, 360]
+        for line in lineHeights {
+            for room in rooms {
+                let viewport = ApproachLineGrid.viewport(room: room, lineHeight: line)
+                XCTAssertLessThanOrEqual(viewport, room + 0.001)
+                XCTAssertGreaterThanOrEqual(viewport, 0)
+                let inner = viewport - padding
+                if room >= padding + line {
+                    let lines = Int(floor((room - padding) / line))
+                    XCTAssertGreaterThanOrEqual(inner, line - 0.001)
+                    XCTAssertEqual(inner, CGFloat(lines) * line, accuracy: 0.01, "room \(room) line \(line)")
+                } else {
+                    XCTAssertLessThanOrEqual(viewport, padding + 0.001)
+                }
+            }
+        }
+        let cap: CGFloat = 248
+        let room = cap - ApproachLineGrid.chevronRow
+        let line: CGFloat = 33
+        let viewport = ApproachLineGrid.viewport(room: room, lineHeight: line)
+        let text = viewport - ApproachLineGrid.textPadding
+        XCTAssertEqual(text, CGFloat(Int(floor((room - padding) / line))) * line, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(viewport + ApproachLineGrid.chevronRow, cap + 0.001)
+        XCTAssertEqual(ApproachLineGrid.viewport(room: 180, lineHeight: 0), 180, accuracy: 0.001)
+    }
+
     private static func bareTimeline(cab: Bool, utc: String, instrument: String, frames: Bool) throws -> Timeline {
         let cabRun = cab
             ? #","cab_run": {"start": "2026-04-06T22:36:03.000Z", "end": "2026-04-06T22:44:33.000Z", "label": "Cab"}"#

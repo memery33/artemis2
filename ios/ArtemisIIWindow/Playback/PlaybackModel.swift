@@ -201,6 +201,7 @@ final class PlaybackModel: NSObject, ObservableObject {
                 ended = false
                 playing = false
             }
+            // `-ui-tests` only. A normal launch never parks here, and Play does not start the display link.
             return
         }
         guard !RuntimeHost.isUnitTestHost else {
