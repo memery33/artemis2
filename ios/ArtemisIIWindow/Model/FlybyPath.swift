@@ -21,6 +21,7 @@ struct FlybyDocument: Decodable, Sendable {
     var source: String
     var query: String
     var frame: String
+    /// IAU mean lunar radius, 1,737.4 km. Horizons' volumetric mean is 1,737.53 km.
     var radiusKm: Double
     var radiusNote: String
     var samples: [Row]
@@ -574,7 +575,7 @@ struct ClosestApproachLanding: Equatable, Sendable {
     }
 
     /// Whole kilometers. 6,545.22 km from the vertex is the sourced 6,545 km.
-    /// The radius is the Horizons center radius, not a separate surface model.
+    /// 1,737.4 km is the IAU mean radius (Horizons' volumetric mean is 1,737.53 km).
     private static func headline(_ approach: ClosestApproach) -> String {
         let altitude = surfaceKilometers(approach.altitudeKm)
         let radius = radiusKilometers(approach.radiusKm)

@@ -278,7 +278,8 @@ final class MilestonesTests: XCTestCase {
     }
 
     func testLaunchArguments() {
-        XCTAssertTrue(PlaybackModel.opensAtSpanEnd(["-seekToEnd"]))
+        XCTAssertTrue(PlaybackModel.opensAtSpanEnd(["-ui-tests", "-seekToEnd"]))
+        XCTAssertFalse(PlaybackModel.opensAtSpanEnd(["-seekToEnd"]))
         XCTAssertFalse(PlaybackModel.opensAtSpanEnd([]))
         XCTAssertEqual(
             PlaybackModel.openingLineUTC(["-ui-tests", "-seekLineUTC", "2026-04-06T19:47:31.641Z"]),

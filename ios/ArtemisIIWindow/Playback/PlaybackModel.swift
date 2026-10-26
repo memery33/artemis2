@@ -72,6 +72,10 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var approachInformational = false
     /// Nearest in-span photograph to Horizons closest approach. Computed when the timeline loads.
     private(set) var closestApproach: ClosestApproachLanding?
+    /// Horizons closest-approach instant. Nil when the bundled table is missing.
+    private(set) var closestApproachInstant: Date?
+    /// Explanation when no crew recording falls in a playable span.
+    private(set) var closestApproachMissingNote: String?
 
     /// Created on first use. The unit-test host never reads these, so it never builds an audio graph.
     private lazy var engine = AVAudioEngine()
@@ -224,8 +228,9 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     /// UI tests pass `-seekToEnd` so the end card can be reached without dragging the path.
     /// Playing from that instant would rewind to the span start.
+    /// Ignored unless `-ui-tests` is present, so a normal launch cannot open at the end.
     nonisolated static func opensAtSpanEnd(_ arguments: [String]) -> Bool {
-        arguments.contains("-seekToEnd")
+        arguments.contains("-ui-tests") && arguments.contains("-seekToEnd")
     }
 
     /// UI tests pass `-seekLineUTC` and a transcript `utc` so Begin parks on that line.
@@ -407,7 +412,7 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard let timeline else { return }
         guard let landing = closestApproach else {
             approachInformational = true
-            approachGap = ClosestApproachLanding.missingNote()
+            approachGap = closestApproachMissingNote
             return
         }
         approachInformational = false
@@ -442,8 +447,6 @@ final class PlaybackModel: NSObject, ObservableObject {
         seek(to: landing.date, markEnd: false)
         if audible, !ended {
             engagePlayback()
-        } else {
-            refreshNowPlaying(force: true)
         }
         approachGap = landing.gap
         approachInformational = false
@@ -733,6 +736,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     /// Installs a timeline and caches its closest-approach landing. The app calls this once at launch.
     func adopt(_ timeline: Timeline) {
         self.timeline = timeline
+        closestApproachInstant = HybridClock.horizonsInstant()
+        closestApproachMissingNote = ClosestApproachLanding.missingNote()
         closestApproach = ClosestApproachLanding.make(timeline: timeline)
         utc = timeline.window.start
         if let first = timeline.crew.first {

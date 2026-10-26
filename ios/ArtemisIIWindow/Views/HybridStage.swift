@@ -111,8 +111,10 @@ struct HybridStage: View {
                         self.crater = nil
                     }
                 }
-                safeAreaEdge
-                safeAreaTop
+                if showsSafeAreaMarks {
+                    safeAreaEdge
+                    safeAreaTop
+                }
                 WindowSafeAreaReader { top, bottom in
                     if top != safeTop {
                         safeTop = top
@@ -144,6 +146,11 @@ struct HybridStage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+    }
+
+    /// UI tests read these one-point marks. A normal launch leaves them out, so VoiceOver does not stop on an empty safe-area label.
+    private var showsSafeAreaMarks: Bool {
+        ProcessInfo.processInfo.arguments.contains("-ui-tests")
     }
 
     /// One-point mark at the window's safe-area edge. The panel and the ruler use that same inset.
@@ -271,9 +278,11 @@ struct HybridStage: View {
                     }
                 }
             }
-            // While the panel is open the caption is off the stage, so the card can sit at the top.
-            // The closed stage reserves that same card's height above the caption.
+            // The caption is off the stage, but the credit stays above the sheet.
+            // The card ends on or above that credit, and the closed stage still reserves room for both.
             if crater == nil, revealed >= 80, let gap = model.approachGap {
+                let creditWidth = max(0, size.width - 40)
+                let creditHeight = CreditLine.height(fitting: creditWidth)
                 VStack {
                     approachCard(
                         gap,
@@ -283,7 +292,7 @@ struct HybridStage: View {
                         .frame(
                             maxHeight: ClosedCaptionMetrics.approachCardCap(
                                 dynamicType: dynamicTypeSize,
-                                availableHeight: size.height - ClosedCaptionMetrics.bottomClearance,
+                                availableHeight: size.height - revealed - creditHeight - 22,
                                 safeTop: safeTop,
                                 captionHeight: 0
                             ),
@@ -567,7 +576,11 @@ struct HybridStage: View {
 
     private var cueProgress: some View {
         GeometryReader { geo in
-            let fraction = HybridClock.fraction(date: model.utc, timeline: model.timeline)
+            let fraction = HybridClock.fraction(
+                date: model.utc,
+                timeline: model.timeline,
+                approach: model.closestApproachInstant ?? model.timeline?.window.end ?? model.utc
+            )
             ZStack(alignment: .leading) {
                 Capsule().fill(HybridColor.cream.opacity(0.28))
                 Capsule()
@@ -683,15 +696,23 @@ enum HybridClock {
     static let cabWeight = 0.26
     static let tailWeight = 0.06
 
-    static func approachDate(timeline: Timeline) -> Date {
+    /// Horizons closest-approach instant, with no window-end fallback.
+    static func horizonsInstant() -> Date? {
         FlybyEphemeris.bundled.flatMap {
             FlybyPath.closestApproach($0.samples, radiusKm: $0.document.radiusKm)?.date
-        } ?? timeline.window.end
+        }
+    }
+
+    static func approachDate(timeline: Timeline) -> Date {
+        horizonsInstant() ?? timeline.window.end
     }
 
     static func pieces(timeline: Timeline) -> [RulerPiece] {
+        pieces(timeline: timeline, approach: approachDate(timeline: timeline))
+    }
+
+    static func pieces(timeline: Timeline, approach: Date) -> [RulerPiece] {
         let window = timeline.window
-        let approach = approachDate(timeline: timeline)
         guard let cab = timeline.cabRun, cab.start > window.end, cab.end > cab.start else {
             if approach > window.end {
                 return [
@@ -714,7 +735,12 @@ enum HybridClock {
 
     static func fraction(date: Date, timeline: Timeline?) -> Double {
         guard let timeline else { return 0 }
-        let rows = pieces(timeline: timeline)
+        return fraction(date: date, timeline: timeline, approach: approachDate(timeline: timeline))
+    }
+
+    static func fraction(date: Date, timeline: Timeline?, approach: Date) -> Double {
+        guard let timeline else { return 0 }
+        let rows = pieces(timeline: timeline, approach: approach)
         let total = rows.reduce(0) { $0 + $1.weight }
         guard total > 0 else { return 0 }
         var used = 0.0
@@ -739,7 +765,12 @@ enum HybridClock {
 
     static func date(atFraction fraction: Double, timeline: Timeline?) -> Date? {
         guard let timeline else { return nil }
-        let rows = pieces(timeline: timeline)
+        return date(atFraction: fraction, timeline: timeline, approach: approachDate(timeline: timeline))
+    }
+
+    static func date(atFraction fraction: Double, timeline: Timeline?, approach: Date) -> Date? {
+        guard let timeline else { return nil }
+        let rows = pieces(timeline: timeline, approach: approach)
         let total = rows.reduce(0) { $0 + $1.weight }
         guard total > 0, let first = rows.first else { return nil }
         let target = min(1, max(0, fraction)) * total
@@ -1538,7 +1569,7 @@ struct AccessibilityMomentList: View {
                         time: time,
                         name: "Closest approach",
                         identifier: "milestone-approach",
-                        hint: ClosestApproachLanding.missingNote() ?? "No crew recording at closest approach",
+                        hint: model.closestApproachMissingNote ?? "No crew recording at closest approach",
                         informational: true
                     ) {
                         model.showClosestApproach()
@@ -1554,8 +1585,7 @@ struct AccessibilityMomentList: View {
     }
 
     private var approachDate: Date? {
-        guard let bundled = FlybyEphemeris.bundled else { return nil }
-        return FlybyPath.closestApproach(bundled.samples, radiusKm: bundled.document.radiusKm)?.date
+        model.closestApproachInstant
     }
 
     /// One VoiceOver stop. Every row is a button, including a closest approach with no recording.
@@ -1783,8 +1813,7 @@ struct FlybyRuler: View {
     }
 
     private var approachDate: Date? {
-        guard let bundled = FlybyEphemeris.bundled else { return nil }
-        return FlybyPath.closestApproach(bundled.samples, radiusKm: bundled.document.radiusKm)?.date
+        model.closestApproachInstant
     }
 
     /// Closest approach from the Horizons table. The tap opens the nearest real
@@ -1815,13 +1844,17 @@ struct FlybyRuler: View {
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("milestone-approach")
             .accessibilityLabel("Closest approach")
-            .accessibilityHint(ClosestApproachLanding.missingNote() ?? "No crew recording at closest approach")
+            .accessibilityHint(model.closestApproachMissingNote ?? "No crew recording at closest approach")
         }
     }
 
     private func y(_ date: Date, height: CGFloat) -> CGFloat {
         RulerMetrics.y(
-            fraction: HybridClock.fraction(date: date, timeline: model.timeline),
+            fraction: HybridClock.fraction(
+                date: date,
+                timeline: model.timeline,
+                approach: model.closestApproachInstant ?? model.timeline?.window.end ?? date
+            ),
             height: height,
             safeArea: safeBottom
         )
@@ -1867,7 +1900,8 @@ struct FlybyRuler: View {
     private func date(atY y: CGFloat, height: CGFloat) -> Date? {
         HybridClock.date(
             atFraction: RulerMetrics.fraction(y: y, height: height, safeArea: safeBottom),
-            timeline: model.timeline
+            timeline: model.timeline,
+            approach: model.closestApproachInstant ?? model.timeline?.window.end ?? model.utc
         )
     }
 }
@@ -2346,8 +2380,12 @@ private struct ApproachColumn: Layout {
         guard let card = subviews.first else { return }
         let width = bounds.width
         let top = ClosedCaptionMetrics.approachCardTopInset(safeTop: safeTop)
+        // The nil-height measure is the caption's ideal, which only AX4 and AX5
+        // subtract from the card. A finite proposal lets the expanding caption
+        // frame report the whole column, so those two sizes still ask for nil.
+        // The line changes every cue, so a width cache would keep the previous height.
         let captionIdeal: CGFloat
-        if subviews.count > 1 {
+        if subviews.count > 1, Self.usesCaptionHeight(dynamicType) {
             captionIdeal = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
         } else {
             captionIdeal = 0
@@ -2372,6 +2410,15 @@ private struct ApproachColumn: Layout {
             at: CGPoint(x: bounds.minX, y: captionY),
             proposal: ProposedViewSize(width: width, height: captionHeight)
         )
+    }
+
+    private static func usesCaptionHeight(_ dynamicType: DynamicTypeSize) -> Bool {
+        switch dynamicType {
+        case .accessibility4, .accessibility5:
+            return true
+        default:
+            return false
+        }
     }
 }
 
@@ -2440,12 +2487,14 @@ enum PanelMetrics {
 /// Small credit kept on every photograph. Its own element, so a crater page
 /// query can find `photo-credit` beside the picture.
 struct CreditLine: View {
+    static let text = "Credit: NASA/Artemis II Crew"
+
     /// When the closed caption is sharing a bounded slot with the approach card,
     /// the pill shrinks into that slot instead of drawing past the controls.
     var compresses: Bool = false
 
     var body: some View {
-        Text("Credit: NASA/Artemis II Crew")
+        Text(Self.text)
             .font(HybridFont.text(11, relativeTo: .caption2))
             .foregroundStyle(HybridColor.cream)
             .lineLimit(2)
@@ -2457,6 +2506,21 @@ struct CreditLine: View {
             .fixedSize(horizontal: false, vertical: !compresses)
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("photo-credit")
-            .accessibilityLabel("Credit: NASA/Artemis II Crew")
+            .accessibilityLabel(Self.text)
+    }
+
+    /// Natural height of the pill at `width`, capped at two caption lines.
+    static func height(fitting width: CGFloat) -> CGFloat {
+        let base = UIFont(name: "Inter", size: 11) ?? .systemFont(ofSize: 11)
+        let font = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: base)
+        let textWidth = max(1, width - 16)
+        let rect = (text as NSString).boundingRect(
+            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        )
+        let line = max(font.lineHeight, 1)
+        return ceil(min(rect.height, line * 2)) + 8
     }
 }
