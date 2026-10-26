@@ -84,6 +84,7 @@ struct GateView: View {
             if let hero, let image = model.photo(hero, maxPixel: pixels) {
                 PlacedPhoto(image: image, objectX: 0.34, objectY: 0.42)
                     .ignoresSafeArea()
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel(FrameSelection.photoAccessLabel(hero))
                     .accessibilityAddTraits(.isImage)
                 PlacedPhoto(image: image, objectX: 0.34, objectY: 0.42)
@@ -92,6 +93,7 @@ struct GateView: View {
                     .blendMode(.screen)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
             RadialGradient(
                 colors: [.clear, .black.opacity(0.55)],

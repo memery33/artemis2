@@ -66,6 +66,16 @@ final class PlaybackModel: NSObject, ObservableObject {
     @Published var phoneImages = false
     /// Bumped when a prefetched frame lands in the cache. Views read this and stay cache-only.
     @Published private(set) var frameCacheEpoch = 0
+    /// Dive gap for the last Closest approach tap, or the Horizons note when no recording exists.
+    @Published var approachGap: String?
+    /// The gap is an explanation. The row is not offering a seek.
+    @Published var approachInformational = false
+    /// Nearest in-span photograph to Horizons closest approach. Computed when the timeline loads.
+    private(set) var closestApproach: ClosestApproachLanding?
+    /// Horizons closest-approach instant. Nil when the bundled table is missing.
+    private(set) var closestApproachInstant: Date?
+    /// Explanation when no crew recording falls in a playable span.
+    private(set) var closestApproachMissingNote: String?
 
     /// Created on first use. The unit-test host never reads these, so it never builds an audio graph.
     private lazy var engine = AVAudioEngine()
@@ -195,6 +205,7 @@ final class PlaybackModel: NSObject, ObservableObject {
                 ended = false
                 playing = false
             }
+            // `-ui-tests` only. A normal launch never parks here, and Play does not start the display link.
             return
         }
         guard !RuntimeHost.isUnitTestHost else {
@@ -217,8 +228,9 @@ final class PlaybackModel: NSObject, ObservableObject {
 
     /// UI tests pass `-seekToEnd` so the end card can be reached without dragging the path.
     /// Playing from that instant would rewind to the span start.
+    /// Ignored unless `-ui-tests` is present, so a normal launch cannot open at the end.
     nonisolated static func opensAtSpanEnd(_ arguments: [String]) -> Bool {
-        arguments.contains("-seekToEnd")
+        arguments.contains("-ui-tests") && arguments.contains("-seekToEnd")
     }
 
     /// UI tests pass `-seekLineUTC` and a transcript `utc` so Begin parks on that line.
@@ -238,6 +250,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     func play(fromHold: Bool = false) {
         clearSilentClock()
         guard timeline != nil else { return }
+        approachGap = nil
+        approachInformational = false
         if let end = activeSpan?.end, utc >= end, let start = activeSpan?.start {
             utc = start
             currentFile = nil
@@ -353,6 +367,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func showCabRun() {
+        approachGap = nil
+        approachInformational = false
         guard timeline?.cabRun != nil else { return }
         if trackID != "pcd2" {
             trackID = "pcd2"
@@ -368,6 +384,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     func showFlyby() {
+        approachGap = nil
+        approachInformational = false
         guard range != .flyby else { return }
         range = .flyby
         utc = timeline?.window.start ?? utc
@@ -386,8 +404,58 @@ final class PlaybackModel: NSObject, ObservableObject {
         refreshNowPlaying(force: true)
     }
 
+    /// Opens the nearest real frame and recording to Horizons closest approach.
+    /// The clock stays on that media. The gap sentence says how far the photograph
+    /// is from the Horizons instant, and the photograph is not moved onto it.
+    /// When nothing in a playable span is real, the row only explains that.
+    func showClosestApproach() {
+        guard let timeline else { return }
+        guard let landing = closestApproach else {
+            approachInformational = true
+            approachGap = closestApproachMissingNote
+            return
+        }
+        approachInformational = false
+        if landing.range != range {
+            range = landing.range
+            currentFile = nil
+            audioFile = nil
+        }
+        if landing.trackID != trackID {
+            trackID = landing.trackID
+            if timeline.crew.contains(where: { $0.id == crewID && $0.track == landing.trackID }) != true,
+               let member = timeline.crew.first(where: { $0.track == landing.trackID }) {
+                crewID = member.id
+            }
+            currentFile = nil
+            audioFile = nil
+        }
+        if window != landing.window {
+            setWindow(landing.window)
+        }
+        // Closed, matching ClosestApproachLanding's span. The photograph on the span end counts.
+        let audible = timeline.segments.contains { segment in
+            segment.track == landing.trackID && landing.date >= segment.start && landing.date <= segment.end
+        }
+        holdUntil = nil
+        scrubbing = false
+        if audible {
+            playing = true
+        } else {
+            playing = false
+        }
+        seek(to: landing.date, markEnd: false)
+        if audible, !ended {
+            engagePlayback()
+        }
+        approachGap = landing.gap
+        approachInformational = false
+    }
+
     func seek(to date: Date, markEnd: Bool = true) {
         guard let span = activeSpan else { return }
+        approachGap = nil
+        approachInformational = false
         clearSilentClock()
         activityEvent = true
         utc = MissionClock.clamp(date, to: span)
@@ -498,6 +566,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     func beginScrub() {
         scrubbing = true
         lastWall = nil
+        approachGap = nil
+        approachInformational = false
         clearSilentClock()
     }
 
@@ -657,15 +727,22 @@ final class PlaybackModel: NSObject, ObservableObject {
             return
         }
         do {
-            let parsed = try Timeline(data: Data(contentsOf: bundled))
-            timeline = parsed
-            utc = parsed.window.start
-            if let first = parsed.crew.first {
-                crewID = first.id
-                trackID = first.track
-            }
+            adopt(try Timeline(data: Data(contentsOf: bundled)))
         } catch {
             loadError = "Timeline was not copied into the app."
+        }
+    }
+
+    /// Installs a timeline and caches its closest-approach landing. The app calls this once at launch.
+    func adopt(_ timeline: Timeline) {
+        self.timeline = timeline
+        closestApproachInstant = HybridClock.horizonsInstant()
+        closestApproachMissingNote = ClosestApproachLanding.missingNote()
+        closestApproach = ClosestApproachLanding.make(timeline: timeline)
+        utc = timeline.window.start
+        if let first = timeline.crew.first {
+            crewID = first.id
+            trackID = first.track
         }
     }
 
@@ -1535,7 +1612,12 @@ final class PlaybackModel: NSObject, ObservableObject {
         let duration = span.end.timeIntervalSince(span.start)
         let milestones = timeline.map { MilestoneList.derive($0) } ?? []
         let milestone = FlybyActivityCopy.nextLabel(after: utc, milestones: milestones)
-        let currentSpeaker: String? = LyricFocus.focus(at: utc, track: trackID, lines: timeline?.lines ?? []).current?.speaker
+        let currentSpeaker: String? = LyricFocus.focus(
+            at: utc,
+            track: trackID,
+            lines: timeline?.lines ?? [],
+            segments: timeline?.segments ?? []
+        ).current?.speaker
         let speaker: String
         if let currentSpeaker {
             speaker = SpeakerLabel.display(currentSpeaker) ?? ""

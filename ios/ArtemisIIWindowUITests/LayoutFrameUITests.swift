@@ -146,6 +146,54 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(toggle.isHittable)
     }
 
+    /// Default type. The clock stays one line, and the Play circle sits inside the transport scroller.
+    func testPlayToggleSitsInsideTheOpenPanel() {
+        let app = FlybyUILaunch.application()
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let toggle = app.buttons["playback-toggle"]
+        let scroll = app.scrollViews["transport-scroll"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+        let clock = element(named: "mission-clock", in: app)
+        XCTAssertTrue(clock.waitForExistence(timeout: 8))
+
+        let deadline = Date().addingTimeInterval(3)
+        var toggleFrame = toggle.frame
+        var scrollFrame = scroll.frame
+        var clockFrame = clock.frame
+        while Date() < deadline {
+            toggleFrame = toggle.frame
+            scrollFrame = scroll.frame
+            clockFrame = clock.frame
+            let inside = scrollFrame.height > 1
+                && toggleFrame.height >= 55
+                && toggleFrame.minY >= scrollFrame.minY - 0.5
+                && toggleFrame.maxY <= scrollFrame.maxY + 0.5
+                && toggleFrame.minX >= scrollFrame.minX - 0.5
+                && toggleFrame.maxX <= scrollFrame.maxX + 0.5
+                && toggleFrame.maxY <= app.frame.maxY + 0.5
+                && clockFrame.height > 1
+                && clockFrame.height < 26
+            if inside { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertGreaterThanOrEqual(toggleFrame.height, 55)
+        XCTAssertGreaterThanOrEqual(toggleFrame.minY, scrollFrame.minY - 0.5)
+        XCTAssertLessThanOrEqual(toggleFrame.maxY, scrollFrame.maxY + 0.5)
+        XCTAssertGreaterThanOrEqual(toggleFrame.minX, scrollFrame.minX - 0.5)
+        XCTAssertLessThanOrEqual(toggleFrame.maxX, scrollFrame.maxX + 0.5)
+        XCTAssertLessThanOrEqual(toggleFrame.maxY, app.frame.maxY + 0.5)
+        XCTAssertGreaterThan(clockFrame.height, 1)
+        XCTAssertLessThan(clockFrame.height, 26)
+    }
+
     /// AX3 is UICTContentSizeCategoryAccessibilityXL (not the Swift name AccessibilityExtraLarge).
     /// AX1 AccessibilityM, AX2 AccessibilityL, AX3 AccessibilityXL, AX4 AccessibilityXXL, AX5 AccessibilityXXXL.
     /// The closed screen stays the phone's width. Once the panel is open, the scroll column
@@ -184,6 +232,10 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertLessThanOrEqual(open.frame.maxY, app.frame.maxY + 0.5)
         XCTAssertTrue(open.isHittable)
         open.tap()
+
+        let openedToggle: XCUIElement = app.buttons["playback-toggle"]
+        XCTAssertTrue(openedToggle.waitForExistence(timeout: 8))
+        XCTAssertTrue(openedToggle.isHittable)
 
         let scroll: XCUIElement = app.scrollViews["panel-scroll"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 8))
@@ -231,21 +283,279 @@ final class LayoutFrameUITests: XCTestCase {
         assertStackedMoments(app: app, scroll: scroll)
     }
 
-    /// Each moment's time sits above its name, inside the sheet, and the two do not overlap.
+    /// Each moment is one button. Time and name share that stop, so VoiceOver does not land twice.
     private func assertStackedMoments(app: XCUIApplication, scroll: XCUIElement) {
-        let names: [String] = ["milestone-aristarchus", "milestone-wiseman", "milestone-reiner", "milestone-approach"]
+        let rows: [(String, String)] = [
+            ("milestone-aristarchus", "Aristarchus"),
+            ("milestone-wiseman", "Aristarchus line"),
+            ("milestone-reiner", "Reiner Gamma"),
+            ("milestone-approach", "Closest approach"),
+        ]
         let panel: XCUIElement = app.descendants(matching: .any)["control-panel"]
         XCTAssertTrue(panel.waitForExistence(timeout: 4))
-        for name in names {
-            let time: XCUIElement = app.descendants(matching: .any)["\(name)-time"]
-            let title: XCUIElement = app.descendants(matching: .any)["\(name)-name"]
-            reveal(time, app: app, scroll: scroll)
-            reveal(title, app: app, scroll: scroll)
-            assertMomentPiece(time, app: app, panelTop: panel.frame.minY)
-            assertMomentPiece(title, app: app, panelTop: panel.frame.minY)
-            XCTAssertGreaterThanOrEqual(title.frame.minY, time.frame.maxY - 0.5)
-            let overlap: CGRect = time.frame.intersection(title.frame)
-            XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1)
+        for (name, title) in rows {
+            let row: XCUIElement = app.buttons[name]
+            reveal(row, app: app, scroll: scroll)
+            assertMomentPiece(row, app: app, panelTop: panel.frame.minY)
+            XCTAssertTrue(row.label.contains(title))
+            XCTAssertFalse(app.descendants(matching: .any)["\(name)-time"].exists)
+            XCTAssertFalse(app.descendants(matching: .any)["\(name)-name"].exists)
+        }
+    }
+
+    /// Default type. The row seeks to the nearest real Cab Cam frame and labels the gap.
+    func testClosestApproachTapShowsTheLabeledGap() {
+        assertClosestApproachTap(category: nil)
+    }
+
+    /// AX3 is UICTContentSizeCategoryAccessibilityXL.
+    func testClosestApproachTapShowsTheLabeledGapAtAccessibility3() {
+        assertClosestApproachTap(category: "UICTContentSizeCategoryAccessibilityXL")
+    }
+
+    /// The closed stage. The card and the caption stay apart at the default size, AX3, and AX5.
+    func testClosestApproachCardClearsTheClosedCaption() {
+        assertApproachCardClearsCaption(category: nil)
+    }
+
+    func testClosestApproachCardClearsTheClosedCaptionAtAccessibility3() {
+        assertApproachCardClearsCaption(category: "UICTContentSizeCategoryAccessibilityXL")
+    }
+
+    func testClosestApproachCardClearsTheClosedCaptionAtAccessibility5() {
+        assertApproachCardClearsCaption(category: "UICTContentSizeCategoryAccessibilityXXXL")
+    }
+
+    /// AX4 is UICTContentSizeCategoryAccessibilityXXL. The open card stays above the credit and the sheet.
+    func testClosestApproachTapShowsTheLabeledGapAtAccessibility4() {
+        assertClosestApproachTap(category: "UICTContentSizeCategoryAccessibilityXXL")
+    }
+
+    /// AX5 is UICTContentSizeCategoryAccessibilityXXXL.
+    func testClosestApproachTapShowsTheLabeledGapAtAccessibility5() {
+        assertClosestApproachTap(category: "UICTContentSizeCategoryAccessibilityXXXL")
+    }
+
+    private func assertClosestApproachTap(category: String?) {
+        var arguments: [String] = []
+        if let category {
+            arguments.append("-UIPreferredContentSizeCategoryName")
+            arguments.append(category)
+        }
+        let app = FlybyUILaunch.application(arguments)
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let row = app.buttons["milestone-approach"]
+        if category != nil {
+            let scroll = app.scrollViews["panel-scroll"]
+            XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+            reveal(row, app: app, scroll: scroll)
+        } else {
+            XCTAssertTrue(row.waitForExistence(timeout: 8))
+        }
+        XCTAssertTrue(row.isHittable)
+        row.tap()
+
+        let gap = element(named: "approach-gap", in: app)
+        XCTAssertTrue(gap.waitForExistence(timeout: 8))
+        XCTAssertTrue(gap.label.contains("Closest approach: 23:00:47 UTC, 6,545 km above the Moon's 1,737.4 km mean radius (NASA/JPL Horizons)."))
+        XCTAssertTrue(gap.label.contains("The nearest crew photo was taken 16 min 14 s earlier."))
+        XCTAssertFalse(gap.label.contains("this clock"))
+        XCTAssertFalse(gap.label.contains("Not moved"))
+        let clock = element(named: "mission-clock", in: app)
+        XCTAssertTrue(clock.waitForExistence(timeout: 8))
+        XCTAssertTrue(clock.label.contains("22:44:33"))
+        XCTAssertFalse(clock.label.contains("23:00:46"))
+        let frame = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "art002e041365")
+        ).firstMatch
+        XCTAssertTrue(frame.waitForExistence(timeout: 8))
+        assertOpenApproachCardClearsCreditAndPanel(app: app, card: gap)
+    }
+
+    /// The open card's bottom stays at or above the credit and the sheet at every text size.
+    private func assertOpenApproachCardClearsCreditAndPanel(app: XCUIApplication, card: XCUIElement) {
+        let credit = element(named: "photo-credit", in: app)
+        let panel = element(named: "control-panel", in: app)
+        XCTAssertTrue(credit.waitForExistence(timeout: 4))
+        XCTAssertTrue(panel.waitForExistence(timeout: 4))
+        let deadline = Date().addingTimeInterval(3)
+        var cardFrame = card.frame
+        var creditTop = credit.frame.minY
+        var panelTop = panel.frame.minY
+        while Date() < deadline {
+            cardFrame = card.frame
+            creditTop = credit.frame.minY
+            panelTop = panel.frame.minY
+            let limit = min(creditTop, panelTop)
+            let clear = cardFrame.height > 1
+                && credit.frame.height > 1
+                && panel.frame.height > 1
+                && cardFrame.maxY <= limit + 1
+            if clear { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        cardFrame = card.frame
+        let limit = min(credit.frame.minY, panel.frame.minY)
+        XCTAssertGreaterThan(cardFrame.height, 1)
+        XCTAssertGreaterThan(credit.frame.height, 1)
+        XCTAssertGreaterThan(panel.frame.height, 1)
+        XCTAssertLessThanOrEqual(cardFrame.maxY, limit + 1)
+    }
+
+    /// Opens closest approach, closes the panel, and requires the card to sit above the caption.
+    private func assertApproachCardClearsCaption(category: String?) {
+        var arguments: [String] = []
+        if let category {
+            arguments.append("-UIPreferredContentSizeCategoryName")
+            arguments.append(category)
+        }
+        let app = FlybyUILaunch.application(arguments)
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+
+        let row = app.buttons["milestone-approach"]
+        if category != nil {
+            let scroll = app.scrollViews["panel-scroll"]
+            XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+            reveal(row, app: app, scroll: scroll)
+        } else {
+            XCTAssertTrue(row.waitForExistence(timeout: 8))
+        }
+        XCTAssertTrue(row.isHittable)
+        row.tap()
+
+        let close = app.buttons["close-panel"]
+        XCTAssertTrue(close.waitForExistence(timeout: 8))
+        XCTAssertTrue(close.isHittable)
+        close.tap()
+        XCTAssertTrue(app.buttons["open-panel"].waitForExistence(timeout: 8))
+
+        let card = element(named: "approach-gap", in: app)
+        let caption = element(named: "window-caption", in: app)
+        XCTAssertTrue(card.waitForExistence(timeout: 8))
+        XCTAssertTrue(caption.waitForExistence(timeout: 8))
+
+        let checksIsland = category == nil || category == "UICTContentSizeCategoryAccessibilityXXXL"
+        let island = element(named: "safe-area-top", in: app)
+        if checksIsland {
+            XCTAssertTrue(island.waitForExistence(timeout: 4))
+        }
+        let deadline = Date().addingTimeInterval(3)
+        var cardFrame = card.frame
+        var captionFrame = caption.frame
+        while Date() < deadline {
+            cardFrame = card.frame
+            captionFrame = caption.frame
+            let overlap = cardFrame.intersection(captionFrame)
+            let belowIsland = !checksIsland || cardFrame.minY >= island.frame.minY - 0.5
+            let apart = cardFrame.height > 1
+                && captionFrame.height > 1
+                && cardFrame.maxY <= captionFrame.minY + 1
+                && belowIsland
+                && (overlap.isNull || overlap.width < 1 || overlap.height < 1)
+            if apart { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        let overlap = cardFrame.intersection(captionFrame)
+        XCTAssertGreaterThan(cardFrame.width, 1)
+        XCTAssertGreaterThan(cardFrame.height, 1)
+        XCTAssertGreaterThan(captionFrame.width, 1)
+        XCTAssertGreaterThan(captionFrame.height, 1)
+        XCTAssertGreaterThanOrEqual(cardFrame.minX, -0.5)
+        XCTAssertLessThanOrEqual(cardFrame.maxX, app.frame.width + 0.5)
+        XCTAssertGreaterThanOrEqual(captionFrame.minX, -0.5)
+        XCTAssertLessThanOrEqual(captionFrame.maxX, app.frame.width + 0.5)
+        XCTAssertLessThanOrEqual(cardFrame.maxY, captionFrame.minY + 1)
+        XCTAssertTrue(overlap.isNull || overlap.width < 1 || overlap.height < 1)
+        if category == nil || category == "UICTContentSizeCategoryAccessibilityXXXL" {
+            assertApproachCardClearsTheTopSafeArea(app: app, cardFrame: cardFrame)
+        }
+        if category == "UICTContentSizeCategoryAccessibilityXXXL" {
+            assertCaptionClearsControls(app: app, card: card, caption: caption)
+        }
+    }
+
+    /// AX5. The frame id and the credit stay above the Controls strip and on the phone.
+    private func assertCaptionClearsControls(app: XCUIApplication, card: XCUIElement, caption: XCUIElement) {
+        let controls = app.buttons["open-panel"]
+        let frameIDs = app.descendants(matching: .any).matching(identifier: "frame-id")
+        let frameID = caption.descendants(matching: .any)["frame-id"]
+        let credit = caption.descendants(matching: .any)["photo-credit"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 4))
+        XCTAssertTrue(frameID.waitForExistence(timeout: 4))
+        XCTAssertTrue(credit.waitForExistence(timeout: 4))
+        XCTAssertEqual(frameIDs.count, 1)
+        let deadline = Date().addingTimeInterval(3)
+        var controlsTop = controls.frame.minY
+        var cardFrame = card.frame
+        var captionFrame = caption.frame
+        var idFrame = frameID.frame
+        var creditFrame = credit.frame
+        while Date() < deadline {
+            controlsTop = controls.frame.minY
+            cardFrame = card.frame
+            captionFrame = caption.frame
+            idFrame = frameID.frame
+            creditFrame = credit.frame
+            let limit = controlsTop + 1
+            let bottom = app.frame.maxY + 0.5
+            let clear = controls.frame.height > 1
+                && captionFrame.height > 1
+                && idFrame.height > 1
+                && creditFrame.height > 1
+                && captionFrame.maxY <= limit
+                && idFrame.maxY <= limit
+                && creditFrame.maxY <= limit
+                && cardFrame.maxY <= bottom
+                && captionFrame.maxY <= bottom
+                && idFrame.maxY <= bottom
+                && creditFrame.maxY <= bottom
+                && cardFrame.maxY <= captionFrame.minY + 1
+            if clear { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        let limit = controlsTop + 1
+        let bottom = app.frame.maxY + 0.5
+        XCTAssertGreaterThan(controls.frame.height, 1)
+        XCTAssertLessThanOrEqual(cardFrame.maxY, captionFrame.minY + 1)
+        XCTAssertLessThanOrEqual(captionFrame.maxY, limit)
+        XCTAssertLessThanOrEqual(idFrame.maxY, limit)
+        XCTAssertLessThanOrEqual(creditFrame.maxY, limit)
+        XCTAssertLessThanOrEqual(cardFrame.maxY, bottom)
+        XCTAssertLessThanOrEqual(captionFrame.maxY, bottom)
+        XCTAssertLessThanOrEqual(idFrame.maxY, bottom)
+        XCTAssertLessThanOrEqual(creditFrame.maxY, bottom)
+        XCTAssertGreaterThanOrEqual(idFrame.minY, -0.5)
+        XCTAssertGreaterThanOrEqual(creditFrame.minY, -0.5)
+    }
+
+    /// The card starts at or below the safe-area mark. On a Face ID phone the mark and the card
+    /// also clear 44 pt, so a zero inset cannot satisfy the check by moving both to the top.
+    private func assertApproachCardClearsTheTopSafeArea(app: XCUIApplication, cardFrame: CGRect) {
+        let island = element(named: "safe-area-top", in: app)
+        XCTAssertTrue(island.waitForExistence(timeout: 4))
+        XCTAssertGreaterThan(island.frame.height, 0)
+        XCTAssertGreaterThanOrEqual(cardFrame.minY, island.frame.minY - 0.5)
+        let bar = app.statusBars.firstMatch
+        if bar.exists, bar.frame.height > 1, bar.frame.maxY < app.frame.height * 0.5 {
+            XCTAssertGreaterThanOrEqual(cardFrame.minY, bar.frame.maxY - 0.5)
+            XCTAssertGreaterThanOrEqual(island.frame.minY, bar.frame.minY - 0.5)
+        }
+        if app.frame.height >= 812 {
+            XCTAssertGreaterThanOrEqual(island.frame.minY, 44)
+            XCTAssertGreaterThanOrEqual(cardFrame.minY, 44)
         }
     }
 

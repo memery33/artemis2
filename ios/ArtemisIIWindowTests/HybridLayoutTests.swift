@@ -122,7 +122,6 @@ final class HybridLayoutTests: XCTestCase {
         let model = PlaybackModel()
         let timeline = try XCTUnwrap(model.timeline)
         let approach = HybridClock.approachDate(timeline: timeline)
-        XCTAssertNil(HybridClock.playableApproach(timeline: timeline))
         XCTAssertGreaterThan(approach, timeline.window.end)
         let cab = try XCTUnwrap(timeline.cabRun)
         XCTAssertGreaterThan(approach, cab.end)
@@ -310,5 +309,231 @@ final class HybridLayoutTests: XCTestCase {
         let milestones = MilestoneList.derive(timeline).map(\.date)
         XCTAssertFalse(milestones.contains { abs($0.timeIntervalSince(reiner)) < 0.001 })
         XCTAssertGreaterThanOrEqual(dates.count, 3)
+    }
+
+    func testOrionReadoutKeepsTheFigureWithItsUnit() {
+        let line = OrionReadout.unbroken("alt 13,864.77 km")
+        XCTAssertFalse(line.contains(" "))
+        XCTAssertTrue(line.contains("13,\u{2060}864.\u{2060}77"))
+        XCTAssertTrue(line.hasSuffix("\u{00A0}km"))
+        XCTAssertTrue(line.contains("\u{00A0}"))
+    }
+
+    @MainActor
+    func testClosestApproachLandsOnTheNearestCabFrame() throws {
+        let model = PlaybackModel()
+        let timeline = try XCTUnwrap(model.timeline)
+        let landing = try XCTUnwrap(ClosestApproachLanding.make(timeline: timeline))
+        XCTAssertEqual(landing.frameID, "art002e041365")
+        XCTAssertEqual(landing.window, .cab)
+        XCTAssertEqual(landing.range, .cab)
+        XCTAssertEqual(landing.trackID, "pcd2")
+        let approachPoint = try XCTUnwrap(FlybyEphemeris.bundled.flatMap {
+            FlybyPath.closestApproach($0.samples, radiusKm: $0.document.radiusKm)
+        })
+        let shown = ClosestApproachLanding.displayedInstant(approachPoint.date)
+        XCTAssertEqual(ClockMath.utcText(approachPoint.date), "23:00:46 UTC")
+        XCTAssertEqual(ClockMath.utcText(shown), "23:00:47 UTC")
+        XCTAssertEqual(Int(approachPoint.altitudeKm.rounded()), 6545)
+        XCTAssertEqual(approachPoint.radiusKm, 1737.4, accuracy: 0.001)
+        XCTAssertEqual(
+            landing.gap,
+            "Closest approach: 23:00:47 UTC, 6,545 km above the Moon's 1,737.4 km mean radius (NASA/JPL Horizons). The nearest crew photo was taken 16 min 14 s earlier."
+        )
+        XCTAssertEqual(shown.timeIntervalSince(landing.date), 16 * 60 + 14, accuracy: 0.001)
+        XCTAssertFalse(landing.gap.contains("this clock"))
+        XCTAssertFalse(landing.gap.contains("Not moved"))
+        let approach = HybridClock.approachDate(timeline: timeline)
+        XCTAssertGreaterThan(approach.timeIntervalSince(landing.date), 60)
+
+        model.showClosestApproach()
+        XCTAssertEqual(model.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+        XCTAssertEqual(model.window, .cab)
+        XCTAssertEqual(model.range, .cab)
+        XCTAssertEqual(model.approachGap, landing.gap)
+        XCTAssertFalse(model.approachInformational)
+        XCTAssertFalse(model.playing)
+        XCTAssertGreaterThan(approach.timeIntervalSince(model.utc), 60)
+
+        model.seek(to: timeline.window.start, markEnd: false)
+        XCTAssertNil(model.approachGap)
+    }
+
+    @MainActor
+    func testClosestApproachLandingDateIsTheCabFrame() throws {
+        let model = PlaybackModel()
+        let landing = try XCTUnwrap(model.closestApproach)
+        XCTAssertEqual(landing.date, try ISO8601.parse("2026-04-06T22:44:33.000Z"))
+        XCTAssertEqual(landing.frameID, "art002e041365")
+    }
+
+    @MainActor
+    func testPlayAfterClosestApproachClearsTheGapAndRewinds() throws {
+        let model = PlaybackModel()
+        let cab = try XCTUnwrap(model.timeline?.cabRun)
+        model.showClosestApproach()
+        XCTAssertEqual(model.utc, try ISO8601.parse("2026-04-06T22:44:33.000Z"))
+        XCTAssertNotNil(model.approachGap)
+        XCTAssertFalse(model.approachInformational)
+        model.play()
+        XCTAssertNil(model.approachGap)
+        XCTAssertFalse(model.approachInformational)
+        XCTAssertEqual(model.utc, cab.start)
+        XCTAssertEqual(ClockMath.utcText(model.utc), "22:36:03 UTC")
+        XCTAssertTrue(model.playing)
+    }
+
+    @MainActor
+    func testMissingApproachNoteExplainsTheTable() throws {
+        let note = try XCTUnwrap(ClosestApproachLanding.missingNote())
+        XCTAssertEqual(
+            note,
+            "Closest approach: 23:00:47 UTC, 6,545 km above the Moon's 1,737.4 km mean radius (NASA/JPL Horizons). No crew recording at that moment."
+        )
+        let timeline = try Self.bareTimeline(cab: false, utc: "2026-04-06T19:40:00.000Z", instrument: "nkd5015", frames: false)
+        XCTAssertNil(ClosestApproachLanding.make(timeline: timeline))
+        let model = PlaybackModel()
+        model.adopt(timeline)
+        XCTAssertNil(model.closestApproach)
+        model.showClosestApproach()
+        XCTAssertTrue(model.approachInformational)
+        XCTAssertEqual(model.approachGap, note)
+        XCTAssertEqual(model.utc, timeline.window.start)
+    }
+
+    func testClosestApproachTieBreakPrefersTheEarlierEqualDistance() {
+        let approach = Date(timeIntervalSinceReferenceDate: 10_000)
+        let before = approach.addingTimeInterval(-12)
+        let after = approach.addingTimeInterval(12)
+        let farther = approach.addingTimeInterval(40)
+        XCTAssertTrue(ClosestApproachLanding.prefers(
+            before, distance: 12, over: farther, currentDistance: 40, approach: approach
+        ))
+        XCTAssertFalse(ClosestApproachLanding.prefers(
+            farther, distance: 40, over: before, currentDistance: 12, approach: approach
+        ))
+        XCTAssertTrue(ClosestApproachLanding.prefers(
+            before, distance: 12, over: after, currentDistance: 12, approach: approach
+        ))
+        XCTAssertFalse(ClosestApproachLanding.prefers(
+            after, distance: 12, over: before, currentDistance: 12, approach: approach
+        ))
+        let older = approach.addingTimeInterval(-9)
+        let newer = approach.addingTimeInterval(-3)
+        XCTAssertTrue(ClosestApproachLanding.prefers(
+            older, distance: 9, over: newer, currentDistance: 9, approach: approach
+        ))
+        XCTAssertFalse(ClosestApproachLanding.prefers(
+            newer, distance: 9, over: older, currentDistance: 9, approach: approach
+        ))
+    }
+
+    @MainActor
+    func testTrackFallbackMatchesTheSpan() throws {
+        let flyby = try Self.bareTimeline(cab: false, utc: "2026-04-06T19:40:00.000Z", instrument: "nkd5015", frames: true)
+        let flybyLanding = try XCTUnwrap(ClosestApproachLanding.make(timeline: flyby))
+        XCTAssertEqual(flybyLanding.range, .flyby)
+        XCTAssertEqual(flybyLanding.trackID, "pcd3")
+        let cab = try Self.bareTimeline(cab: true, utc: "2026-04-06T22:40:00.000Z", instrument: "cab2", frames: true)
+        let cabLanding = try XCTUnwrap(ClosestApproachLanding.make(timeline: cab))
+        XCTAssertEqual(cabLanding.range, .cab)
+        XCTAssertEqual(cabLanding.trackID, "pcd2")
+    }
+
+    @MainActor
+    func testCaptionDropsALineTheSegmentDoesNotCover() throws {
+        let model = PlaybackModel()
+        let timeline = try XCTUnwrap(model.timeline)
+        let landing = try XCTUnwrap(model.closestApproach)
+        let parked = LyricFocus.focus(
+            at: landing.date,
+            track: landing.trackID,
+            lines: timeline.lines,
+            segments: timeline.segments
+        )
+        XCTAssertNil(parked.current)
+        let line = try XCTUnwrap(timeline.lines.last { $0.track == "pcd2" })
+        XCTAssertTrue(line.utc.hasPrefix("2026-04-06T19:48:28"))
+        let spoken = LyricFocus.focus(
+            at: line.date,
+            track: line.track,
+            lines: timeline.lines,
+            segments: timeline.segments
+        )
+        XCTAssertEqual(spoken.current?.utc, line.utc)
+        let stillFresh = LyricFocus.focus(
+            at: line.date.addingTimeInterval(20),
+            track: line.track,
+            lines: timeline.lines,
+            segments: timeline.segments
+        )
+        XCTAssertEqual(stillFresh.current?.utc, line.utc)
+        let tooOld = LyricFocus.focus(
+            at: line.date.addingTimeInterval(31),
+            track: line.track,
+            lines: timeline.lines,
+            segments: timeline.segments
+        )
+        XCTAssertNil(tooOld.current)
+        let heldAt = try ISO8601.parse("2026-04-06T19:36:00.000Z")
+        let held = LyricFocus.focus(
+            at: heldAt,
+            track: "pcd2",
+            lines: timeline.lines,
+            segments: timeline.segments
+        )
+        let current = try XCTUnwrap(held.current)
+        XCTAssertGreaterThan(heldAt.timeIntervalSince(current.date), LyricFocus.maximumCaptionAge)
+        XCTAssertTrue(timeline.segments.contains { segment in
+            segment.track == "pcd2"
+                && current.date >= segment.start && current.date < segment.end
+                && heldAt >= segment.start && heldAt < segment.end
+        })
+        XCTAssertNil(LyricFocus.focus(at: heldAt, track: "pcd2", lines: timeline.lines).current)
+    }
+
+    /// The capped card's scrollport is top padding plus a whole number of caption lines.
+    func testCappedApproachViewportKeepsWholeLines() {
+        let padding = ApproachLineGrid.textPadding
+        let lineHeights: [CGFloat] = [18, 27.5, 44, 61]
+        let rooms: [CGFloat] = [80, 96, 140, 200, 237.4, 360]
+        for line in lineHeights {
+            for room in rooms {
+                let viewport = ApproachLineGrid.viewport(room: room, lineHeight: line)
+                XCTAssertLessThanOrEqual(viewport, room + 0.001)
+                XCTAssertGreaterThanOrEqual(viewport, 0)
+                let inner = viewport - padding
+                if room >= padding + line {
+                    let lines = Int(floor((room - padding) / line))
+                    XCTAssertGreaterThanOrEqual(inner, line - 0.001)
+                    XCTAssertEqual(inner, CGFloat(lines) * line, accuracy: 0.01, "room \(room) line \(line)")
+                } else {
+                    XCTAssertLessThanOrEqual(viewport, padding + 0.001)
+                }
+            }
+        }
+        let cap: CGFloat = 248
+        let room = cap - ApproachLineGrid.chevronRow
+        let line: CGFloat = 33
+        let viewport = ApproachLineGrid.viewport(room: room, lineHeight: line)
+        let text = viewport - ApproachLineGrid.textPadding
+        XCTAssertEqual(text, CGFloat(Int(floor((room - padding) / line))) * line, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(viewport + ApproachLineGrid.chevronRow, cap + 0.001)
+        XCTAssertEqual(ApproachLineGrid.viewport(room: 180, lineHeight: 0), 180, accuracy: 0.001)
+    }
+
+    private static func bareTimeline(cab: Bool, utc: String, instrument: String, frames: Bool) throws -> Timeline {
+        let cabRun = cab
+            ? #","cab_run": {"start": "2026-04-06T22:36:03.000Z", "end": "2026-04-06T22:44:33.000Z", "label": "Cab"}"#
+            : ""
+        let frame = frames
+            ? #"""
+            [{"utc": "\#(utc)", "nasa_id": "art002e000001", "instrument": "\#(instrument)", "camera_label": "Window", "file": "images/art002e000001.webp", "credit": "Credit: NASA/Artemis II Crew"}]
+            """#
+            : "[]"
+        let json = """
+        {"version": 1, "window": {"start": "2026-04-06T19:33:00.000Z", "end": "2026-04-06T19:48:30.000Z", "label": "Window"}, "attribution": {"credit": "Credit: NASA/Artemis II Crew", "endorsement": "Not a NASA product."}, "pointing": {"available": false, "provider": "none", "note": "none"}, "segments": [], "lines": [], "frames": \(frame), "targets": [], "crew": [], "licenses": [], "mission_start": {"utc": "2026-04-01T22:35:12Z", "source": "guide"}\(cabRun)}
+        """
+        return try Timeline(data: Data(json.utf8))
     }
 }

@@ -8,7 +8,8 @@ struct CrewRow: View {
         LyricFocus.focus(
             at: model.utc,
             track: model.trackID,
-            lines: model.timeline?.lines ?? []
+            lines: model.timeline?.lines ?? [],
+            segments: model.timeline?.segments ?? []
         ).current?.speaker
     }
 
@@ -22,13 +23,10 @@ struct CrewRow: View {
 
     private var standardCrew: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(model.timeline?.crew ?? []) { member in
-                        standardChip(member)
-                    }
+            HStack(spacing: 4) {
+                ForEach(model.timeline?.crew ?? []) { member in
+                    standardChip(member)
                 }
-                .frame(minHeight: 44)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             note(lineLimit: 1, scale: 0.8)
@@ -52,19 +50,18 @@ struct CrewRow: View {
         return Button {
             model.follow(member)
         } label: {
-            ZStack {
-                Color.clear.frame(width: 44, height: 44)
-                VStack(spacing: 2) {
-                    letter(member, speaking: speaking, followed: followed)
-                    Text(member.id)
-                        .font(HybridFont.text(10, relativeTo: .caption2))
-                        .fontWeight(.medium)
-                        .foregroundStyle(HybridColor.dim.opacity(followed ? 1 : 0.8))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: true)
-                }
+            VStack(spacing: 2) {
+                letter(member, speaking: speaking, followed: followed)
+                Text(member.id)
+                    .font(HybridFont.text(10, relativeTo: .caption2))
+                    .fontWeight(.medium)
+                    .foregroundStyle(HybridColor.cream)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
             }
-            .fixedSize()
+            .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -85,8 +82,8 @@ struct CrewRow: View {
                     .font(HybridFont.text(15, relativeTo: .body))
                     .fontWeight(.semibold)
                     .foregroundStyle(HybridColor.cream)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.4)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -115,7 +112,7 @@ struct CrewRow: View {
     private func note(lineLimit: Int, scale: CGFloat) -> some View {
         Text("Names only. No in-flight portrait is bundled.")
             .font(HybridFont.text(10, relativeTo: .caption2))
-            .foregroundStyle(HybridColor.dim.opacity(0.75))
+            .foregroundStyle(dynamicTypeSize.isAccessibilitySize ? HybridColor.dim.opacity(0.75) : HybridColor.cream)
             .lineLimit(lineLimit)
             .minimumScaleFactor(scale)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -21,6 +21,7 @@ struct FlybyDocument: Decodable, Sendable {
     var source: String
     var query: String
     var frame: String
+    /// IAU mean lunar radius, 1,737.4 km. Horizons' volumetric mean is 1,737.53 km.
     var radiusKm: Double
     var radiusNote: String
     var samples: [Row]
@@ -213,11 +214,12 @@ enum FlybyPath {
         )
     }
 
-    /// Time and altitude of closest approach from the tabulated geometric ranges.
+    /// Time and altitude of closest approach from the tabulated apparent ranges.
     ///
-    /// The vertex of the parabola through the lowest sample and its two neighbors
-    /// is the refined instant. Altitude is that range minus the radius in the
-    /// Horizons header, which the caller passes in from the file.
+    /// Horizons quantity 20 is apparent range, not a geometric range. The vertex
+    /// of the parabola through the lowest sample and its two neighbors is the
+    /// refined instant. Altitude is that range minus the radius in the Horizons
+    /// header, which the caller passes in from the file.
     static func closestApproach(_ samples: [PathSample], radiusKm: Double) -> ClosestApproach? {
         guard let lowest = samples.enumerated().min(by: { $0.element.rangeKm < $1.element.rangeKm }) else {
             return nil
@@ -408,6 +410,198 @@ enum LunarSites {
             source: "USGS Gazetteer of Planetary Nomenclature, feature 3685, Mare Orientale, Moon, center latitude -19.87, center longitude -94.67, planetographic +East. Approved by the IAU. The label says Orientale; the named feature is Mare Orientale."
         )
     ]
+}
+
+/// A Closest approach tap lands on the nearest real frame or recording that
+/// already sits inside a playable span. The card names the Horizons instant,
+/// the altitude, and how long before that the photograph was taken.
+struct ClosestApproachLanding: Equatable, Sendable {
+    var date: Date
+    var range: MissionRange
+    var trackID: String
+    var window: WindowSide
+    var frameID: String
+    /// Horizons clock and altitude, then the gap to the nearest crew photo.
+    var gap: String
+
+    static func make(timeline: Timeline) -> ClosestApproachLanding? {
+        guard let approach = approach() else { return nil }
+        var best: Date?
+        var bestDistance = TimeInterval.greatestFiniteMagnitude
+        func consider(_ date: Date) {
+            guard span(containing: date, timeline: timeline) != nil else { return }
+            let distance = abs(date.timeIntervalSince(approach.date))
+            let replace: Bool
+            if let current = best {
+                replace = prefers(
+                    date,
+                    distance: distance,
+                    over: current,
+                    currentDistance: bestDistance,
+                    approach: approach.date
+                )
+            } else {
+                replace = true
+            }
+            if replace {
+                best = date
+                bestDistance = distance
+            }
+        }
+        for frame in timeline.frames where !frame.isCabinCard {
+            consider(frame.date)
+        }
+        for segment in timeline.segments {
+            consider(closestPoint(on: segment, to: approach.date))
+        }
+        guard let seek = best, let placed = span(containing: seek, timeline: timeline) else { return nil }
+        let side = window(at: seek, timeline: timeline)
+        let track = trackID(for: placed.range, timeline: timeline, approach: approach.date)
+        let shown = HybridFrames.shown(at: seek, side: side, timeline: timeline, span: placed.span)
+        let taken = shown?.date ?? seek
+        return ClosestApproachLanding(
+            date: seek,
+            range: placed.range,
+            trackID: track,
+            window: side,
+            frameID: shown?.nasaID ?? "",
+            gap: gap(approach: approach, taken: taken)
+        )
+    }
+
+    /// Shown when no bundled frame or recording falls inside a playable span.
+    /// Time and altitude come from the Horizons table, not a typed-in clock.
+    static func missingNote() -> String? {
+        guard let approach = approach() else { return nil }
+        return "\(headline(approach)) No crew recording at that moment."
+    }
+
+    private static func approach() -> ClosestApproach? {
+        FlybyEphemeris.bundled.flatMap {
+            FlybyPath.closestApproach($0.samples, radiusKm: $0.document.radiusKm)
+        }
+    }
+
+    /// Closed at both ends, so a frame timestamped on the span end still lands inside it.
+    private static func span(containing date: Date, timeline: Timeline) -> (range: MissionRange, span: TimeSpan)? {
+        if let cab = timeline.cabRun, contains(date, cab) {
+            return (.cab, cab)
+        }
+        if contains(date, timeline.window) {
+            return (.flyby, timeline.window)
+        }
+        return nil
+    }
+
+    private static func contains(_ date: Date, _ span: TimeSpan) -> Bool {
+        date >= span.start && date <= span.end
+    }
+
+    /// Audio for the span the photograph is in. An empty span uses that span's track.
+    private static func trackID(for range: MissionRange, timeline: Timeline, approach: Date) -> String {
+        let rows = timeline.segments.filter { segmentRange($0, timeline: timeline) == range }
+        if let nearest = rows.min(by: {
+            audioDistance($0, to: approach) < audioDistance($1, to: approach)
+        }) {
+            return nearest.track
+        }
+        return range == .cab ? "pcd2" : "pcd3"
+    }
+
+    private static func segmentRange(_ segment: Segment, timeline: Timeline) -> MissionRange {
+        if let cab = timeline.cabRun, segment.start <= cab.end, segment.end >= cab.start {
+            return .cab
+        }
+        return .flyby
+    }
+
+    private static func closestPoint(on segment: Segment, to date: Date) -> Date {
+        if date < segment.start { return segment.start }
+        if date > segment.end { return segment.end }
+        return date
+    }
+
+    private static func audioDistance(_ segment: Segment, to date: Date) -> TimeInterval {
+        abs(closestPoint(on: segment, to: date).timeIntervalSince(date))
+    }
+
+    /// Cab Cam when the nearest still is a GoPro frame, so an hours-old Nikon
+    /// exposure is not left up in its place.
+    private static func window(at date: Date, timeline: Timeline) -> WindowSide {
+        let frames = timeline.frames.filter { !$0.isCabinCard }
+        guard let nearest = frames.min(by: { lhs, rhs in
+            prefers(
+                lhs.date,
+                distance: abs(lhs.date.timeIntervalSince(date)),
+                over: rhs.date,
+                currentDistance: abs(rhs.date.timeIntervalSince(date)),
+                approach: date
+            )
+        }) else {
+            return .nikon
+        }
+        return nearest.instrument == "cab2" ? .cab : .nikon
+    }
+
+    static func prefers(
+        _ candidate: Date,
+        distance: TimeInterval,
+        over current: Date,
+        currentDistance: TimeInterval,
+        approach: Date
+    ) -> Bool {
+        if distance != currentDistance { return distance < currentDistance }
+        let candidateTaken = candidate <= approach
+        let currentTaken = current <= approach
+        if candidateTaken != currentTaken { return candidateTaken }
+        return candidate < current
+    }
+
+    /// The Horizons vertex rounded once, to the nearest second. The printed clock
+    /// and the gap to the photograph both use this instant.
+    static func displayedInstant(_ date: Date) -> Date {
+        Date(timeIntervalSinceReferenceDate: date.timeIntervalSinceReferenceDate.rounded())
+    }
+
+    private static func gap(approach: ClosestApproach, taken: Date) -> String {
+        let sentence = headline(approach)
+        let delta = displayedInstant(approach.date).timeIntervalSince(taken)
+        if abs(delta) < 2 { return sentence }
+        let phrase = FrameSelection.spanPhrase(abs(delta))
+        if delta > 0 {
+            return "\(sentence) The nearest crew photo was taken \(phrase) earlier."
+        }
+        return "\(sentence) The nearest crew photo was taken \(phrase) later."
+    }
+
+    /// Whole kilometers. 6,545.22 km from the vertex is the sourced 6,545 km.
+    /// 1,737.4 km is the IAU mean radius (Horizons' volumetric mean is 1,737.53 km).
+    private static func headline(_ approach: ClosestApproach) -> String {
+        let altitude = surfaceKilometers(approach.altitudeKm)
+        let radius = radiusKilometers(approach.radiusKm)
+        let clock = ClockMath.utcText(displayedInstant(approach.date))
+        return "Closest approach: \(clock), \(altitude) km above the Moon's \(radius) km mean radius (NASA/JPL Horizons)."
+    }
+
+    private static func radiusKilometers(_ radiusKm: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 1
+        formatter.maximumFractionDigits = 1
+        formatter.roundingMode = .halfUp
+        return formatter.string(from: NSNumber(value: radiusKm)) ?? String(format: "%.1f", radiusKm)
+    }
+
+    private static func surfaceKilometers(_ altitudeKm: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        formatter.roundingMode = .halfUp
+        let whole = altitudeKm.rounded()
+        return formatter.string(from: NSNumber(value: whole)) ?? String(format: "%.0f", whole)
+    }
 }
 
 enum MoonFrame {
