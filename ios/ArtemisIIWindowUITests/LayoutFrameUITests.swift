@@ -349,7 +349,13 @@ final class LayoutFrameUITests: XCTestCase {
         begin.tap()
         let open = app.buttons["open-panel"]
         XCTAssertTrue(open.waitForExistence(timeout: 15))
+        if category == nil || category == "UICTContentSizeCategoryAccessibilityXXXL" {
+            assertMiniBar(app)
+        }
         open.tap()
+        if category == nil {
+            assertRulerScrubTarget(app)
+        }
 
         if category == nil || category == "UICTContentSizeCategoryAccessibilityXXXL" {
             assertBarApproach(app, category: category)
@@ -386,6 +392,55 @@ final class LayoutFrameUITests: XCTestCase {
             || category == "UICTContentSizeCategoryAccessibilityXXXL" {
             assertApproachChevronIsHidden(app)
         }
+    }
+
+    /// Collapsed playback strip. It stays hittable, and a drag on the thin scrubber moves the clock.
+    private func assertMiniBar(_ app: XCUIApplication) {
+        let bar = element(named: "mini-bar", in: app)
+        XCTAssertTrue(bar.waitForExistence(timeout: 8))
+        XCTAssertTrue(bar.isHittable)
+        let play = app.buttons["mini-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 4))
+        XCTAssertTrue(play.isHittable)
+        XCTAssertGreaterThanOrEqual(play.frame.width, 44 - 0.5)
+        XCTAssertGreaterThanOrEqual(play.frame.height, 44 - 0.5)
+        play.tap()
+        let scrubber = element(named: "mini-scrubber", in: app)
+        XCTAssertTrue(scrubber.waitForExistence(timeout: 4))
+        XCTAssertTrue(scrubber.isHittable)
+        let before = scrubber.value as? String ?? ""
+        let start = scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
+        let end = scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        let deadline = Date().addingTimeInterval(4)
+        var after = scrubber.value as? String ?? ""
+        while Date() < deadline {
+            after = scrubber.value as? String ?? ""
+            if !after.isEmpty, after != before { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertFalse(after.isEmpty)
+        XCTAssertNotEqual(after, before)
+        let edge = element(named: "safe-area-bottom", in: app)
+        if edge.exists {
+            XCTAssertLessThanOrEqual(bar.frame.maxY, edge.frame.minY + 1)
+        }
+    }
+
+    /// The open ruler's drag column is at least 44 by 44.
+    private func assertRulerScrubTarget(_ app: XCUIApplication) {
+        let scrub = element(named: "ruler-scrub", in: app)
+        XCTAssertTrue(scrub.waitForExistence(timeout: 8))
+        let minimum: CGFloat = 44 - 0.5
+        let deadline = Date().addingTimeInterval(3)
+        var frame = scrub.frame
+        while Date() < deadline {
+            frame = scrub.frame
+            if frame.width >= minimum, frame.height >= minimum { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertGreaterThanOrEqual(frame.width, minimum)
+        XCTAssertGreaterThanOrEqual(frame.height, minimum)
     }
 
     /// Approach sits on the bottom bar. At the default size it shares a row with About. Tapping it opens the card.

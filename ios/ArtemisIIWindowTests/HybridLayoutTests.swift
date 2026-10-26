@@ -420,6 +420,42 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertFalse(flyby.playing)
     }
 
+    /// Fine scrub slows as the finger leaves the rail. A date in the gap snaps to the nearer playable edge.
+    func testRulerScrubGainAndSpanClamp() {
+        XCTAssertEqual(RulerScrub.gain(horizontalDistance: 0), 1, accuracy: 0.001)
+        XCTAssertEqual(RulerScrub.gain(horizontalDistance: -20), 1, accuracy: 0.001)
+        XCTAssertEqual(RulerScrub.gain(horizontalDistance: 88), 0.5, accuracy: 0.001)
+        XCTAssertEqual(RulerScrub.scaledDelta(deltaY: 20, horizontalDistance: 0), 20, accuracy: 0.001)
+        XCTAssertEqual(RulerScrub.scaledDelta(deltaY: 20, horizontalDistance: 88), 10, accuracy: 0.001)
+        XCTAssertLessThan(RulerScrub.gain(horizontalDistance: 176), RulerScrub.gain(horizontalDistance: 88))
+
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let end = start.addingTimeInterval(100)
+        XCTAssertEqual(RulerScrub.date(fraction: 0, start: start, end: end, endMargin: 8), start)
+        XCTAssertEqual(
+            RulerScrub.date(fraction: 1, start: start, end: end, endMargin: 8).timeIntervalSince(start),
+            92,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            RulerScrub.date(fraction: 2, start: start, end: end, endMargin: 8).timeIntervalSince(start),
+            92,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(RulerScrub.date(fraction: -1, start: start, end: end, endMargin: 8), start)
+
+        let flyby = (start: start, end: start.addingTimeInterval(100))
+        let cab = (start: start.addingTimeInterval(200), end: start.addingTimeInterval(260))
+        let spans = [flyby, cab]
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(40), to: spans), start.addingTimeInterval(40))
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(-10), to: spans), flyby.start)
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(400), to: spans), cab.end)
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(150), to: spans), flyby.end)
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(160), to: spans), cab.start)
+        XCTAssertEqual(RulerScrub.clampPosition(10, to: 16...100), 16)
+        XCTAssertEqual(RulerScrub.clampPosition(140, to: 16...100), 100)
+    }
+
     @MainActor
     func testMissingApproachNoteExplainsTheTable() throws {
         let note = try XCTUnwrap(ClosestApproachLanding.missingNote())

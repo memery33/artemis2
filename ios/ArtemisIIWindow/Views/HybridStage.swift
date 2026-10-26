@@ -68,6 +68,9 @@ struct HybridStage: View {
     /// Seeded from the window before the first frame, then updated when the insets change.
     @State private var safeTop: CGFloat
     @State private var safeBottom: CGFloat
+    /// The collapsed playback strip. Hidden after a few seconds of play, brought back by a tap.
+    @State private var miniChromeVisible = true
+    @State private var miniHideTask: Task<Void, Never>?
 
     init() {
         _safeTop = State(initialValue: Self.seededSafeTop())
@@ -328,9 +331,10 @@ struct HybridStage: View {
     @ViewBuilder
     private func closedCaption(size: CGSize) -> some View {
         let captionWidth: CGFloat = min(280, max(0, size.width - 40))
+        let clearance = ClosedCaptionMetrics.bottomClearance(safeBottom: safeBottom)
         let captionHeight: CGFloat = max(
             0,
-            size.height - ClosedCaptionMetrics.bottomClearance - ClosedCaptionMetrics.topClearance
+            size.height - clearance - ClosedCaptionMetrics.topClearance
         )
         if let gap = model.approachGap {
             ApproachColumn(
@@ -349,7 +353,7 @@ struct HybridStage: View {
             }
             .padding(.leading, 20)
             .padding(.trailing, 20)
-            .padding(.bottom, ClosedCaptionMetrics.bottomClearance)
+            .padding(.bottom, clearance)
             .frame(width: size.width, height: size.height, alignment: .top)
         } else {
             // Default type: max width 280 and no line cap. The longest quote is 414 pt
@@ -371,7 +375,7 @@ struct HybridStage: View {
                     Spacer(minLength: 20)
                 }
                 .padding(.leading, 20)
-                .padding(.bottom, ClosedCaptionMetrics.bottomClearance)
+                .padding(.bottom, clearance)
             }
         }
     }
@@ -472,26 +476,154 @@ struct HybridStage: View {
     private func collapsedCue(panelHeight: CGFloat) -> some View {
         VStack {
             Spacer()
+            miniBar(panelHeight: panelHeight)
+                .padding(.horizontal, 10)
+                .padding(.bottom, ClosedCaptionMetrics.miniBottomPad(safeBottom: safeBottom))
+        }
+        .overlay {
+            if !miniChromeVisible {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { armMiniChrome() }
+                    .simultaneousGesture(panelDrag(panelHeight: panelHeight))
+                    .accessibilityLabel("Show playback controls")
+            }
+        }
+        .onAppear { armMiniChrome() }
+        .onDisappear { miniHideTask?.cancel() }
+        .onChange(of: model.playing) { _, _ in armMiniChrome() }
+        .onChange(of: panelOpen) { _, _ in armMiniChrome() }
+        .onChange(of: model.scrubbing) { _, _ in armMiniChrome() }
+    }
+
+    /// Slim playback strip. It sits above the home indicator, fades after a few seconds of play, and a tap brings it back.
+    private func miniBar(panelHeight: CGFloat) -> some View {
+        VStack(spacing: ClosedCaptionMetrics.miniInnerGap) {
             Button {
                 setPanelOpen(true)
             } label: {
-                VStack(spacing: ClosedCaptionMetrics.cueSpacing) {
-                    Capsule()
-                        .fill(HybridColor.cream.opacity(0.72))
-                        .frame(width: 36, height: ClosedCaptionMetrics.handleHeight)
-                    cueProgress
-                        .frame(width: 148, height: ClosedCaptionMetrics.progressHeight)
-                }
-                .padding(.vertical, ClosedCaptionMetrics.cueVerticalPadding)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
+                Capsule()
+                    .fill(HybridColor.cream.opacity(0.72))
+                    .frame(width: 36, height: ClosedCaptionMetrics.handleHeight)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Controls")
             .accessibilityIdentifier("open-panel")
             .accessibilityHint("Opens playback, the timeline, windows, and crew audio")
             .simultaneousGesture(panelDrag(panelHeight: panelHeight))
-            .padding(.bottom, ClosedCaptionMetrics.controlsBottomInset)
+            ZStack(alignment: .bottom) {
+                miniScrubber
+                HStack(spacing: 8) {
+                    miniPlay
+                    Text(ClockMath.utcText(model.utc))
+                        .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
+                        .foregroundStyle(HybridColor.cream)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
+                        .allowsHitTesting(false)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+            }
+            .frame(height: ClosedCaptionMetrics.miniRow)
+        }
+        .padding(.top, ClosedCaptionMetrics.miniTopPad)
+        .padding(.bottom, ClosedCaptionMetrics.miniBottomInner)
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.black.opacity(0.42))
+                }
+        }
+        .opacity(miniChromeVisible ? 1 : 0)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.35), value: miniChromeVisible)
+        .accessibilityHidden(!miniChromeVisible)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mini-bar")
+    }
+
+    private var miniPlay: some View {
+        let playing = model.playing
+        return Button {
+            model.toggle()
+            armMiniChrome()
+        } label: {
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(HybridColor.cream)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("mini-play")
+        .accessibilityLabel(playing ? "Pause" : "Play")
+    }
+
+    private var miniScrubber: some View {
+        GeometryReader { geo in
+            let fraction = miniSpanFraction
+            ZStack(alignment: .bottomLeading) {
+                Capsule()
+                    .fill(HybridColor.cream.opacity(0.28))
+                    .frame(height: 3)
+                Capsule()
+                    .fill(HybridColor.gold)
+                    .frame(width: max(3, geo.size.width * fraction), height: 3)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .contentShape(Rectangle())
+            .gesture(miniScrubGesture(width: max(geo.size.width, 1)))
+        }
+        .frame(height: ClosedCaptionMetrics.miniRow)
+        .accessibilityElement()
+        .accessibilityIdentifier("mini-scrubber")
+        .accessibilityLabel("Timeline")
+        .accessibilityValue(ClockMath.utcText(model.utc))
+    }
+
+    private var miniSpanFraction: Double {
+        guard let span = model.activeSpan else { return 0 }
+        let latest = max(span.start, span.end.addingTimeInterval(-PlaybackModel.scrubEndMargin))
+        let duration = latest.timeIntervalSince(span.start)
+        guard duration > 0 else { return 0 }
+        return min(1, max(0, model.utc.timeIntervalSince(span.start) / duration))
+    }
+
+    private func miniScrubGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard let span = model.activeSpan else { return }
+                if !model.scrubbing { model.beginScrub() }
+                let fraction = value.location.x / width
+                let date = RulerScrub.date(
+                    fraction: fraction,
+                    start: span.start,
+                    end: span.end,
+                    endMargin: PlaybackModel.scrubEndMargin
+                )
+                model.scrubRuler(to: date)
+                armMiniChrome()
+            }
+            .onEnded { _ in
+                model.endScrub(markEnd: false)
+                armMiniChrome()
+            }
+    }
+
+    /// UI tests keep the bar up. A normal launch hides it after four seconds of play.
+    private func armMiniChrome() {
+        miniHideTask?.cancel()
+        miniChromeVisible = true
+        guard model.playing, !panelOpen, !model.scrubbing, !showsSafeAreaMarks else { return }
+        miniHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard model.playing, !panelOpen, !model.scrubbing else { return }
+            miniChromeVisible = false
         }
     }
 
@@ -873,6 +1005,53 @@ enum RulerMetrics {
     static func fraction(y: CGFloat, height: CGFloat, safeArea: CGFloat = 0) -> Double {
         let track = trackHeight(height, safeArea: safeArea)
         return Double(min(1, max(0, (y - topInset) / track)))
+    }
+}
+
+/// Ruler and mini-scrubber math. Moving sideways from the rail slows the playhead.
+/// A date outside a playable span snaps to the nearest edge of one.
+enum RulerScrub {
+    /// Horizontal distance at which a vertical move runs at half speed.
+    static let halfDistance: CGFloat = 88
+
+    static func gain(horizontalDistance: CGFloat) -> CGFloat {
+        let distance = max(0, horizontalDistance)
+        return 1 / (1 + distance / halfDistance)
+    }
+
+    static func scaledDelta(deltaY: CGFloat, horizontalDistance: CGFloat) -> CGFloat {
+        deltaY * gain(horizontalDistance: horizontalDistance)
+    }
+
+    static func clampPosition(_ position: CGFloat, to limit: ClosedRange<CGFloat>) -> CGFloat {
+        min(limit.upperBound, max(limit.lowerBound, position))
+    }
+
+    /// Fraction 0 is `start`. Fraction 1 is `endMargin` short of `end`, so a drag cannot sit on the edge.
+    static func date(fraction: Double, start: Date, end: Date, endMargin: TimeInterval) -> Date {
+        let latest = max(start, end.addingTimeInterval(-max(0, endMargin)))
+        let span = latest.timeIntervalSince(start)
+        let clamped = min(1, max(0, fraction))
+        guard span > 0 else { return start }
+        return start.addingTimeInterval(span * clamped)
+    }
+
+    /// Keeps `date` on a playable span. The gap between spans snaps to the nearer edge.
+    static func clamp(_ date: Date, to spans: [(start: Date, end: Date)]) -> Date {
+        let ordered = spans.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
+        guard let first = ordered.first else { return date }
+        if date <= first.start { return first.start }
+        var previousEnd = first.start
+        for span in ordered {
+            if date < span.start {
+                let toPrevious = date.timeIntervalSince(previousEnd)
+                let toNext = span.start.timeIntervalSince(date)
+                return toPrevious <= toNext ? previousEnd : span.start
+            }
+            if date <= span.end { return date }
+            previousEnd = span.end
+        }
+        return previousEnd
     }
 }
 
@@ -1659,12 +1838,18 @@ private struct MomentHint: ViewModifier {
 
 struct FlybyRuler: View {
     @EnvironmentObject private var model: PlaybackModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var safeBottom: CGFloat = 0
     var onCrater: (CraterKind) -> Void
+    @State private var scrubSample: CGPoint?
+    @State private var scrubMappedY: CGFloat?
+    @State private var scrubDate: Date?
+    @State private var scrubMarkCount = 0
 
     var body: some View {
         GeometryReader { geo in
             let height = geo.size.height
+            let width = geo.size.width
             ZStack(alignment: .bottomTrailing) {
                 LinearGradient(
                     colors: [.clear, Color.black.opacity(0.45)],
@@ -1676,21 +1861,39 @@ struct FlybyRuler: View {
                 tickLayer(height: height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     .allowsHitTesting(false)
-                // 44 pt wide. The labels sit above this strip, so a mark keeps its tap.
-                Color.clear
-                    .frame(width: 44)
-                    .frame(maxHeight: .infinity)
+                // The whole column is the drag target, at least 44 by 44. Labels stay on top for taps.
+                Color.white.opacity(0.001)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .gesture(scrub(height: height))
                     .accessibilityElement()
+                    .accessibilityIdentifier("ruler-scrub")
                     .accessibilityLabel("Flyby timeline")
                     .accessibilityValue(ClockMath.utcText(model.utc))
                     .accessibilityAdjustableAction { direction in
                         model.accessibilityAdjust(direction)
                     }
-                labelColumn(height: height, width: geo.size.width)
+                labelColumn(height: height, width: width)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if model.scrubbing, let y = scrubMappedY {
+                    Text(ClockMath.utcText(model.utc))
+                        .font(HybridFont.text(12, relativeTo: .caption).monospacedDigit())
+                        .foregroundStyle(HybridColor.cream)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.black.opacity(0.86)))
+                        .fixedSize()
+                        .position(x: max(52, width * 0.38), y: min(max(18, y), height - 18))
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        .transaction { transaction in
+                            if reduceMotion {
+                                transaction.disablesAnimations = true
+                            }
+                        }
+                }
             }
+            .simultaneousGesture(scrubGesture(height: height, width: width))
+            .sensoryFeedback(.impact(weight: .light, intensity: 0.55), trigger: scrubMarkCount)
         }
     }
 
@@ -1917,22 +2120,73 @@ struct FlybyRuler: View {
             }
     }
 
-    private func scrub(height: CGFloat) -> some Gesture {
+    /// A drag anywhere on the column grabs the playhead. The first sample seeks to the touch,
+    /// so a tap still lands there. Later samples slow down as the finger moves off the rail.
+    /// The release stays on the finger, not the predicted flick.
+    private func scrubGesture(height: CGFloat, width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard let date = date(atY: value.location.y, height: height) else { return }
-                if !model.scrubbing { model.beginScrub() }
-                model.scrubRuler(to: date)
-            }
-            .onEnded { value in
-                // A fast flick's finger can still be inside the span while the predicted end is past it.
-                let predicted = date(atY: value.predictedEndLocation.y, height: height)
-                if let predicted {
+                let low = RulerMetrics.topInset
+                let high = max(low, height - RulerMetrics.bottomInset(safeArea: safeBottom))
+                let railX = width - 18
+                if scrubSample == nil {
+                    scrubSample = value.startLocation
+                    scrubMappedY = value.startLocation.y
                     if !model.scrubbing { model.beginScrub() }
-                    model.scrubRuler(to: predicted)
+                    if let date = date(atY: value.startLocation.y, height: height) {
+                        scrubDate = date
+                        model.scrubRuler(to: date)
+                    }
                 }
-                model.endScrub(markEnd: false)
+                let previous = scrubSample ?? value.startLocation
+                let dy = value.location.y - previous.y
+                let distance = abs(value.location.x - railX)
+                let proposed = (scrubMappedY ?? previous.y) + RulerScrub.scaledDelta(deltaY: dy, horizontalDistance: distance)
+                let y = RulerScrub.clampPosition(proposed, to: low...high)
+                scrubMappedY = y
+                scrubSample = value.location
+                if let next = date(atY: y, height: height) {
+                    noteMarks(from: scrubDate, to: next)
+                    scrubDate = next
+                    model.scrubRuler(to: next)
+                }
             }
+            .onEnded { _ in
+                model.endScrub(markEnd: false)
+                scrubSample = nil
+                scrubMappedY = nil
+                scrubDate = nil
+            }
+    }
+
+    /// Counts marked moments the playhead crosses, including a drag that moves backward.
+    private func noteMarks(from previous: Date?, to date: Date) {
+        guard let previous, previous != date else { return }
+        let low = min(previous, date)
+        let high = max(previous, date)
+        let crossed = scrubMarks.filter { $0 > low && $0 <= high }
+        if !crossed.isEmpty {
+            scrubMarkCount += crossed.count
+        }
+    }
+
+    /// Span edges, the named ruler moments, and closest approach. The Aristarchus quote is not a tick.
+    private var scrubMarks: [Date] {
+        guard let timeline = model.timeline else { return [] }
+        var marks = [timeline.window.start, timeline.window.end]
+        if let cab = timeline.cabRun {
+            marks.append(cab.start)
+            marks.append(cab.end)
+        }
+        for utc in [RulerLabelMarks.aristarchus, RulerLabelMarks.reiner] {
+            if let date = timeline.lines.first(where: { $0.utc == utc })?.date {
+                marks.append(date)
+            }
+        }
+        if let approach = model.closestApproachInstant {
+            marks.append(approach)
+        }
+        return marks
     }
 
     private func date(atY y: CGFloat, height: CGFloat) -> Date? {
@@ -2501,7 +2755,7 @@ private struct ApproachColumn: Layout {
     }
 }
 
-/// Closed-caption clearance. The collapsed Controls strip is the cue plus its bottom inset.
+/// Closed-caption clearance. The credit stays above the collapsed playback strip.
 /// The caption used to stop 12 pt short of that strip, so the credit pill covered it.
 enum ClosedCaptionMetrics {
     /// Room above the accessibility caption so it stays below the status bar.
@@ -2512,12 +2766,37 @@ enum ClosedCaptionMetrics {
     static let cueSpacing: CGFloat = 8
     static let progressHeight: CGFloat = 8
     static let cueVerticalPadding: CGFloat = 12
+    /// Handle above the play row in the collapsed bar.
+    static let miniHandle: CGFloat = 36
+    /// Play, time, and the scrubber share this row.
+    static let miniRow: CGFloat = 44
+    /// Padding inside the collapsed bar, above the handle.
+    static let miniTopPad: CGFloat = 4
+    /// Space between the handle and the play row.
+    static let miniInnerGap: CGFloat = 2
+    /// Padding inside the collapsed bar, under the play row.
+    static let miniBottomInner: CGFloat = 6
+    /// Gap between the credit and the top of the collapsed bar.
+    static let miniGap: CGFloat = 12
+    /// Handle, play row, and the bar's own padding. The credit clears this whole plate.
+    static var miniBarHeight: CGFloat {
+        miniTopPad + miniHandle + miniInnerGap + miniRow + miniBottomInner
+    }
     /// Handle, gap, progress, and the cue's vertical padding.
     static var controlsStripHeight: CGFloat {
         cueVerticalPadding + handleHeight + cueSpacing + progressHeight + cueVerticalPadding
     }
-    /// Bottom of the credit sits on the top of the Controls strip.
-    static var bottomClearance: CGFloat { controlsBottomInset + controlsStripHeight }
+
+    /// Padding under the collapsed bar. Clears the home indicator and the app-switcher edge.
+    static func miniBottomPad(safeBottom: CGFloat) -> CGFloat {
+        max(safeBottom + 12, 46)
+    }
+
+    /// Bottom of the credit sits one gap above the collapsed bar.
+    static func bottomClearance(safeBottom: CGFloat) -> CGFloat {
+        let occupied = miniBarHeight + miniBottomPad(safeBottom: safeBottom)
+        return max(controlsBottomInset + controlsStripHeight, occupied + miniGap)
+    }
     /// Gap under the top safe area before the closest-approach card.
     static let approachCardGap: CGFloat = 12
     /// Space between the open credit's bottom and the top of the sheet.
