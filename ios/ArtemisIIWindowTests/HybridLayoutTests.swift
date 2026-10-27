@@ -565,6 +565,13 @@ final class HybridLayoutTests: XCTestCase {
             PanelContrast.ratio(foreground: HybridColor.dimComponents, background: rail),
             PanelContrast.minimum
         )
+        // The clock chip sits over the brightest pixel the Moon can be. Cream has to clear 4.5:1 there.
+        let white: (red: CGFloat, green: CGFloat, blue: CGFloat) = (1, 1, 1)
+        let chip = PanelContrast.blackOver(white, opacity: PanelContrast.clockChip)
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.creamComponents, background: chip),
+            PanelContrast.minimum
+        )
     }
 
     /// Reaching the end hides the chevron. The plate relayout can report a miss; that miss stays hidden until a drag.

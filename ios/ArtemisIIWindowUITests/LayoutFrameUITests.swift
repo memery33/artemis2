@@ -163,7 +163,7 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertLessThanOrEqual(toggle.frame.maxY, app.frame.maxY + 0.5)
     }
 
-    /// Default type. UTC and MET may wrap to two lines. Play, −15 s, and +15 s sit fully on screen, above the bar.
+    /// Default type. UTC and MET stay on one line. Play, −15 s, and +15 s sit fully on screen, above the bar.
     func testPlayToggleSitsInsideTheOpenPanel() {
         let app = FlybyUILaunch.application()
         app.launch()

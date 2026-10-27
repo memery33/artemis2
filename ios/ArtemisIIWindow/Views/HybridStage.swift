@@ -404,7 +404,7 @@ struct HybridStage: View {
     private func sheet(panelHeight: CGFloat, width: CGFloat, safeBottom: CGFloat) -> some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            sheetColumns(panelHeight: panelHeight, safeBottom: safeBottom)
+            sheetColumns(panelHeight: panelHeight, width: width, safeBottom: safeBottom)
             .frame(width: width, height: panelHeight, alignment: .leading)
             .clipped()
             .background { panelFill }
@@ -423,13 +423,13 @@ struct HybridStage: View {
     /// Default type keeps the moments rail on the right. Accessibility sizes give the
     /// controls the full width; the same moments sit in the scroll column instead.
     @ViewBuilder
-    private func sheetColumns(panelHeight: CGFloat, safeBottom: CGFloat) -> some View {
+    private func sheetColumns(panelHeight: CGFloat, width: CGFloat, safeBottom: CGFloat) -> some View {
         if dynamicTypeSize.isAccessibilitySize {
-            controlPanel(panelHeight: panelHeight, safeBottom: safeBottom)
+            controlPanel(panelHeight: panelHeight, safeBottom: safeBottom, sheetWidth: width)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             HStack(alignment: .bottom, spacing: 0) {
-                controlPanel(panelHeight: panelHeight, safeBottom: safeBottom)
+                controlPanel(panelHeight: panelHeight, safeBottom: safeBottom, sheetWidth: width)
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 FlybyRuler(safeBottom: safeBottom) { kind in
                     crater = kind
@@ -442,9 +442,10 @@ struct HybridStage: View {
         }
     }
 
-    private func controlPanel(panelHeight: CGFloat, safeBottom: CGFloat) -> ControlPanel {
+    private func controlPanel(panelHeight: CGFloat, safeBottom: CGFloat, sheetWidth: CGFloat) -> ControlPanel {
         ControlPanel(
             height: panelHeight,
+            sheetWidth: sheetWidth,
             safeBottom: safeBottom,
             onClose: { setPanelOpen(false) },
             onDragChanged: trackPanelDrag,
@@ -1176,7 +1177,9 @@ enum RulerHaptics {
         var fresh: [Date] = []
         for mark in marks where mark > low && mark <= high {
             let key = mark.timeIntervalSinceReferenceDate
-            if let prior = updated[key], now.timeIntervalSince(prior) < minimumInterval {
+            // A step of exactly 0.3 s from a Date lands a hair under 0.3. A strict
+            // comparison would swallow that boundary tick.
+            if let prior = updated[key], now.timeIntervalSince(prior) < minimumInterval - 1e-6 {
                 continue
             }
             updated[key] = now
@@ -1448,6 +1451,8 @@ struct ControlPanel: View {
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var height: CGFloat
+    /// Full sheet width. The clock row uses the column beside the ruler, not its own text width.
+    var sheetWidth: CGFloat
     var safeBottom: CGFloat
     var onClose: () -> Void
     var onDragChanged: (CGFloat) -> Void
@@ -1463,8 +1468,15 @@ struct ControlPanel: View {
         .padding(.leading, ControlColumnMetrics.leading)
         .padding(.trailing, ControlColumnMetrics.trailing)
         .padding(.bottom, safeBottom)
-        .frame(height: height)
-        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        // One frame. A height-only frame offered the column its ideal width, and the
+        // clock row shrank to the time it had already set.
+        .frame(
+            minWidth: 0,
+            maxWidth: .infinity,
+            minHeight: height,
+            maxHeight: height,
+            alignment: .topLeading
+        )
         .clipped()
         .environment(\.colorScheme, .dark)
         .sheet(isPresented: $about) { AboutView() }
@@ -1489,6 +1501,7 @@ struct ControlPanel: View {
         VStack(alignment: .leading, spacing: ControlColumnMetrics.stackSpacing) {
             handle
             clocks
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
             transport
@@ -1586,9 +1599,16 @@ struct ControlPanel: View {
             .accessibilityHint("Drag down to close")
     }
 
+    /// Inner width of the control column. The MET line used to wrap at the big time's width.
+    private var clockColumnWidth: CGFloat {
+        let rail: CGFloat = dynamicTypeSize.isAccessibilitySize ? 0 : RulerMetrics.width
+        return max(0, sheetWidth - rail - ControlColumnMetrics.leading - ControlColumnMetrics.trailing)
+    }
+
     private var clocks: some View {
         let clocks = ClockMath.format(date: model.utc, epoch: model.timeline?.epoch ?? model.utc)
         let time = clocks.utc.replacingOccurrences(of: " UTC", with: "")
+        let oneLine = dynamicTypeSize <= .large
         return VStack(alignment: .leading, spacing: 2) {
             if dynamicTypeSize.isAccessibilitySize {
                 Text(time)
@@ -1618,7 +1638,7 @@ struct ControlPanel: View {
                 .background {
                     // The sheet is still translucent. A solid chip is what the audit measures.
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.black.opacity(0.92))
+                        .fill(Color.black.opacity(PanelContrast.clockChip))
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("mission-clock")
@@ -1630,17 +1650,23 @@ struct ControlPanel: View {
                     .foregroundStyle(HybridColor.cream)
                     .lineLimit(1)
                     .minimumScaleFactor(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityHidden(true)
-                // Two lines. Tabular Inter at 11 pt is about 200 pt, just past the 198 pt
-                // column, so UTC and MET wrap. Cream on the veil clears 4.5:1. 10 pt dim did not.
+                // Default size stays one line across the column. Tabular 11 pt is about
+                // 201 pt, so it may shrink a few percent inside the 198 pt column.
+                // Larger type wraps. The chip is the contrast: the veil still shows the Moon.
                 Text("\(clocks.utc) · \(clocks.met)")
                     .font(HybridFont.text(11, relativeTo: .caption).monospacedDigit())
                     .foregroundStyle(HybridColor.cream)
-                    .lineLimit(2)
-                    .minimumScaleFactor(1)
+                    .lineLimit(oneLine ? 1 : 2)
+                    .minimumScaleFactor(oneLine ? CGFloat(0.94) : CGFloat(1))
                     .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(width: clockColumnWidth, alignment: .leading)
+                    .padding(.vertical, 3)
+                    .background {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.black.opacity(PanelContrast.clockChip))
+                    }
                     .accessibilityIdentifier("mission-clock")
             }
         }
@@ -2121,14 +2147,16 @@ struct FlybyRuler: View {
                 .padding(.trailing, 18)
                 .offset(y: RulerMetrics.topInset)
             if let window = timeline?.window {
+                // Flyby window. This bracket is the destination span, same gold as closest approach.
                 spanBar(from: window.start, to: window.end, height: height, width: 2, trailing: 30, color: HybridColor.gold)
             }
             if let cab = timeline?.cabRun {
                 spanBar(from: cab.start, to: cab.end, height: height, width: 2, trailing: 24, color: HybridColor.cream.opacity(0.9))
             }
             ForEach(milestones) { milestone in
+                // Photo frames are ordinary moments. Gold is only the destination.
                 Capsule()
-                    .fill(milestone.track == nil && milestone.id.hasPrefix("photo:") ? HybridColor.gold : HybridColor.cream.opacity(0.55))
+                    .fill(HybridColor.cream.opacity(milestone.id.hasPrefix("photo:") ? 0.9 : 0.55))
                     .frame(width: milestone.id.hasPrefix("photo:") ? 12 : 6, height: 1)
                     .padding(.trailing, 14)
                     .offset(y: y(milestone.date, height: height))

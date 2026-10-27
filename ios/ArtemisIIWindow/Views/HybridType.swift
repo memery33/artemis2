@@ -18,6 +18,8 @@ enum PanelContrast {
     static let veil: CGFloat = 0.58
     /// Gold on the veil alone is about 3.2:1. This extra black brings it to about 5.1:1.
     static let rulerScrim: CGFloat = 0.28
+    /// The sheet is material, so the Moon shows through the veil. This chip is what the clock sits on.
+    static let clockChip: CGFloat = 0.92
     static let minimum: CGFloat = 4.5
 
     static func ratio(
