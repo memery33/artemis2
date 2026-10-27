@@ -2,12 +2,12 @@ import SwiftUI
 
 /// Cream, gold, and ink from the hybrid stills.
 enum HybridColor {
-    static let creamComponents = (red: 0.969, green: 0.953, blue: 0.918)
-    static let goldComponents = (red: 0.902, green: 0.769, blue: 0.541)
-    static let dimComponents = (red: 0.788, green: 0.761, blue: 0.706)
-    static let cream = Color(red: creamComponents.red, green: creamComponents.green, blue: creamComponents.blue)
-    static let gold = Color(red: goldComponents.red, green: goldComponents.green, blue: goldComponents.blue)
-    static let dim = Color(red: dimComponents.red, green: dimComponents.green, blue: dimComponents.blue)
+    static let creamComponents: (red: CGFloat, green: CGFloat, blue: CGFloat) = (red: 0.969, green: 0.953, blue: 0.918)
+    static let goldComponents: (red: CGFloat, green: CGFloat, blue: CGFloat) = (red: 0.902, green: 0.769, blue: 0.541)
+    static let dimComponents: (red: CGFloat, green: CGFloat, blue: CGFloat) = (red: 0.788, green: 0.761, blue: 0.706)
+    static let cream = Color(red: Double(creamComponents.red), green: Double(creamComponents.green), blue: Double(creamComponents.blue))
+    static let gold = Color(red: Double(goldComponents.red), green: Double(goldComponents.green), blue: Double(goldComponents.blue))
+    static let dim = Color(red: Double(dimComponents.red), green: Double(dimComponents.green), blue: Double(dimComponents.blue))
     static let ink = Color(red: 0.078, green: 0.071, blue: 0.063)
     static let ground = Color(red: 0.027, green: 0.024, blue: 0.020)
 }
