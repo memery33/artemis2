@@ -33,5 +33,18 @@ final class BeginLaunchUITests: XCTestCase {
         let card = app.descendants(matching: .any)["end-card"]
         XCTAssertTrue(card.waitForExistence(timeout: 15))
         XCTAssertTrue(card.staticTexts["End of this span"].waitForExistence(timeout: 15))
+        let stay = app.buttons["Stay with the recording"]
+        XCTAssertTrue(stay.waitForExistence(timeout: 8))
+        stay.tap()
+        let open = app.buttons["open-panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 15))
+        open.tap()
+        let play = app.buttons["playback-toggle"]
+        XCTAssertTrue(play.waitForExistence(timeout: 8))
+        play.tap()
+        let gap = app.descendants(matching: .any)["approach-gap"]
+        XCTAssertTrue(gap.waitForExistence(timeout: 8))
+        XCTAssertTrue(gap.label.contains("23:00:47 UTC"))
+        XCTAssertTrue(gap.label.contains("6,545 km"))
     }
 }

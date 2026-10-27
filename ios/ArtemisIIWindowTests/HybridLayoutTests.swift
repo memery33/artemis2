@@ -383,6 +383,259 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertTrue(model.playing)
     }
 
+    /// Reaching the end of the Cab Cam run opens closest approach instead of the end card.
+    /// Play from that card still rewinds to the start of the run.
+    @MainActor
+    func testCabSpanEndContinuesIntoClosestApproach() throws {
+        let model = PlaybackModel()
+        let cab = try XCTUnwrap(model.timeline?.cabRun)
+        let landing = try XCTUnwrap(model.closestApproach)
+        model.showCabRun()
+        model.playing = true
+        model.utc = cab.end
+        model.advanceDisplayLinkForTest(to: 1)
+        XCTAssertFalse(model.ended)
+        XCTAssertFalse(model.playing)
+        XCTAssertFalse(model.approachInformational)
+        XCTAssertEqual(model.approachGap, landing.gap)
+        XCTAssertEqual(model.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+        XCTAssertEqual(model.range, .cab)
+        XCTAssertEqual(model.window, .cab)
+
+        model.play()
+        XCTAssertNil(model.approachGap)
+        XCTAssertFalse(model.approachInformational)
+        XCTAssertEqual(model.utc, cab.start)
+        XCTAssertTrue(model.playing)
+
+        let flyby = PlaybackModel()
+        let span = try XCTUnwrap(flyby.activeSpan)
+        flyby.seek(to: span.end)
+        XCTAssertTrue(flyby.ended)
+        XCTAssertNil(flyby.approachGap)
+        flyby.play()
+        XCTAssertFalse(flyby.ended)
+        XCTAssertEqual(flyby.approachGap, landing.gap)
+        XCTAssertEqual(flyby.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+        XCTAssertFalse(flyby.playing)
+    }
+
+    /// Play at the end of Flyby opens the Cab Cam closest-approach card and stays paused.
+    /// That is the parked-end behavior: a second Play, from the card, rewinds and starts.
+    @MainActor
+    func testPlayAtFlybyEndOpensClosestApproachAndStaysPaused() throws {
+        let model = PlaybackModel()
+        let flyby = try XCTUnwrap(model.timeline?.window)
+        let cab = try XCTUnwrap(model.timeline?.cabRun)
+        let landing = try XCTUnwrap(model.closestApproach)
+        model.seek(to: flyby.end)
+        XCTAssertTrue(model.ended)
+        XCTAssertFalse(model.playing)
+        model.play()
+        XCTAssertFalse(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertEqual(model.range, .cab)
+        XCTAssertEqual(model.approachGap, landing.gap)
+        XCTAssertEqual(model.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+        model.play()
+        XCTAssertTrue(model.playing)
+        XCTAssertNil(model.approachGap)
+        XCTAssertEqual(model.utc, cab.start)
+    }
+
+    /// The Cab Cam end goes through pause, so the locked-phone clock is stopped behind the card.
+    @MainActor
+    func testCabSpanEndPausesTheLockedClock() throws {
+        let model = PlaybackModel()
+        let cab = try XCTUnwrap(model.timeline?.cabRun)
+        let landing = try XCTUnwrap(model.closestApproach)
+        model.showCabRun()
+        model.playing = true
+        model.armLockedClockForTest()
+        XCTAssertTrue(model.lockedClockArmed)
+        model.utc = cab.end
+        model.advanceDisplayLinkForTest(to: 1)
+        XCTAssertFalse(model.lockedClockArmed)
+        XCTAssertFalse(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertEqual(model.approachGap, landing.gap)
+        XCTAssertEqual(model.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+    }
+
+    /// While the mini bar is up, the bottom-edge strip stops at the play row. The handle's hit target is 44 pt and sits above that row.
+    func testBottomEdgeStripStopsAtTheMiniPlayRow() {
+        XCTAssertGreaterThanOrEqual(ClosedCaptionMetrics.miniHandle, 44)
+        let safe: CGFloat = 34
+        let rowBottom = ClosedCaptionMetrics.miniRowBottom(safeBottom: safe)
+        let strip = ClosedCaptionMetrics.edgeStripHeight(miniBarVisible: true, safeBottom: safe)
+        XCTAssertEqual(strip, rowBottom - 20, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(20 + strip, rowBottom)
+        XCTAssertEqual(ClosedCaptionMetrics.edgeStripHeight(miniBarVisible: false, safeBottom: safe), 44, accuracy: 0.001)
+        let handleBottom = rowBottom + ClosedCaptionMetrics.miniRow + ClosedCaptionMetrics.miniInnerGap
+        XCTAssertGreaterThanOrEqual(handleBottom, rowBottom + ClosedCaptionMetrics.miniRow)
+        XCTAssertGreaterThan(handleBottom, 20 + strip)
+    }
+
+    /// Crossing a mark ticks once. Wiggling back across it inside 0.3 s does not tick again.
+    func testRulerHapticsTickOncePerMarkUntilTheGapPasses() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let mark = start.addingTimeInterval(10)
+        let other = start.addingTimeInterval(20)
+        let now = start.addingTimeInterval(100)
+        let first = RulerHaptics.freshMarks(marks: [mark], from: nil, to: mark, now: now, lastTick: [:])
+        XCTAssertTrue(first.fresh.isEmpty)
+        let crossed = RulerHaptics.freshMarks(marks: [mark], from: start, to: mark, now: now, lastTick: [:])
+        XCTAssertEqual(crossed.fresh, [mark])
+        let wiggle = RulerHaptics.freshMarks(
+            marks: [mark],
+            from: mark.addingTimeInterval(1),
+            to: mark.addingTimeInterval(-1),
+            now: now.addingTimeInterval(0.1),
+            lastTick: crossed.lastTick
+        )
+        XCTAssertTrue(wiggle.fresh.isEmpty)
+        let later = RulerHaptics.freshMarks(
+            marks: [mark],
+            from: start,
+            to: mark,
+            now: now.addingTimeInterval(0.3),
+            lastTick: wiggle.lastTick
+        )
+        XCTAssertEqual(later.fresh, [mark])
+        let both = RulerHaptics.freshMarks(marks: [mark, other], from: start, to: other, now: now, lastTick: [:])
+        XCTAssertEqual(both.fresh, [mark, other])
+    }
+
+    /// The collapsed strip hides after four seconds of playback, and only then.
+    /// UI tests, a pause, an open panel, or a scrub leave it up. No timer is waited on.
+    func testMiniChromeHidesAfterFourSecondsOfPlayback() {
+        XCTAssertEqual(MiniChromeFade.hideDelay, .seconds(4))
+        XCTAssertEqual(MiniChromeFade.hideDelayNanoseconds, 4_000_000_000)
+        XCTAssertTrue(MiniChromeFade.armsHide(playing: true, panelOpen: false, scrubbing: false, uiTests: false))
+        XCTAssertFalse(MiniChromeFade.armsHide(playing: false, panelOpen: false, scrubbing: false, uiTests: false))
+        XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: true, scrubbing: false, uiTests: false))
+        XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: false, scrubbing: true, uiTests: false))
+        XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: false, scrubbing: false, uiTests: true))
+        XCTAssertFalse(MiniChromeFade.armsHide(
+            playing: true, panelOpen: false, scrubbing: false, uiTests: false, voiceOver: true
+        ))
+        XCTAssertFalse(MiniChromeFade.armsHide(
+            playing: true, panelOpen: false, scrubbing: false, uiTests: false, switchControl: true
+        ))
+        XCTAssertTrue(MiniChromeFade.isVisible(armed: true, elapsed: .seconds(0)))
+        XCTAssertTrue(MiniChromeFade.isVisible(armed: true, elapsed: .milliseconds(3999)))
+        XCTAssertFalse(MiniChromeFade.isVisible(armed: true, elapsed: .seconds(4)))
+        XCTAssertFalse(MiniChromeFade.isVisible(armed: true, elapsed: .seconds(6)))
+        XCTAssertTrue(MiniChromeFade.isVisible(armed: false, elapsed: .seconds(6)))
+    }
+
+    /// Beside the 176 pt rail, each default-size bar button is an equal 95 pt slot, at least 44.
+    func testBottomBarSlotsClear44BesideTheRuler() {
+        XCTAssertEqual(RulerMetrics.width, 176, accuracy: 0.001)
+        let slot = ControlColumnMetrics.barSlotWidth(screenWidth: 402)
+        XCTAssertEqual(slot, 95, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(slot, ControlColumnMetrics.minimumTap)
+        let column = 402 - RulerMetrics.width
+        XCTAssertEqual(column, 226, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(column, 402)
+        XCTAssertEqual(
+            ControlColumnMetrics.leading + slot + ControlColumnMetrics.barSpacing + slot + ControlColumnMetrics.trailing,
+            column,
+            accuracy: 0.001
+        )
+    }
+
+    /// Cream clears 4.5:1 on the sheet veil. Gold needs the ruler scrim, then it clears it too.
+    func testRulerTypeClearsSecondaryContrast() {
+        let panel = PanelContrast.whiteUnderVeil()
+        let rail = PanelContrast.blackOver(panel, opacity: PanelContrast.rulerScrim)
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.creamComponents, background: panel),
+            PanelContrast.minimum
+        )
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.creamComponents, background: rail),
+            PanelContrast.minimum
+        )
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.goldComponents, background: rail),
+            PanelContrast.minimum
+        )
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.dimComponents, background: rail),
+            PanelContrast.minimum
+        )
+        // The clock chip sits over the brightest pixel the Moon can be. Cream has to clear 4.5:1 there.
+        let white: (red: CGFloat, green: CGFloat, blue: CGFloat) = (1, 1, 1)
+        let chip = PanelContrast.blackOver(white, opacity: PanelContrast.clockChip)
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.creamComponents, background: chip),
+            PanelContrast.minimum
+        )
+    }
+
+    /// Reaching the end hides the chevron. The plate relayout can report a miss; that miss stays hidden until a drag.
+    func testApproachChevronHidesAtTheEndOfTheScroll() {
+        XCTAssertFalse(ApproachScrollEnd.isAtEnd(contentHeight: 0, visibleMaxY: 0))
+        XCTAssertFalse(ApproachScrollEnd.isAtEnd(contentHeight: 400, visibleMaxY: 200))
+        XCTAssertTrue(ApproachScrollEnd.isAtEnd(contentHeight: 400, visibleMaxY: 399))
+        XCTAssertTrue(ApproachScrollEnd.isAtEnd(contentHeight: 400, visibleMaxY: 370, bottomInset: 30))
+
+        var state = ApproachChevronState.initial
+        state = state.step(contentHeight: 0, atEnd: false, dragging: false)
+        XCTAssertTrue(state.showing)
+        XCTAssertFalse(state.seenShort)
+        state = state.step(contentHeight: 400, atEnd: true, dragging: false)
+        XCTAssertTrue(state.showing)
+        state = state.step(contentHeight: 400, atEnd: false, dragging: false)
+        XCTAssertTrue(state.showing)
+        XCTAssertTrue(state.seenShort)
+        state = state.step(contentHeight: 400, atEnd: true, dragging: false)
+        XCTAssertFalse(state.showing)
+        XCTAssertTrue(state.latched)
+        state = state.step(contentHeight: 400, atEnd: false, dragging: false)
+        XCTAssertFalse(state.showing)
+        state = state.step(contentHeight: 400, atEnd: false, dragging: true)
+        XCTAssertTrue(state.showing)
+        XCTAssertFalse(state.latched)
+    }
+
+    /// Fine scrub slows as the finger leaves the rail. A date in the gap snaps to the nearer playable edge.
+    func testRulerScrubGainAndSpanClamp() {
+        XCTAssertEqual(RulerScrub.gain(horizontalDistance: 0), 1, accuracy: 0.001)
+        XCTAssertEqual(RulerScrub.gain(horizontalDistance: -20), 1, accuracy: 0.001)
+        XCTAssertEqual(RulerScrub.gain(horizontalDistance: 88), 0.5, accuracy: 0.001)
+        XCTAssertEqual(RulerScrub.scaledDelta(deltaY: 20, horizontalDistance: 0), 20, accuracy: 0.001)
+        XCTAssertEqual(RulerScrub.scaledDelta(deltaY: 20, horizontalDistance: 88), 10, accuracy: 0.001)
+        XCTAssertLessThan(RulerScrub.gain(horizontalDistance: 176), RulerScrub.gain(horizontalDistance: 88))
+
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let end = start.addingTimeInterval(100)
+        XCTAssertEqual(RulerScrub.date(fraction: 0, start: start, end: end, endMargin: 8), start)
+        XCTAssertEqual(
+            RulerScrub.date(fraction: 1, start: start, end: end, endMargin: 8).timeIntervalSince(start),
+            92,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            RulerScrub.date(fraction: 2, start: start, end: end, endMargin: 8).timeIntervalSince(start),
+            92,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(RulerScrub.date(fraction: -1, start: start, end: end, endMargin: 8), start)
+
+        let flyby = (start: start, end: start.addingTimeInterval(100))
+        let cab = (start: start.addingTimeInterval(200), end: start.addingTimeInterval(260))
+        let spans = [flyby, cab]
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(40), to: spans), start.addingTimeInterval(40))
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(-10), to: spans), flyby.start)
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(400), to: spans), cab.end)
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(150), to: spans), flyby.end)
+        XCTAssertEqual(RulerScrub.clamp(start.addingTimeInterval(160), to: spans), cab.start)
+        XCTAssertEqual(RulerScrub.clampPosition(10, to: 16...100), 16)
+        XCTAssertEqual(RulerScrub.clampPosition(140, to: 16...100), 100)
+    }
+
     @MainActor
     func testMissingApproachNoteExplainsTheTable() throws {
         let note = try XCTUnwrap(ClosestApproachLanding.missingNote())
@@ -520,6 +773,88 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertEqual(text, CGFloat(Int(floor((room - padding) / line))) * line, accuracy: 0.01)
         XCTAssertLessThanOrEqual(viewport + ApproachLineGrid.chevronRow, cap + 0.001)
         XCTAssertEqual(ApproachLineGrid.viewport(room: 180, lineHeight: 0), 180, accuracy: 0.001)
+        let ended = ApproachLineGrid.endedPlateHeight(offered: cap, lineHeight: line)
+        XCTAssertEqual(ended, viewport, accuracy: 0.01)
+        XCTAssertEqual(ended + ApproachLineGrid.chevronRow, ApproachLineGrid.plateHeight(offered: cap, lineHeight: line), accuracy: 0.01)
+        XCTAssertEqual(ended - padding, CGFloat(Int((ended - padding) / line)) * line, accuracy: 0.01)
+    }
+
+    /// Open card on a 402×874 phone. The bottom stays one gap above the credit and the sheet
+    /// at the default size, AX3, AX4, and AX5. The panel is the limit when it sits above the credit.
+    @MainActor
+    func testOpenApproachCardCapClearsCreditAndPanel() throws {
+        let screen: CGFloat = 874
+        let safeTop: CGFloat = 62
+        let revealed: CGFloat = 471
+        let width: CGFloat = 362
+        let categories: [(String, UIContentSizeCategory)] = [
+            ("default", .large),
+            ("AX3", .accessibilityExtraLarge),
+            ("AX4", .accessibilityExtraExtraLarge),
+            ("AX5", .accessibilityExtraExtraExtraLarge),
+        ]
+        var previousCredit: CGFloat = 0
+        var creditHeights: [CGFloat] = []
+        for (name, category) in categories {
+            let traits = UITraitCollection { traits in
+                traits.userInterfaceIdiom = .phone
+                traits.preferredContentSizeCategory = category
+            }
+            let creditHeight = CreditLine.height(fitting: width, compatibleWith: traits)
+            XCTAssertGreaterThan(creditHeight, 8, name)
+            XCTAssertGreaterThanOrEqual(creditHeight, previousCredit - 0.001, name)
+            previousCredit = creditHeight
+            creditHeights.append(creditHeight)
+
+            let panelTop = screen - revealed
+            let creditTop = panelTop - ClosedCaptionMetrics.openCreditLift - creditHeight
+            XCTAssertLessThan(creditTop, panelTop, name)
+            let cardHeight = ClosedCaptionMetrics.openApproachCardMaxHeight(
+                screenHeight: screen,
+                revealed: revealed,
+                creditHeight: creditHeight,
+                safeTop: safeTop
+            )
+            let limited = ClosedCaptionMetrics.openApproachCardMaxHeight(
+                bottomLimit: min(creditTop, panelTop),
+                safeTop: safeTop
+            )
+            XCTAssertEqual(cardHeight, limited, accuracy: 0.001, name)
+            let top = ClosedCaptionMetrics.approachCardTopInset(safeTop: safeTop)
+            let cardBottom = top + cardHeight
+            let limit = min(creditTop, panelTop) - ClosedCaptionMetrics.approachCardGap
+            XCTAssertGreaterThan(cardHeight, 0, name)
+            XCTAssertEqual(cardBottom, limit, accuracy: 0.001, name)
+            XCTAssertLessThanOrEqual(cardBottom, limit + 0.001, name)
+
+            let room = max(0, cardHeight - ApproachLineGrid.chevronRow)
+            let viewport = ApproachLineGrid.viewport(room: room, lineHeight: 33)
+            let plate = ApproachLineGrid.plateHeight(offered: cardHeight, lineHeight: 33)
+            XCTAssertEqual(plate, min(cardHeight, viewport + ApproachLineGrid.chevronRow), accuracy: 0.01, name)
+            XCTAssertLessThanOrEqual(plate, cardHeight + 0.001, name)
+            XCTAssertLessThan(cardHeight - plate, 34, name)
+        }
+        let defaultCredit = try XCTUnwrap(creditHeights.first)
+        let largestCredit = try XCTUnwrap(creditHeights.last)
+        XCTAssertGreaterThan(largestCredit, defaultCredit)
+
+        let panelTop: CGFloat = 300
+        let creditTop: CGFloat = 420
+        let bottomLimit = min(creditTop, panelTop)
+        XCTAssertEqual(bottomLimit, panelTop, accuracy: 0.001)
+        let top = ClosedCaptionMetrics.approachCardTopInset(safeTop: safeTop)
+        let panelLimited = ClosedCaptionMetrics.openApproachCardMaxHeight(
+            bottomLimit: bottomLimit,
+            safeTop: safeTop
+        )
+        let cardBottom = top + panelLimited
+        XCTAssertEqual(
+            panelLimited,
+            panelTop - ClosedCaptionMetrics.approachCardGap - top,
+            accuracy: 0.001
+        )
+        XCTAssertLessThanOrEqual(cardBottom, panelTop - ClosedCaptionMetrics.approachCardGap + 0.001)
+        XCTAssertLessThan(cardBottom, creditTop - ClosedCaptionMetrics.approachCardGap)
     }
 
     private static func bareTimeline(cab: Bool, utc: String, instrument: String, frames: Bool) throws -> Timeline {

@@ -90,6 +90,10 @@ struct AboutView: View {
                         Text(attribution.credit)
                             .font(HybridFont.text(17, relativeTo: .headline)).fontWeight(.semibold)
                     }
+                    Text("Names only. No in-flight portrait is bundled.")
+                        .font(HybridFont.text(17, relativeTo: .body))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("crew-note")
                     Text("This app is not affiliated with or endorsed by NASA.")
                         .font(HybridFont.text(17, relativeTo: .body))
                     Text("Now Playing lists “NASA/Artemis II Crew” as the artist. That is the credit for the crew recording, not a sign that NASA publishes this app.")

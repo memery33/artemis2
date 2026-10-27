@@ -22,15 +22,12 @@ struct CrewRow: View {
     }
 
     private var standardCrew: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                ForEach(model.timeline?.crew ?? []) { member in
-                    standardChip(member)
-                }
+        HStack(spacing: 4) {
+            ForEach(model.timeline?.crew ?? []) { member in
+                standardChip(member)
             }
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            note(lineLimit: 1, scale: 0.8)
         }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }
 
     /// One chip per line, name scaled to the column, so a chip cannot sit past the phone.
@@ -39,7 +36,6 @@ struct CrewRow: View {
             ForEach(model.timeline?.crew ?? []) { member in
                 accessibilityChip(member)
             }
-            note(lineLimit: 2, scale: 0.5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -57,7 +53,7 @@ struct CrewRow: View {
                     .fontWeight(.medium)
                     .foregroundStyle(HybridColor.cream)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.85)
+                    .minimumScaleFactor(1)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
@@ -109,15 +105,6 @@ struct CrewRow: View {
             }
     }
 
-    private func note(lineLimit: Int, scale: CGFloat) -> some View {
-        Text("Names only. No in-flight portrait is bundled.")
-            .font(HybridFont.text(10, relativeTo: .caption2))
-            .foregroundStyle(dynamicTypeSize.isAccessibilitySize ? HybridColor.dim.opacity(0.75) : HybridColor.cream)
-            .lineLimit(lineLimit)
-            .minimumScaleFactor(scale)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("crew-note")
-    }
 }
 
 struct LyricLines: View {
