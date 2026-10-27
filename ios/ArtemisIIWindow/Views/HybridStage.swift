@@ -1205,8 +1205,8 @@ struct DocumentaryCaption: View {
     /// the height it is offered instead of drawing through the card.
     var fitOfferedHeight: Bool = false
 
-    /// Panel quotes stay at two lines at the default size. Accessibility sizes let the
-    /// open-panel italic quote grow with Dynamic Type; the column scrolls. The closed
+    /// The open panel shows the whole crew line. A two-line cap hid the rest of the
+    /// sentence behind an ellipsis. Accessibility sizes wrap as well. The closed
     /// caption at those sizes stays capped at three so the stage stays on the phone.
     /// The full line remains in Lines.
     private var quoteLineLimit: Int? {
@@ -1214,10 +1214,7 @@ struct DocumentaryCaption: View {
             return 3
         }
         if compact {
-            if dynamicTypeSize.isAccessibilitySize {
-                return nil
-            }
-            return 2
+            return nil
         }
         if dynamicTypeSize.isAccessibilitySize {
             return 3
@@ -1225,9 +1222,9 @@ struct DocumentaryCaption: View {
         return nil
     }
 
-    /// The open panel at an accessibility size uses the scaled italic face and wraps.
-    /// The closed caption at those sizes still shrinks into its cap. Default type
-    /// keeps the natural size: the closed caption is uncapped, and the panel quote is two lines.
+    /// The open panel uses the natural italic face and wraps, at the default size and
+    /// at accessibility sizes. The closed caption at those sizes still shrinks into its cap.
+    /// Default type keeps the natural size for the uncapped closed caption too.
     private var quoteUsesNaturalHeight: Bool {
         if fitOfferedHeight {
             return false
@@ -1252,7 +1249,7 @@ struct DocumentaryCaption: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+        VStack(alignment: .leading, spacing: compact ? 2 : 8) {
             if let line {
                 if let name = SpeakerLabel.display(line.speaker) {
                     speakerName(name)
@@ -1262,10 +1259,9 @@ struct DocumentaryCaption: View {
                     font: HybridFont.display(compact ? 15 : 28, relativeTo: compact ? .subheadline : .title2, italic: true),
                     color: HybridColor.cream,
                     annotationColor: HybridColor.dim,
-                    // The panel column is about 198 pt wide on a 402×874 phone. Two lines
-                    // are the tallest quote that leaves the clock and the transport fully
-                    // visible above the window pills. The longest bundled line is ten lines
-                    // at that width, so a taller cap would push the pills into Lines.
+                    // The panel column is about 198 pt wide. The whole line wraps. The clock,
+                    // Play, and the bottom bar stay pinned, and this middle scrolls when a
+                    // line is taller than the slot. The longest bundled line is ten lines.
                     lineLimit: quoteLineLimit,
                     minimumScaleFactor: quoteUsesNaturalHeight ? CGFloat(1) : CGFloat(0.5)
                 )
@@ -1322,10 +1318,14 @@ struct DocumentaryCaption: View {
         let label = Text("\(frame.nasaID) · \(Stamp.clock(frame.utc)) UTC")
             .font(HybridFont.text(12, relativeTo: .caption))
         if compact {
+            let idLineLimit: Int? = dynamicTypeSize.isAccessibilitySize ? Optional(2) : nil
+            let idScale: CGFloat = dynamicTypeSize.isAccessibilitySize ? CGFloat(0.4) : CGFloat(1)
             label
                 .foregroundStyle(HybridColor.cream)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.4 : 0.6)
+                // The id fits the column on one line at the default size. A nil limit
+                // lets a longer id wrap instead of scaling down or ending in an ellipsis.
+                .lineLimit(idLineLimit)
+                .minimumScaleFactor(idScale)
                 .fixedSize(horizontal: false, vertical: !fitOfferedHeight)
                 .padding(.horizontal, 6)
                 .background {
@@ -1382,11 +1382,10 @@ struct ControlPanel: View {
         .sheet(isPresented: $moments) { MomentsSheet() }
     }
 
-    /// Default type pins the quote above the window pills so a wrap cannot draw through them.
-    /// Accessibility sizes (AX1–AX5) scale that quote, the pills, the crew row, and Lines
-    /// past the 437 pt sheet, which used to collapse the clock scroller and hide play/pause.
-    /// Those sizes put the whole column in one scroller, with the clock and transport first,
-    /// so play/pause stays on screen and the rows below can scroll.
+    /// Default type pins the clock, Play, and the bottom bar. The quote, window pills,
+    /// and crew are the only rows that scroll, and only when they are taller than the slot.
+    /// Accessibility sizes (AX1–AX5) put the whole column in one scroller, clock and
+    /// transport first, so play/pause stays reachable and the rows below can scroll.
     @ViewBuilder
     private var column: some View {
         if dynamicTypeSize.isAccessibilitySize {
@@ -1397,23 +1396,29 @@ struct ControlPanel: View {
     }
 
     private var standardColumn: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: ControlColumnMetrics.stackSpacing) {
             handle
+            clocks
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+            transport
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    clocks
-                    transport
+                VStack(alignment: .leading, spacing: ControlColumnMetrics.stackSpacing) {
+                    panelCaption
+                    windowRow
+                        .fixedSize(horizontal: false, vertical: true)
+                    CrewRow()
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .accessibilityIdentifier("transport-scroll")
-            panelCaption
-            windowRow
-                .fixedSize(horizontal: false, vertical: true)
-            CrewRow()
-                .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("panel-middle")
             secondaryRow
                 .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
         }
     }
 
@@ -1531,16 +1536,15 @@ struct ControlPanel: View {
                     .monospacedDigit()
                     .foregroundStyle(HybridColor.cream)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    .minimumScaleFactor(1)
                     .accessibilityHidden(true)
-                // One line at the default size. The line scales down to fit the column.
-                // Accessibility sizes stack UTC and MET above; a second line here pushes Play
-                // past the end of this scroller.
+                // One line. Tabular Inter at 13 pt is about 236 pt wide, past the 198 pt
+                // column, so it had to shrink. 10 pt is about 181 pt and stays unscaled.
                 Text("\(clocks.utc) · \(clocks.met)")
-                    .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
+                    .font(HybridFont.text(10, relativeTo: .caption).monospacedDigit())
                     .foregroundStyle(HybridColor.dim)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("mission-clock")
             }
@@ -1610,7 +1614,7 @@ struct ControlPanel: View {
         } else {
             text
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(1)
                 .frame(minWidth: 44, minHeight: 44)
         }
     }
@@ -1662,7 +1666,7 @@ struct ControlPanel: View {
         } else {
             text
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(1)
                 .padding(.horizontal, 12)
                 .frame(minWidth: 44, minHeight: 44)
                 .background {
@@ -1681,7 +1685,7 @@ struct ControlPanel: View {
         } else {
             // Two columns beside the rail. Four full words do not fit a 44 pt row without scaling, which clipped them.
             // About stays on Approach's row. Each slot is 95 pt on a 402 pt phone.
-            VStack(spacing: ControlColumnMetrics.barSpacing) {
+            VStack(spacing: ControlColumnMetrics.barRowSpacing) {
                 HStack(spacing: ControlColumnMetrics.barSpacing) {
                     textButton("Lines", identifier: "lines-button") { transcript = true }
                     textButton("Moments", identifier: "moments-button") { moments = true }
@@ -1746,7 +1750,12 @@ struct ControlPanel: View {
 enum ControlColumnMetrics {
     static let leading: CGFloat = 20
     static let trailing: CGFloat = 8
+    /// Vertical gap between pinned rows. Tighter than the old 8 pt stack so Play and the bar both fit.
+    static let stackSpacing: CGFloat = 4
+    /// Horizontal gap between the two bar columns. The 95 pt slot math uses this.
     static let barSpacing: CGFloat = 8
+    /// Vertical gap between the two 44 pt bar rows.
+    static let barRowSpacing: CGFloat = 4
     static let minimumTap: CGFloat = 44
 
     /// Equal share of the column after padding. Two columns, one gap.

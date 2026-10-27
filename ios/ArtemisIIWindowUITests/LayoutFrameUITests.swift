@@ -94,7 +94,8 @@ final class LayoutFrameUITests: XCTestCase {
     }
 
     /// The longest bundled line is Hansen at 19:47:31.641Z. Begin parks there, paused.
-    /// The panel shows two lines of it, still above Window 2, and the pills stay above Lines.
+    /// The panel shows the whole line above the window pills. A long line scrolls in the
+    /// middle; Play stays on screen, and the pills stay reachable above Lines.
     func testLongestQuoteStaysAboveTheWindowPills() {
         let app = FlybyUILaunch.application(["-seekLineUTC", "2026-04-06T19:47:31.641Z"])
         app.launch()
@@ -121,32 +122,47 @@ final class LayoutFrameUITests: XCTestCase {
             texts = caption.staticTexts.allElementsBoundByIndex
         }
         XCTAssertGreaterThanOrEqual(texts.count, 2)
+        let windowDeadline = Date().addingTimeInterval(5)
+        var windowFrame = window.frame
+        while Date() < windowDeadline, windowFrame.height <= 1 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            windowFrame = window.frame
+        }
+        XCTAssertGreaterThan(windowFrame.height, 1)
         for text in texts {
             XCTAssertGreaterThan(text.frame.height, 1)
-            XCTAssertLessThanOrEqual(text.frame.maxY, window.frame.minY + 0.5)
+            XCTAssertLessThanOrEqual(text.frame.minY, window.frame.minY + 0.5)
         }
-        XCTAssertLessThanOrEqual(window.frame.maxY, lines.frame.minY + 0.5)
-        let frameLine = caption.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "art002e")).firstMatch
-        XCTAssertTrue(frameLine.waitForExistence(timeout: 8))
-        // The quote is Fraunces Italic 15. The frame line is Inter 12. Their line boxes
-        // are 19 pt and 15 pt, so one quote line is 19/15 of the measured frame line.
-        let frameDeadline = Date().addingTimeInterval(5)
-        var frameHeight: CGFloat = frameLine.frame.height
-        while Date() < frameDeadline, frameHeight <= 1 {
+        XCTAssertTrue(quote.label.contains("north side"))
+        XCTAssertFalse(quote.label.contains("…"))
+        XCTAssertFalse(quote.label.contains("..."))
+        // Fraunces Italic 15 is about a 19 pt line box. Two lines are about 38 pt.
+        // The whole Hansen line is ten lines, so a two-line cap cannot pass this.
+        let quoteDeadline = Date().addingTimeInterval(5)
+        var quoteHeight: CGFloat = quote.frame.height
+        while Date() < quoteDeadline, quoteHeight <= 50 {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-            frameHeight = frameLine.frame.height
+            quoteHeight = quote.frame.height
         }
-        XCTAssertGreaterThan(frameHeight, 1)
-        let quoteLine: CGFloat = frameHeight * CGFloat(19) / CGFloat(15)
-        let twoLines: CGFloat = quoteLine * CGFloat(2) + CGFloat(8)
-        XCTAssertGreaterThan(quote.frame.height, 1)
-        XCTAssertLessThanOrEqual(quote.frame.height, twoLines)
+        XCTAssertGreaterThan(quote.frame.height, 50)
+        let middle = app.scrollViews["panel-middle"]
+        XCTAssertTrue(middle.waitForExistence(timeout: 8))
+        reveal(window, app: app, scroll: middle)
+        XCTAssertTrue(window.isHittable)
+        XCTAssertLessThanOrEqual(window.frame.maxY, lines.frame.minY + 0.5)
         let toggle = app.buttons["playback-toggle"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        let toggleReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == true"),
+            object: toggle
+        )
+        wait(for: [toggleReady], timeout: 3)
         XCTAssertTrue(toggle.isHittable)
+        XCTAssertGreaterThanOrEqual(toggle.frame.minY, -0.5)
+        XCTAssertLessThanOrEqual(toggle.frame.maxY, app.frame.maxY + 0.5)
     }
 
-    /// Default type. The clock stays one line, and the Play circle sits inside the transport scroller.
+    /// Default type. The clock stays one line. Play, −15 s, and +15 s sit fully on screen, above the bar.
     func testPlayToggleSitsInsideTheOpenPanel() {
         let app = FlybyUILaunch.application()
         app.launch()
@@ -158,40 +174,62 @@ final class LayoutFrameUITests: XCTestCase {
         open.tap()
 
         let toggle = app.buttons["playback-toggle"]
-        let scroll = app.scrollViews["transport-scroll"]
+        let back = app.buttons["skip-back"]
+        let forward = app.buttons["skip-forward"]
+        let lines = app.buttons["lines-button"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-        XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+        XCTAssertTrue(back.waitForExistence(timeout: 8))
+        XCTAssertTrue(forward.waitForExistence(timeout: 8))
+        XCTAssertTrue(lines.waitForExistence(timeout: 8))
         let clock = element(named: "mission-clock", in: app)
         XCTAssertTrue(clock.waitForExistence(timeout: 8))
 
         let deadline = Date().addingTimeInterval(3)
         var toggleFrame = toggle.frame
-        var scrollFrame = scroll.frame
+        var backFrame = back.frame
+        var forwardFrame = forward.frame
+        var linesFrame = lines.frame
         var clockFrame = clock.frame
         while Date() < deadline {
             toggleFrame = toggle.frame
-            scrollFrame = scroll.frame
+            backFrame = back.frame
+            forwardFrame = forward.frame
+            linesFrame = lines.frame
             clockFrame = clock.frame
-            let inside = scrollFrame.height > 1
+            let onScreen = fullyVisible(toggleFrame, in: app, above: linesFrame)
                 && toggleFrame.height >= 55
-                && toggleFrame.minY >= scrollFrame.minY - 0.5
-                && toggleFrame.maxY <= scrollFrame.maxY + 0.5
-                && toggleFrame.minX >= scrollFrame.minX - 0.5
-                && toggleFrame.maxX <= scrollFrame.maxX + 0.5
-                && toggleFrame.maxY <= app.frame.maxY + 0.5
+                && fullyVisible(backFrame, in: app, above: linesFrame)
+                && backFrame.height >= 44
+                && fullyVisible(forwardFrame, in: app, above: linesFrame)
+                && forwardFrame.height >= 44
+                && toggle.isHittable
+                && back.isHittable
+                && forward.isHittable
                 && clockFrame.height > 1
                 && clockFrame.height < 26
-            if inside { break }
+            if onScreen { break }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         XCTAssertGreaterThanOrEqual(toggleFrame.height, 55)
-        XCTAssertGreaterThanOrEqual(toggleFrame.minY, scrollFrame.minY - 0.5)
-        XCTAssertLessThanOrEqual(toggleFrame.maxY, scrollFrame.maxY + 0.5)
-        XCTAssertGreaterThanOrEqual(toggleFrame.minX, scrollFrame.minX - 0.5)
-        XCTAssertLessThanOrEqual(toggleFrame.maxX, scrollFrame.maxX + 0.5)
-        XCTAssertLessThanOrEqual(toggleFrame.maxY, app.frame.maxY + 0.5)
+        XCTAssertTrue(fullyVisible(toggleFrame, in: app, above: linesFrame))
+        XCTAssertGreaterThanOrEqual(backFrame.height, 44)
+        XCTAssertTrue(fullyVisible(backFrame, in: app, above: linesFrame))
+        XCTAssertGreaterThanOrEqual(forwardFrame.height, 44)
+        XCTAssertTrue(fullyVisible(forwardFrame, in: app, above: linesFrame))
+        XCTAssertTrue(toggle.isHittable)
+        XCTAssertTrue(back.isHittable)
+        XCTAssertTrue(forward.isHittable)
         XCTAssertGreaterThan(clockFrame.height, 1)
         XCTAssertLessThan(clockFrame.height, 26)
+    }
+
+    /// A control is on the phone and ends at or above the bottom bar.
+    private func fullyVisible(_ frame: CGRect, in app: XCUIApplication, above limit: CGRect) -> Bool {
+        frame.minX >= -0.5
+            && frame.maxX <= app.frame.width + 0.5
+            && frame.minY >= -0.5
+            && frame.maxY <= app.frame.maxY + 0.5
+            && frame.maxY <= limit.minY + 0.5
     }
 
     /// AX3 is UICTContentSizeCategoryAccessibilityXL (not the Swift name AccessibilityExtraLarge).
@@ -463,13 +501,17 @@ final class LayoutFrameUITests: XCTestCase {
     /// Approach sits on the bottom bar. At the default size it shares a row with About. Tapping it opens the card.
     private func assertBarApproach(_ app: XCUIApplication, category: String?) {
         let bar = app.buttons["bar-approach"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 8))
         if category != nil {
             let scroll = app.scrollViews["panel-scroll"]
             XCTAssertTrue(scroll.waitForExistence(timeout: 8))
             reveal(bar, app: app, scroll: scroll)
-        } else {
-            XCTAssertTrue(bar.waitForExistence(timeout: 8))
         }
+        let hittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == true"),
+            object: bar
+        )
+        wait(for: [hittable], timeout: 3)
         XCTAssertTrue(bar.isHittable)
         XCTAssertGreaterThanOrEqual(bar.frame.height, 44 - 0.5)
         XCTAssertGreaterThanOrEqual(bar.frame.minX, -0.5)
