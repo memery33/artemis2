@@ -507,24 +507,34 @@ final class LayoutFrameUITests: XCTestCase {
             let scroll = app.scrollViews["panel-scroll"]
             XCTAssertTrue(scroll.waitForExistence(timeout: 8))
             reveal(bar, app: app, scroll: scroll)
+            let hittable = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "isHittable == true"),
+                object: bar
+            )
+            wait(for: [hittable], timeout: 5)
+            XCTAssertTrue(bar.isHittable)
         } else {
             waitForOpenPanelToSettle(app)
         }
-        let hittable = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "isHittable == true"),
-            object: bar
-        )
-        wait(for: [hittable], timeout: 5)
-        XCTAssertTrue(bar.isHittable)
         XCTAssertGreaterThanOrEqual(bar.frame.height, 44 - 0.5)
         XCTAssertGreaterThanOrEqual(bar.frame.minX, -0.5)
         XCTAssertLessThanOrEqual(bar.frame.maxX, app.frame.width + 0.5)
+        XCTAssertGreaterThanOrEqual(bar.frame.minY, -0.5)
+        XCTAssertLessThanOrEqual(bar.frame.maxY, app.frame.maxY + 0.5)
         if category == nil {
             let about = app.buttons["about-button"]
             XCTAssertTrue(about.waitForExistence(timeout: 4))
             XCTAssertEqual(bar.frame.midY, about.frame.midY, accuracy: 8)
+            // The mini-bar scrub drag ends in this band. After that drag, XCUITest
+            // reports Lines, Moments, About, and Approach as not hittable while Play,
+            // above the drag, stays hittable. A coordinate tap still opens the card.
+            // The mini bar leaves the tree when the panel opens, and the bottom-edge
+            // strip does not hit-test while the panel is open, so nothing of ours
+            // remains over the buttons.
+            bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        } else {
+            bar.tap()
         }
-        bar.tap()
         let gap = element(named: "approach-gap", in: app)
         XCTAssertTrue(gap.waitForExistence(timeout: 8))
     }
@@ -775,17 +785,24 @@ final class LayoutFrameUITests: XCTestCase {
         abs(lhs - rhs) < CGFloat(0.5)
     }
 
-    /// Scrolls until `element` sits fully inside `scroll` and is hittable. Swipes stop at 16.
-    /// The old stop used the phone's bottom, so a pill under the pinned bar looked done.
+    /// Scrolls until `element` sits fully inside `scroll` and is hittable.
+    /// Swipes stop at 16. There is no clock: one swipe takes about two seconds, and the
+    /// closest-approach row at AX5 needs six to eight swipes from the top.
+    /// `assertWithinWindow` calls this and has no second timer.
     private func reveal(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
         XCTAssertTrue(element.waitForExistence(timeout: 8))
         let swipeCap = 16
         var swipes = 0
-        let deadline = Date().addingTimeInterval(8)
-        while swipes < swipeCap, Date() < deadline {
+        var idle = 0
+        while swipes < swipeCap {
             let frame = element.frame
             let viewport = scroll.frame
-            if viewport.width <= 1 || viewport.height <= 1 || viewport.maxX > app.frame.maxX + 1 {
+            let viewportReady = viewport.width > 1
+                && viewport.height > 1
+                && viewport.maxX <= app.frame.maxX + CGFloat(1)
+            if !viewportReady {
+                idle += 1
+                if idle > 30 { break }
                 RunLoop.current.run(until: Date().addingTimeInterval(0.05))
                 continue
             }
@@ -793,9 +810,12 @@ final class LayoutFrameUITests: XCTestCase {
                 if element.isHittable {
                     break
                 }
+                idle += 1
+                if idle > 30 { break }
                 RunLoop.current.run(until: Date().addingTimeInterval(0.05))
                 continue
             }
+            idle = 0
             let upward = frame.minY < viewport.minY - 0.5
             let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: upward ? 0.48 : 0.72))
             let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: upward ? 0.72 : 0.48))
@@ -823,6 +843,7 @@ final class LayoutFrameUITests: XCTestCase {
     }
 
     /// Scrolls until `element` is inside the scroll container, then requires it hittable there.
+    /// The swipe budget lives in `reveal`. This does not add a second time limit.
     private func assertWithinWindow(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
         reveal(element, app: app, scroll: scroll)
         XCTAssertTrue(frameIsInsideScroll(element.frame, scroll: scroll.frame))
