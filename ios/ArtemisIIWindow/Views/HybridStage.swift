@@ -1733,8 +1733,8 @@ struct ControlPanel: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .frame(
-                    maxWidth: .infinity,
                     minWidth: ControlColumnMetrics.minimumTap,
+                    maxWidth: .infinity,
                     minHeight: ControlColumnMetrics.minimumTap
                 )
                 .contentShape(Rectangle())
