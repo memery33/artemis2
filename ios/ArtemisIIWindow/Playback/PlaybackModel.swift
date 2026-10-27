@@ -98,6 +98,8 @@ final class PlaybackModel: NSObject, ObservableObject {
     private var rebuilding = false
     /// The mission scrubber owns the clock until the finger lifts.
     private(set) var scrubbing = false
+    /// True while the 4 Hz locked-phone timer is armed. Tests set it without starting the timer.
+    private(set) var lockedClockArmed = false
     private var resumeAfterInterrupt = false
     private var commandsInstalled = false
     private var lastWall: CFTimeInterval?
@@ -260,6 +262,8 @@ final class PlaybackModel: NSObject, ObservableObject {
                 holdUntil = nil
                 holdSeconds = 0
             } else {
+                // Intended. The end of Flyby is not the last span: Play opens the Cab Cam
+                // closest-approach card and stays paused. Play from that card rewinds and starts.
                 ended = false
                 showClosestApproach()
                 return
@@ -597,7 +601,12 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard scrubbing, let span = activeSpan else { return }
         guard date >= span.start else { return }
         let latest = max(span.start, span.end.addingTimeInterval(-Self.scrubEndMargin))
-        utc = min(date, latest)
+        // A span shorter than the margin has no interior. Park on its start.
+        guard latest > span.start else {
+            utc = span.start
+            return
+        }
+        utc = RulerScrub.clamp(date, to: [(start: span.start, end: latest)])
     }
 
     /// `markEnd` is false for a ruler release. The drag parks at least
@@ -1226,11 +1235,24 @@ final class PlaybackModel: NSObject, ObservableObject {
         guard let end = activeSpan?.end else { return }
         if continuesIntoClosestApproach {
             utc = end
+            // Pause on the span end so the 4 Hz clock and the silent-tail task stop.
+            // Assigning `playing = false` left both running on a locked phone.
+            pause(user: user)
+            utc = end
             showClosestApproach()
-            playing = false
+            // The photograph can sit inside a recording, which starts the node.
+            // The card stays paused. Hold the landing so this pause cannot walk the clock off it.
+            if playing {
+                let landed = utc
+                let gap = approachGap
+                let informational = approachInformational
+                pause(user: user)
+                utc = landed
+                approachGap = gap
+                approachInformational = informational
+            }
             ended = false
             FlybyLiveActivity.scheduleEndAllImmediately()
-            refreshNowPlaying(force: true)
             return
         }
         utc = end
@@ -1252,6 +1274,7 @@ final class PlaybackModel: NSObject, ObservableObject {
     private func startBackgroundClock() {
         guard !RuntimeHost.isUnitTestHost else { return }
         guard lifetime.backgroundClock == nil else { return }
+        lockedClockArmed = true
         let timer = Timer(timeInterval: 0.25, repeats: true) { @Sendable [weak self] _ in
             MainActor.assumeIsolated {
                 self?.backgroundTick()
@@ -1263,9 +1286,16 @@ final class PlaybackModel: NSObject, ObservableObject {
     }
 
     private func stopBackgroundClock() {
+        lockedClockArmed = false
         lifetime.backgroundClock?.invalidate()
         lifetime.backgroundClock = nil
         endSilentTailTask()
+    }
+
+    /// Marks the locked-phone clock as running without installing the 4 Hz timer.
+    func armLockedClockForTest() {
+        lockedClockArmed = true
+        lifetime.backgroundClock = Timer(timeInterval: 3600, repeats: false) { @Sendable _ in }
     }
 
     /// Keeps the process scheduled through the tail after the last file stops.

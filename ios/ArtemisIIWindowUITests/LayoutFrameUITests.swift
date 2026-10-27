@@ -163,7 +163,7 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertLessThanOrEqual(toggle.frame.maxY, app.frame.maxY + 0.5)
     }
 
-    /// Default type. The clock stays one line. Play, −15 s, and +15 s sit fully on screen, above the bar.
+    /// Default type. UTC and MET may wrap to two lines. Play, −15 s, and +15 s sit fully on screen, above the bar.
     func testPlayToggleSitsInsideTheOpenPanel() {
         let app = FlybyUILaunch.application()
         app.launch()
@@ -207,7 +207,7 @@ final class LayoutFrameUITests: XCTestCase {
                 && back.isHittable
                 && forward.isHittable
                 && clockFrame.height > 1
-                && clockFrame.height < 26
+                && clockFrame.height < 40
             if onScreen { break }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
@@ -221,7 +221,55 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(back.isHittable)
         XCTAssertTrue(forward.isHittable)
         XCTAssertGreaterThan(clockFrame.height, 1)
-        XCTAssertLessThan(clockFrame.height, 26)
+        XCTAssertLessThan(clockFrame.height, 40)
+    }
+
+    /// The lower 12 pt of mini Play and the scrubber used to hit the panel-edge strip.
+    /// A tap 4 pt above each bottom edge is inside that band and must reach the control.
+    func testMiniRowBottomEdgeHitsPlayAndTheScrubber() {
+        let app = FlybyUILaunch.application()
+        app.launch()
+        let begin = app.buttons["Begin Flyby"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 15))
+        begin.tap()
+
+        let play = app.buttons["mini-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 15))
+        let playing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Pause"), object: play)
+        wait(for: [playing], timeout: 5)
+        XCTAssertEqual(play.label, "Pause")
+
+        let handle = app.buttons["open-panel"]
+        XCTAssertTrue(handle.waitForExistence(timeout: 4))
+        XCTAssertGreaterThanOrEqual(handle.frame.height, 44 - 0.5)
+        XCTAssertLessThanOrEqual(handle.frame.maxY, play.frame.minY + 0.5)
+
+        let edge = element(named: "panel-edge", in: app)
+        XCTAssertTrue(edge.waitForExistence(timeout: 4))
+        XCTAssertGreaterThanOrEqual(edge.frame.minY, play.frame.maxY - 1)
+
+        play.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
+            .withOffset(CGVector(dx: 0, dy: -4))
+            .tap()
+        let paused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Play"), object: play)
+        wait(for: [paused], timeout: 5)
+        XCTAssertEqual(play.label, "Play")
+
+        let scrubber = element(named: "mini-scrubber", in: app)
+        XCTAssertTrue(scrubber.waitForExistence(timeout: 4))
+        let before = scrubber.value as? String ?? ""
+        scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 1))
+            .withOffset(CGVector(dx: 0, dy: -4))
+            .tap()
+        let deadline = Date().addingTimeInterval(4)
+        var after = scrubber.value as? String ?? ""
+        while Date() < deadline {
+            after = scrubber.value as? String ?? ""
+            if !after.isEmpty, after != before { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertFalse(after.isEmpty)
+        XCTAssertNotEqual(after, before)
     }
 
     /// A control is on the phone and ends at or above the bottom bar.
@@ -525,12 +573,11 @@ final class LayoutFrameUITests: XCTestCase {
             let about = app.buttons["about-button"]
             XCTAssertTrue(about.waitForExistence(timeout: 4))
             XCTAssertEqual(bar.frame.midY, about.frame.midY, accuracy: 8)
-            // The mini-bar scrub drag ends in this band. After that drag, XCUITest
-            // reports Lines, Moments, About, and Approach as not hittable while Play,
-            // above the drag, stays hittable. A coordinate tap still opens the card.
-            // The mini bar leaves the tree when the panel opens, and the bottom-edge
-            // strip does not hit-test while the panel is open, so nothing of ours
-            // remains over the buttons.
+            // The closed mini bar's play row used to sit under panel-edge. That overlap
+            // is gone, and the strip is not in the tree once the panel is open, so it
+            // was not what made Approach report not hittable after the scrub drag.
+            // XCUITest still reports the open bar's buttons not hittable while Play,
+            // above the drag, stays hittable. A coordinate tap opens the card.
             bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         } else {
             bar.tap()

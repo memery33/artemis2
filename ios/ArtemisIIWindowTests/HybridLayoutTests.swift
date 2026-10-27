@@ -420,6 +420,92 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertFalse(flyby.playing)
     }
 
+    /// Play at the end of Flyby opens the Cab Cam closest-approach card and stays paused.
+    /// That is the parked-end behavior: a second Play, from the card, rewinds and starts.
+    @MainActor
+    func testPlayAtFlybyEndOpensClosestApproachAndStaysPaused() throws {
+        let model = PlaybackModel()
+        let flyby = try XCTUnwrap(model.timeline?.window)
+        let cab = try XCTUnwrap(model.timeline?.cabRun)
+        let landing = try XCTUnwrap(model.closestApproach)
+        model.seek(to: flyby.end)
+        XCTAssertTrue(model.ended)
+        XCTAssertFalse(model.playing)
+        model.play()
+        XCTAssertFalse(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertEqual(model.range, .cab)
+        XCTAssertEqual(model.approachGap, landing.gap)
+        XCTAssertEqual(model.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+        model.play()
+        XCTAssertTrue(model.playing)
+        XCTAssertNil(model.approachGap)
+        XCTAssertEqual(model.utc, cab.start)
+    }
+
+    /// The Cab Cam end goes through pause, so the locked-phone clock is stopped behind the card.
+    @MainActor
+    func testCabSpanEndPausesTheLockedClock() throws {
+        let model = PlaybackModel()
+        let cab = try XCTUnwrap(model.timeline?.cabRun)
+        let landing = try XCTUnwrap(model.closestApproach)
+        model.showCabRun()
+        model.playing = true
+        model.armLockedClockForTest()
+        XCTAssertTrue(model.lockedClockArmed)
+        model.utc = cab.end
+        model.advanceDisplayLinkForTest(to: 1)
+        XCTAssertFalse(model.lockedClockArmed)
+        XCTAssertFalse(model.playing)
+        XCTAssertFalse(model.ended)
+        XCTAssertEqual(model.approachGap, landing.gap)
+        XCTAssertEqual(model.utc.timeIntervalSince(landing.date), 0, accuracy: 0.01)
+    }
+
+    /// While the mini bar is up, the bottom-edge strip stops at the play row. The handle's hit target is 44 pt and sits above that row.
+    func testBottomEdgeStripStopsAtTheMiniPlayRow() {
+        XCTAssertGreaterThanOrEqual(ClosedCaptionMetrics.miniHandle, 44)
+        let safe: CGFloat = 34
+        let rowBottom = ClosedCaptionMetrics.miniRowBottom(safeBottom: safe)
+        let strip = ClosedCaptionMetrics.edgeStripHeight(miniBarVisible: true, safeBottom: safe)
+        XCTAssertEqual(strip, rowBottom - 20, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(20 + strip, rowBottom)
+        XCTAssertEqual(ClosedCaptionMetrics.edgeStripHeight(miniBarVisible: false, safeBottom: safe), 44, accuracy: 0.001)
+        let handleBottom = rowBottom + ClosedCaptionMetrics.miniRow + ClosedCaptionMetrics.miniInnerGap
+        XCTAssertGreaterThanOrEqual(handleBottom, rowBottom + ClosedCaptionMetrics.miniRow)
+        XCTAssertGreaterThan(handleBottom, 20 + strip)
+    }
+
+    /// Crossing a mark ticks once. Wiggling back across it inside 0.3 s does not tick again.
+    func testRulerHapticsTickOncePerMarkUntilTheGapPasses() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let mark = start.addingTimeInterval(10)
+        let other = start.addingTimeInterval(20)
+        let now = start.addingTimeInterval(100)
+        let first = RulerHaptics.freshMarks(marks: [mark], from: nil, to: mark, now: now, lastTick: [:])
+        XCTAssertTrue(first.fresh.isEmpty)
+        let crossed = RulerHaptics.freshMarks(marks: [mark], from: start, to: mark, now: now, lastTick: [:])
+        XCTAssertEqual(crossed.fresh, [mark])
+        let wiggle = RulerHaptics.freshMarks(
+            marks: [mark],
+            from: mark.addingTimeInterval(1),
+            to: mark.addingTimeInterval(-1),
+            now: now.addingTimeInterval(0.1),
+            lastTick: crossed.lastTick
+        )
+        XCTAssertTrue(wiggle.fresh.isEmpty)
+        let later = RulerHaptics.freshMarks(
+            marks: [mark],
+            from: start,
+            to: mark,
+            now: now.addingTimeInterval(0.3),
+            lastTick: wiggle.lastTick
+        )
+        XCTAssertEqual(later.fresh, [mark])
+        let both = RulerHaptics.freshMarks(marks: [mark, other], from: start, to: other, now: now, lastTick: [:])
+        XCTAssertEqual(both.fresh, [mark, other])
+    }
+
     /// The collapsed strip hides after four seconds of playback, and only then.
     /// UI tests, a pause, an open panel, or a scrub leave it up. No timer is waited on.
     func testMiniChromeHidesAfterFourSecondsOfPlayback() {
@@ -430,6 +516,12 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: true, scrubbing: false, uiTests: false))
         XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: false, scrubbing: true, uiTests: false))
         XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: false, scrubbing: false, uiTests: true))
+        XCTAssertFalse(MiniChromeFade.armsHide(
+            playing: true, panelOpen: false, scrubbing: false, uiTests: false, voiceOver: true
+        ))
+        XCTAssertFalse(MiniChromeFade.armsHide(
+            playing: true, panelOpen: false, scrubbing: false, uiTests: false, switchControl: true
+        ))
         XCTAssertTrue(MiniChromeFade.isVisible(armed: true, elapsed: .seconds(0)))
         XCTAssertTrue(MiniChromeFade.isVisible(armed: true, elapsed: .milliseconds(3999)))
         XCTAssertFalse(MiniChromeFade.isVisible(armed: true, elapsed: .seconds(4)))
