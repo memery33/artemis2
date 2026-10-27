@@ -1,0 +1,182 @@
+# Home screen name: Orion Window (CFBundleDisplayName).
+# App Store name: Orion Window: Artemis II Flyby.
+# Bundle id stays com.memery33.artemis2window. No NASA insignia.
+name: ArtemisIIWindow
+options:
+  bundleIdPrefix: com.memery33
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    DEVELOPMENT_TEAM: NHYXW2AY53
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "6"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+configs:
+  Debug: debug
+  Release: release
+  # Release optimizations, with testability so the isolation unit tests can link.
+  ReleaseTesting: release
+targets:
+  ArtemisIIWindow:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: ArtemisIIWindow
+        excludes:
+          - PrivacyInfo.xcprivacy
+      - path: ArtemisIIWindow/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: ArtemisIIWindow
+        PRODUCT_MODULE_NAME: ArtemisIIWindow
+        PRODUCT_BUNDLE_IDENTIFIER: com.memery33.artemis2window
+        INFOPLIST_FILE: ArtemisIIWindow/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: NHYXW2AY53
+        TARGETED_DEVICE_FAMILY: "1"
+      configs:
+        Debug:
+          ENABLE_TESTABILITY: YES
+        Release:
+          ENABLE_TESTABILITY: NO
+        ReleaseTesting:
+          ENABLE_TESTABILITY: YES
+    dependencies:
+      - target: ArtemisIIWindowWidget
+        embed: true
+        codeSign: true
+    preBuildScripts:
+      - name: Copy demo data into the app bundle
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          SRC="${SRCROOT}/../demo/data"
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/DemoData"
+          if [ ! -d "${SRC}" ]; then
+            echo "error: missing ${SRC}" >&2
+            exit 1
+          fi
+          mkdir -p "${DEST}"
+          # Footprints are not drawn. The minimap uses timeline targets only.
+          rsync -a --delete --exclude '.DS_Store' --exclude 'footprints.geojson' "${SRC}/" "${DEST}/"
+    scheme:
+      testTargets:
+        - ArtemisIIWindowTests
+        - ArtemisIIWindowUITests
+      gatherCoverageData: false
+  ArtemisIIWindowWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: ArtemisIIWindowWidget
+      - path: ArtemisIIWindow/LiveActivity/FlybyActivityAttributes.swift
+      - path: ArtemisIIWindow/Views/HybridType.swift
+      - path: ArtemisIIWindow/Model/TranscriptMarkup.swift
+      - path: ArtemisIIWindow/Fonts
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: ArtemisIIWindowWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.memery33.artemis2window.widget
+        INFOPLIST_FILE: ArtemisIIWindowWidget/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CURRENT_PROJECT_VERSION: "6"
+        MARKETING_VERSION: "1.0"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: NHYXW2AY53
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+  ArtemisIIWindowTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: ArtemisIIWindowTests
+    dependencies:
+      - target: ArtemisIIWindow
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.memery33.artemis2window.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ArtemisIIWindow.app/ArtemisIIWindow"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    preBuildScripts:
+      - name: Copy timeline into the test bundle
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "${DEST}"
+          cp "${SRCROOT}/../demo/data/timeline.json" "${DEST}/timeline.json"
+  ArtemisIIWindowUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: ArtemisIIWindowUITests
+    dependencies:
+      - target: ArtemisIIWindow
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.memery33.artemis2window.uitests
+        TEST_TARGET_NAME: ArtemisIIWindow
+schemes:
+  ArtemisIIWindow:
+    build:
+      targets:
+        ArtemisIIWindow: all
+        ArtemisIIWindowWidget: all
+        ArtemisIIWindowTests: [test]
+        ArtemisIIWindowUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ArtemisIIWindowTests
+    profile:
+      config: Release
+    analyze:
+      config: Release
+    archive:
+      config: Release
+  # The begin-button crash is a Release isolation trap. Tests use
+  # ReleaseTesting (Release plus testability). Archive and run stay Release.
+  # The unit-test target runs in full, not only the artwork isolation cases.
+  ArtemisIIWindowRelease:
+    build:
+      targets:
+        ArtemisIIWindow: all
+        ArtemisIIWindowWidget: all
+        ArtemisIIWindowTests: [test]
+        ArtemisIIWindowUITests: [test]
+    run:
+      config: Release
+    profile:
+      config: Release
+    analyze:
+      config: Release
+    test:
+      config: ReleaseTesting
+      targets:
+        - ArtemisIIWindowUITests
+        - ArtemisIIWindowTests
+    archive:
+      config: Release

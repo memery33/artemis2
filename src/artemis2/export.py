@@ -154,7 +154,7 @@ def export_replay(
             "provider": pointing.name,
             "note": (
                 "No per-window attitude. The NAIF SPICE bundle is delayed and no CK/FK/SCLK "
-                "is public. Footprints are georeferenced Nikon frames, not a window boresight. "
+                "is public. The photographs are not drawn as footprints, and there is no window boresight. "
                 "A PointingProvider with boresight(utc, window_id) is the drop-in seam."
             ),
         },
@@ -229,12 +229,12 @@ def prepare_frame(src: Path, dest: Path, lines: int | None, samples: int | None)
     dest.parent.mkdir(parents=True, exist_ok=True)
     image = Image.open(src).convert("RGB")
     image = _crop_letterbox(image, lines, samples)
-    # Long edge 1200 keeps a full-screen window sharp enough at a small file size.
+    # Long edge 2700 and WebP quality 72 match the stills that ship in demo/data.
     long_edge = max(image.size)
-    if long_edge > 1200:
-        scale = 1200 / long_edge
+    if long_edge > 2700:
+        scale = 2700 / long_edge
         image = image.resize((int(image.width * scale), int(image.height * scale)), Image.Resampling.LANCZOS)
-    image.save(dest, "WEBP", quality=76, method=4)
+    image.save(dest, "WEBP", quality=72, method=4)
 
 
 def _crop_letterbox(image, lines: int | None, samples: int | None):
