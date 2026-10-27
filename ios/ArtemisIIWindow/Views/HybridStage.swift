@@ -1367,8 +1367,8 @@ struct ControlPanel: View {
 
     var body: some View {
         column
-        .padding(.leading, 20)
-        .padding(.trailing, 8)
+        .padding(.leading, ControlColumnMetrics.leading)
+        .padding(.trailing, ControlColumnMetrics.trailing)
         .padding(.bottom, safeBottom)
         .frame(height: height)
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -1676,9 +1676,17 @@ struct ControlPanel: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            // One row beside the 176 pt rail. Labels keep their own width until the row runs out of room, then they scale together.
-            FittingBar(spacing: 8) {
-                barButtons
+            // Two columns beside the rail. Four full words do not fit a 44 pt row without scaling, which clipped them.
+            // About stays on Approach's row. Each slot is 95 pt on a 402 pt phone.
+            VStack(spacing: ControlColumnMetrics.barSpacing) {
+                HStack(spacing: ControlColumnMetrics.barSpacing) {
+                    textButton("Lines", identifier: "lines-button") { transcript = true }
+                    textButton("Moments", identifier: "moments-button") { moments = true }
+                }
+                HStack(spacing: ControlColumnMetrics.barSpacing) {
+                    textButton("About", identifier: "about-button") { about = true }
+                    textButton("Approach", identifier: "bar-approach") { model.showClosestApproach() }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1715,49 +1723,34 @@ struct ControlPanel: View {
                 .padding(.horizontal, 4)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         } else {
-            // Content width, one shared size. fixedSize used to refuse the rail's leftover width and shove the ruler off the phone.
             Text(title)
                 .font(HybridFont.text(15, relativeTo: .subheadline))
                 .fontWeight(.semibold)
                 .foregroundStyle(HybridColor.cream)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .padding(.horizontal, 2)
-                .frame(minHeight: 44)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(
+                    maxWidth: .infinity,
+                    minWidth: ControlColumnMetrics.minimumTap,
+                    minHeight: ControlColumnMetrics.minimumTap
+                )
+                .contentShape(Rectangle())
         }
     }
 }
 
-/// One row of labels. Each keeps its own width, and the whole row scales down to the proposed width
-/// instead of growing the sheet past the ruler.
-private struct FittingBar: Layout {
-    var spacing: CGFloat = 8
+/// Width of the control column beside the ruler, and of one default-size bottom-bar button.
+enum ControlColumnMetrics {
+    static let leading: CGFloat = 20
+    static let trailing: CGFloat = 8
+    static let barSpacing: CGFloat = 8
+    static let minimumTap: CGFloat = 44
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
-        let ideals = subviews.map { $0.sizeThatFits(.unspecified) }
-        let height = max(44, ideals.map(\.height).max() ?? 44)
-        let content = ideals.reduce(CGFloat(0)) { $0 + $1.width }
-        let gaps = spacing * CGFloat(max(0, subviews.count - 1))
-        let ideal = content + gaps
-        let width = proposal.width.map { min($0, ideal) } ?? ideal
-        return CGSize(width: max(0, width), height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
-        let ideals = subviews.map { $0.sizeThatFits(.unspecified) }
-        let gaps = spacing * CGFloat(max(0, subviews.count - 1))
-        let content = ideals.reduce(CGFloat(0)) { $0 + $1.width }
-        let available = max(0, bounds.width - gaps)
-        let scale = content > available && content > 0 ? available / content : 1
-        var x = bounds.minX
-        for (subview, ideal) in zip(subviews, ideals) {
-            let width = ideal.width * scale
-            subview.place(
-                at: CGPoint(x: x, y: bounds.minY),
-                proposal: ProposedViewSize(width: width, height: bounds.height)
-            )
-            x += width + spacing
-        }
+    /// Equal share of the column after padding. Two columns, one gap.
+    /// On a 402 pt phone the rail takes 176, the column is 226, and each button is 95.
+    static func barSlotWidth(screenWidth: CGFloat, rulerWidth: CGFloat = FlybyRuler.width) -> CGFloat {
+        let inner = max(0, screenWidth - rulerWidth - leading - trailing)
+        return (inner - barSpacing) / 2
     }
 }
 
