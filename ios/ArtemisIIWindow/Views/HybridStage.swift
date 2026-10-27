@@ -1415,6 +1415,9 @@ struct ControlPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollBounceBehavior(.basedOnSize)
+            // Visual clip only. A row that has scrolled out of this slot stays in the
+            // accessibility tree; it must not paint under the pinned bar.
+            .clipped()
             .accessibilityIdentifier("panel-middle")
             secondaryRow
                 .fixedSize(horizontal: false, vertical: true)
@@ -1696,6 +1699,9 @@ struct ControlPanel: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // Opaque. The sheet behind the bar is material, and a row scrolling out of
+            // panel-middle used to be measured through that material.
+            .background(Color.black)
         }
     }
 

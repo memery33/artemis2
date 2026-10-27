@@ -149,6 +149,7 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertTrue(middle.waitForExistence(timeout: 8))
         reveal(window, app: app, scroll: middle)
         XCTAssertTrue(window.isHittable)
+        XCTAssertTrue(frameIsInsideScroll(window.frame, scroll: middle.frame))
         XCTAssertLessThanOrEqual(window.frame.maxY, lines.frame.minY + 0.5)
         let toggle = app.buttons["playback-toggle"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 8))
@@ -506,12 +507,14 @@ final class LayoutFrameUITests: XCTestCase {
             let scroll = app.scrollViews["panel-scroll"]
             XCTAssertTrue(scroll.waitForExistence(timeout: 8))
             reveal(bar, app: app, scroll: scroll)
+        } else {
+            waitForOpenPanelToSettle(app)
         }
         let hittable = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isHittable == true"),
             object: bar
         )
-        wait(for: [hittable], timeout: 3)
+        wait(for: [hittable], timeout: 5)
         XCTAssertTrue(bar.isHittable)
         XCTAssertGreaterThanOrEqual(bar.frame.height, 44 - 0.5)
         XCTAssertGreaterThanOrEqual(bar.frame.minX, -0.5)
@@ -722,23 +725,92 @@ final class LayoutFrameUITests: XCTestCase {
         }
     }
 
+    /// The sheet is open and the spring has finished. Play is pinned, so a stable Play
+    /// frame means the open animation is done. A stable window pill means panel-middle
+    /// is not still scrolling. A swipe-open can be told by the panel value or by Play.
+    private func waitForOpenPanelToSettle(_ app: XCUIApplication) {
+        let panel = element(named: "control-panel", in: app)
+        let play = app.buttons["playback-toggle"]
+        let opened = Date().addingTimeInterval(5)
+        while Date() < opened {
+            let isOpen = (panel.value as? String) == "open"
+            if isOpen || (play.exists && play.isHittable) {
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        _ = play.waitForExistence(timeout: 4)
+        let middle = app.scrollViews["panel-middle"]
+        _ = middle.waitForExistence(timeout: 4)
+        let probe = app.buttons["window-nikon"]
+        let deadline = Date().addingTimeInterval(5)
+        var previousPlay: CGRect?
+        var previousProbe: CGRect?
+        var stable = 0
+        while Date() < deadline {
+            let playFrame = play.frame
+            let probeFrame = probe.exists && probe.frame.height > 1 ? probe.frame : middle.frame
+            if let previousPlay, let previousProbe,
+               play.isHittable,
+               playFrame.height > 1,
+               probeFrame.height > 1,
+               nearly(playFrame.minY, previousPlay.minY),
+               nearly(playFrame.maxY, previousPlay.maxY),
+               nearly(probeFrame.minY, previousProbe.minY),
+               nearly(probeFrame.maxY, previousProbe.maxY) {
+                stable += 1
+                if stable >= 3 {
+                    return
+                }
+            } else {
+                stable = 0
+            }
+            previousPlay = playFrame
+            previousProbe = probeFrame
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+    }
+
+    private func nearly(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool {
+        abs(lhs - rhs) < CGFloat(0.5)
+    }
+
+    /// Scrolls until `element` sits fully inside `scroll` and is hittable. Swipes stop at 16.
+    /// The old stop used the phone's bottom, so a pill under the pinned bar looked done.
     private func reveal(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
         XCTAssertTrue(element.waitForExistence(timeout: 8))
-        var attempts: Int = 0
-        while attempts < 16 {
-            let frame: CGRect = element.frame
-            let inColumn: Bool = frame.minY >= scroll.frame.minY - 0.5 && frame.maxY <= app.frame.maxY - 4 && frame.height > 1
-            if inColumn {
-                break
+        let swipeCap = 16
+        var swipes = 0
+        let deadline = Date().addingTimeInterval(8)
+        while swipes < swipeCap, Date() < deadline {
+            let frame = element.frame
+            let viewport = scroll.frame
+            if viewport.width <= 1 || viewport.height <= 1 || viewport.maxX > app.frame.maxX + 1 {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                continue
             }
-            if frame.minY < scroll.frame.minY - 0.5 {
-                break
+            if frameIsInsideScroll(frame, scroll: viewport) {
+                if element.isHittable {
+                    break
+                }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                continue
             }
-            let start: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
-            let end: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48))
+            let upward = frame.minY < viewport.minY - 0.5
+            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: upward ? 0.48 : 0.72))
+            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: upward ? 0.72 : 0.48))
             start.press(forDuration: 0.01, thenDragTo: end)
-            attempts += 1
+            swipes += 1
         }
+    }
+
+    private func frameIsInsideScroll(_ frame: CGRect, scroll: CGRect) -> Bool {
+        frame.height > 1
+            && frame.width > 1
+            && frame.minY >= scroll.minY - 0.5
+            && frame.maxY <= scroll.maxY + 0.5
+            && frame.minX >= scroll.minX - 0.5
+            && frame.maxX <= scroll.maxX + 0.5
     }
 
     private func assertMomentPiece(_ element: XCUIElement, app: XCUIApplication, panelTop: CGFloat) {
@@ -750,26 +822,12 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.minY, panelTop - 0.5)
     }
 
-    /// Scrolls the open panel until `element` is on screen, then requires it inside the window.
+    /// Scrolls until `element` is inside the scroll container, then requires it hittable there.
     private func assertWithinWindow(_ element: XCUIElement, app: XCUIApplication, scroll: XCUIElement) {
-        XCTAssertTrue(element.waitForExistence(timeout: 8))
-        var attempts: Int = 0
-        while attempts < 16 {
-            let frame: CGRect = element.frame
-            let inView: Bool = frame.minY >= -0.5 && frame.maxY <= app.frame.maxY + 0.5
-            if inView, element.isHittable {
-                break
-            }
-            if frame.minY < -0.5 {
-                break
-            }
-            let start: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
-            let end: XCUICoordinate = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48))
-            start.press(forDuration: 0.01, thenDragTo: end)
-            attempts += 1
-        }
-        XCTAssertGreaterThanOrEqual(element.frame.minX, 0)
+        reveal(element, app: app, scroll: scroll)
+        XCTAssertTrue(frameIsInsideScroll(element.frame, scroll: scroll.frame))
         XCTAssertLessThanOrEqual(element.frame.maxX, app.frame.width + 0.5)
+        XCTAssertGreaterThanOrEqual(element.frame.minX, -0.5)
         XCTAssertTrue(element.isHittable)
     }
 
