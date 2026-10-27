@@ -256,6 +256,10 @@ final class LayoutFrameUITests: XCTestCase {
         XCTAssertLessThanOrEqual(scroll.frame.width, app.frame.width + 0.5)
         XCTAssertLessThanOrEqual(scroll.frame.maxX, app.frame.width + 0.5)
         XCTAssertGreaterThanOrEqual(scroll.frame.width, app.frame.width - 48)
+        let scrub = element(named: "ruler-scrub", in: app)
+        if scrub.exists {
+            XCTAssertLessThanOrEqual(scrub.frame.maxX, app.frame.width + 0.5)
+        }
 
         let clock: XCUIElement = app.descendants(matching: .any)["mission-clock"]
         assertWithinWindow(clock, app: app, scroll: scroll)
@@ -353,8 +357,10 @@ final class LayoutFrameUITests: XCTestCase {
             assertMiniBar(app)
         }
         open.tap()
-        if category == nil {
-            assertRulerScrubTarget(app)
+        if category == nil || category == "UICTContentSizeCategoryAccessibilityXL" {
+            // Default size mounts the rail. AX3 uses the moment list, and still checks
+            // the rail when one is mounted so a column cannot hang off the phone.
+            assertRulerScrubTarget(app, required: category == nil)
         }
 
         if category == nil || category == "UICTContentSizeCategoryAccessibilityXXXL" {
@@ -427,20 +433,31 @@ final class LayoutFrameUITests: XCTestCase {
         }
     }
 
-    /// The open ruler's drag column is at least 44 by 44.
-    private func assertRulerScrubTarget(_ app: XCUIApplication) {
+    /// The open ruler's drag column is at least 44 by 44 and ends on the phone.
+    private func assertRulerScrubTarget(_ app: XCUIApplication, required: Bool = true) {
         let scrub = element(named: "ruler-scrub", in: app)
-        XCTAssertTrue(scrub.waitForExistence(timeout: 8))
+        let present = scrub.waitForExistence(timeout: required ? 8 : 1)
+        if required {
+            XCTAssertTrue(present)
+        }
+        guard present else { return }
         let minimum: CGFloat = 44 - 0.5
         let deadline = Date().addingTimeInterval(3)
         var frame = scrub.frame
         while Date() < deadline {
             frame = scrub.frame
-            if frame.width >= minimum, frame.height >= minimum { break }
+            if frame.width >= minimum, frame.height >= minimum, frame.maxX <= app.frame.width + 0.5 { break }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         XCTAssertGreaterThanOrEqual(frame.width, minimum)
         XCTAssertGreaterThanOrEqual(frame.height, minimum)
+        XCTAssertGreaterThanOrEqual(frame.minX, -0.5)
+        XCTAssertLessThanOrEqual(scrub.frame.maxX, app.frame.width + 0.5)
+        let mark = app.buttons["milestone-approach"]
+        if mark.waitForExistence(timeout: 4) {
+            XCTAssertGreaterThanOrEqual(mark.frame.minX, -0.5)
+            XCTAssertLessThanOrEqual(mark.frame.maxX, app.frame.width + 0.5)
+        }
     }
 
     /// Approach sits on the bottom bar. At the default size it shares a row with About. Tapping it opens the card.

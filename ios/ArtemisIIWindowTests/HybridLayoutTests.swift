@@ -420,6 +420,71 @@ final class HybridLayoutTests: XCTestCase {
         XCTAssertFalse(flyby.playing)
     }
 
+    /// The collapsed strip hides after four seconds of playback, and only then.
+    /// UI tests, a pause, an open panel, or a scrub leave it up. No timer is waited on.
+    func testMiniChromeHidesAfterFourSecondsOfPlayback() {
+        XCTAssertEqual(MiniChromeFade.hideDelay, .seconds(4))
+        XCTAssertEqual(MiniChromeFade.hideDelayNanoseconds, 4_000_000_000)
+        XCTAssertTrue(MiniChromeFade.armsHide(playing: true, panelOpen: false, scrubbing: false, uiTests: false))
+        XCTAssertFalse(MiniChromeFade.armsHide(playing: false, panelOpen: false, scrubbing: false, uiTests: false))
+        XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: true, scrubbing: false, uiTests: false))
+        XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: false, scrubbing: true, uiTests: false))
+        XCTAssertFalse(MiniChromeFade.armsHide(playing: true, panelOpen: false, scrubbing: false, uiTests: true))
+        XCTAssertTrue(MiniChromeFade.isVisible(armed: true, elapsed: .seconds(0)))
+        XCTAssertTrue(MiniChromeFade.isVisible(armed: true, elapsed: .milliseconds(3999)))
+        XCTAssertFalse(MiniChromeFade.isVisible(armed: true, elapsed: .seconds(4)))
+        XCTAssertFalse(MiniChromeFade.isVisible(armed: true, elapsed: .seconds(6)))
+        XCTAssertTrue(MiniChromeFade.isVisible(armed: false, elapsed: .seconds(6)))
+    }
+
+    /// Cream clears 4.5:1 on the sheet veil. Gold needs the ruler scrim, then it clears it too.
+    func testRulerTypeClearsSecondaryContrast() {
+        let panel = PanelContrast.whiteUnderVeil()
+        let rail = PanelContrast.blackOver(panel, opacity: PanelContrast.rulerScrim)
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.creamComponents, background: panel),
+            PanelContrast.minimum
+        )
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.creamComponents, background: rail),
+            PanelContrast.minimum
+        )
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.goldComponents, background: rail),
+            PanelContrast.minimum
+        )
+        XCTAssertGreaterThanOrEqual(
+            PanelContrast.ratio(foreground: HybridColor.dimComponents, background: rail),
+            PanelContrast.minimum
+        )
+    }
+
+    /// Reaching the end hides the chevron. The plate relayout can report a miss; that miss stays hidden until a drag.
+    func testApproachChevronHidesAtTheEndOfTheScroll() {
+        XCTAssertFalse(ApproachScrollEnd.isAtEnd(contentHeight: 0, visibleMaxY: 0))
+        XCTAssertFalse(ApproachScrollEnd.isAtEnd(contentHeight: 400, visibleMaxY: 200))
+        XCTAssertTrue(ApproachScrollEnd.isAtEnd(contentHeight: 400, visibleMaxY: 399))
+        XCTAssertTrue(ApproachScrollEnd.isAtEnd(contentHeight: 400, visibleMaxY: 370, bottomInset: 30))
+
+        var state = ApproachChevronState.initial
+        state = state.step(contentHeight: 0, atEnd: false, dragging: false)
+        XCTAssertTrue(state.showing)
+        XCTAssertFalse(state.seenShort)
+        state = state.step(contentHeight: 400, atEnd: true, dragging: false)
+        XCTAssertTrue(state.showing)
+        state = state.step(contentHeight: 400, atEnd: false, dragging: false)
+        XCTAssertTrue(state.showing)
+        XCTAssertTrue(state.seenShort)
+        state = state.step(contentHeight: 400, atEnd: true, dragging: false)
+        XCTAssertFalse(state.showing)
+        XCTAssertTrue(state.latched)
+        state = state.step(contentHeight: 400, atEnd: false, dragging: false)
+        XCTAssertFalse(state.showing)
+        state = state.step(contentHeight: 400, atEnd: false, dragging: true)
+        XCTAssertTrue(state.showing)
+        XCTAssertFalse(state.latched)
+    }
+
     /// Fine scrub slows as the finger leaves the rail. A date in the gap snaps to the nearer playable edge.
     func testRulerScrubGainAndSpanClamp() {
         XCTAssertEqual(RulerScrub.gain(horizontalDistance: 0), 1, accuracy: 0.001)

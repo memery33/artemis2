@@ -427,11 +427,14 @@ struct HybridStage: View {
         } else {
             HStack(alignment: .bottom, spacing: 0) {
                 controlPanel(panelHeight: panelHeight, safeBottom: safeBottom)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 FlybyRuler(safeBottom: safeBottom) { kind in
                     crater = kind
                 }
-                .frame(width: 176)
+                // The rail keeps its column. A flexible control row used to push it past the phone.
+                .frame(width: FlybyRuler.width)
+                .clipped()
+                .layoutPriority(1)
             }
         }
     }
@@ -621,35 +624,50 @@ struct HybridStage: View {
     private func armMiniChrome() {
         miniHideTask?.cancel()
         miniChromeVisible = true
-        guard model.playing, !panelOpen, !model.scrubbing, !showsSafeAreaMarks else { return }
+        let armed = MiniChromeFade.armsHide(
+            playing: model.playing,
+            panelOpen: panelOpen,
+            scrubbing: model.scrubbing,
+            uiTests: showsSafeAreaMarks
+        )
+        guard armed else { return }
         miniHideTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            try? await Task.sleep(nanoseconds: MiniChromeFade.hideDelayNanoseconds)
             guard !Task.isCancelled else { return }
-            guard model.playing, !panelOpen, !model.scrubbing else { return }
+            guard MiniChromeFade.armsHide(
+                playing: model.playing,
+                panelOpen: panelOpen,
+                scrubbing: model.scrubbing,
+                uiTests: showsSafeAreaMarks
+            ) else { return }
             miniChromeVisible = false
         }
     }
 
     /// Drag strip above the home indicator. The bottom 20 pt is left alone so the
     /// system swipe can still reach the app switcher.
+    /// The strip is mounted after the sheet, so while the panel is open it used to
+    /// cover the bottom bar (the button centers sit inside this 44 pt band). It is
+    /// not in the tree then, and the container does not hit-test.
     private func bottomEdge(panelHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
-            Spacer()
-            Color.clear
-                .frame(height: 44)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .allowsHitTesting(!panelOpen)
-                .gesture(panelDrag(panelHeight: panelHeight))
-                .accessibilityElement()
-                .accessibilityHidden(panelOpen)
-                .accessibilityIdentifier("panel-edge")
-                .accessibilityLabel("Swipe up for controls")
+            Spacer(minLength: 0)
+            if !panelOpen {
+                Color.clear
+                    .frame(height: 44)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(panelDrag(panelHeight: panelHeight))
+                    .accessibilityElement()
+                    .accessibilityIdentifier("panel-edge")
+                    .accessibilityLabel("Swipe up for controls")
+            }
             Color.clear
                 .frame(height: 20)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
+        .allowsHitTesting(!panelOpen)
     }
 
     private func sheetShift(height: CGFloat) -> CGFloat {
@@ -1011,6 +1029,23 @@ enum RulerMetrics {
     }
 }
 
+/// The collapsed strip hides after four seconds of playback. UI tests, an open panel,
+/// a pause, or a scrub never arm the timer. The view sleeps; this is the decision.
+enum MiniChromeFade {
+    static let hideDelay: Duration = .seconds(4)
+    static let hideDelayNanoseconds: UInt64 = 4_000_000_000
+
+    static func armsHide(playing: Bool, panelOpen: Bool, scrubbing: Bool, uiTests: Bool) -> Bool {
+        playing && !panelOpen && !scrubbing && !uiTests
+    }
+
+    /// Still on screen. An unarmed strip stays up. An armed one hides once `elapsed` reaches the delay.
+    static func isVisible(armed: Bool, elapsed: Duration) -> Bool {
+        if !armed { return true }
+        return elapsed < hideDelay
+    }
+}
+
 /// Ruler and mini-scrubber math. Moving sideways from the rail slows the playhead.
 /// A date outside a playable span snaps to the nearest edge of one.
 enum RulerScrub {
@@ -1336,7 +1371,7 @@ struct ControlPanel: View {
         .padding(.trailing, 8)
         .padding(.bottom, safeBottom)
         .frame(height: height)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()
         .environment(\.colorScheme, .dark)
         .sheet(isPresented: $about) { AboutView() }
@@ -1641,8 +1676,8 @@ struct ControlPanel: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            // One row at the default size on a 402 pt phone. Each label keeps its own width and can shrink; the row does not clip.
-            HStack(spacing: 8) {
+            // One row beside the 176 pt rail. Labels keep their own width until the row runs out of room, then they scale together.
+            FittingBar(spacing: 8) {
                 barButtons
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1680,19 +1715,48 @@ struct ControlPanel: View {
                 .padding(.horizontal, 4)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         } else {
-            // Content width, one shared size. An equal-width slot scales "Moments" down
-            // and leaves Lines and About larger. The label shrinks before it clips.
-            ZStack {
-                Color.clear.frame(width: 44, height: 44)
-                Text(title)
-                    .font(HybridFont.text(15, relativeTo: .subheadline))
-                    .fontWeight(.semibold)
-                    .foregroundStyle(HybridColor.cream)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-                    .padding(.horizontal, 4)
-            }
-            .fixedSize()
+            // Content width, one shared size. fixedSize used to refuse the rail's leftover width and shove the ruler off the phone.
+            Text(title)
+                .font(HybridFont.text(15, relativeTo: .subheadline))
+                .fontWeight(.semibold)
+                .foregroundStyle(HybridColor.cream)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .padding(.horizontal, 2)
+                .frame(minHeight: 44)
+        }
+    }
+}
+
+/// One row of labels. Each keeps its own width, and the whole row scales down to the proposed width
+/// instead of growing the sheet past the ruler.
+private struct FittingBar: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let ideals = subviews.map { $0.sizeThatFits(.unspecified) }
+        let height = max(44, ideals.map(\.height).max() ?? 44)
+        let content = ideals.reduce(CGFloat(0)) { $0 + $1.width }
+        let gaps = spacing * CGFloat(max(0, subviews.count - 1))
+        let ideal = content + gaps
+        let width = proposal.width.map { min($0, ideal) } ?? ideal
+        return CGSize(width: max(0, width), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        let ideals = subviews.map { $0.sizeThatFits(.unspecified) }
+        let gaps = spacing * CGFloat(max(0, subviews.count - 1))
+        let content = ideals.reduce(CGFloat(0)) { $0 + $1.width }
+        let available = max(0, bounds.width - gaps)
+        let scale = content > available && content > 0 ? available / content : 1
+        var x = bounds.minX
+        for (subview, ideal) in zip(subviews, ideals) {
+            let width = ideal.width * scale
+            subview.place(
+                at: CGPoint(x: x, y: bounds.minY),
+                proposal: ProposedViewSize(width: width, height: bounds.height)
+            )
+            x += width + spacing
         }
     }
 }
@@ -1749,7 +1813,8 @@ struct AccessibilityMomentList: View {
                         time: time,
                         name: "Closest approach",
                         identifier: "milestone-approach",
-                        hint: landing.gap
+                        hint: landing.gap,
+                        accent: true
                     ) {
                         model.showClosestApproach()
                     }
@@ -1759,7 +1824,8 @@ struct AccessibilityMomentList: View {
                         name: "Closest approach",
                         identifier: "milestone-approach",
                         hint: model.closestApproachMissingNote ?? "No crew recording at closest approach",
-                        informational: true
+                        informational: true,
+                        accent: true
                     ) {
                         model.showClosestApproach()
                     }
@@ -1785,9 +1851,10 @@ struct AccessibilityMomentList: View {
         identifier: String,
         hint: String? = nil,
         informational: Bool = false,
+        accent: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        let label = momentLabel(time: time, name: name, informational: informational)
+        let label = momentLabel(time: time, name: name, informational: informational, accent: accent)
         Button(action: action) {
             label
         }
@@ -1799,25 +1866,34 @@ struct AccessibilityMomentList: View {
         .modifier(MomentHint(hint: hint))
     }
 
-    private func momentLabel(time: String, name: String, informational: Bool) -> some View {
-        VStack(alignment: .leading, spacing: lineGap) {
+    private func momentLabel(time: String, name: String, informational: Bool, accent: Bool) -> some View {
+        let tone = accent ? HybridColor.gold : (informational ? HybridColor.dim : HybridColor.cream)
+        return VStack(alignment: .leading, spacing: lineGap) {
             Text(time)
                 .font(HybridFont.text(13, relativeTo: .caption).monospacedDigit())
                 .fontWeight(.regular)
-                .foregroundStyle(informational ? HybridColor.dim : HybridColor.cream)
+                .foregroundStyle(tone)
                 .lineLimit(1)
                 .minimumScaleFactor(0.4)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(name)
                 .font(nameFont(informational: informational))
                 .fontWeight(informational ? .regular : .bold)
-                .foregroundStyle(informational ? HybridColor.dim : HybridColor.cream)
+                .foregroundStyle(tone)
                 .lineLimit(1)
                 .minimumScaleFactor(0.4)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)
+        .padding(.horizontal, accent ? 6 : 0)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background {
+            if accent {
+                // Gold on the veil alone is under 4.5:1. The same scrim as the ruler clears it.
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.black.opacity(PanelContrast.rulerScrim))
+            }
+        }
     }
 
     private func nameFont(informational: Bool) -> Font {
@@ -1840,6 +1916,8 @@ private struct MomentHint: ViewModifier {
 }
 
 struct FlybyRuler: View {
+    /// Column width. The sheet keeps this on the trailing edge of the phone.
+    static let width: CGFloat = 176
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var safeBottom: CGFloat = 0
@@ -1855,7 +1933,10 @@ struct FlybyRuler: View {
             let width = geo.size.width
             ZStack(alignment: .bottomTrailing) {
                 LinearGradient(
-                    colors: [.clear, Color.black.opacity(0.45)],
+                    colors: [
+                        Color.black.opacity(PanelContrast.rulerScrim),
+                        Color.black.opacity(0.5),
+                    ],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
@@ -2571,30 +2652,73 @@ private struct CappedApproachText: View {
     var width: CGFloat
     @State private var lineHeight: CGFloat = 0
     @State private var scrolledToEnd = false
+    @State private var scrollport: CGFloat = 0
+    @State private var approachDragging = false
+    @State private var chevron = ApproachChevronState.initial
 
     var body: some View {
         let height = lineHeight > 0 ? lineHeight : ApproachLineGrid.estimatedLineHeight(informational: informational)
         let showsChevron = !scrolledToEnd
         SnappedApproachHeight(lineHeight: height, showsChevron: showsChevron) {
             GeometryReader { geo in
-                // The scrollport stays the snapped height. Hiding the chevron drops its row
-                // instead of leaving that band under the last line.
-                let reserved = showsChevron ? ApproachLineGrid.chevronRow : 0
-                let room = max(0, geo.size.height - reserved)
-                let viewport = ApproachLineGrid.viewport(room: room, lineHeight: height)
-                ScrollView(.vertical, showsIndicators: false) {
-                    sentence
-                }
-                .frame(height: viewport, alignment: .top)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    guard geometry.contentSize.height > 1 else { return false }
-                    return geometry.visibleRect.maxY >= geometry.contentSize.height - 1
-                } action: { _, atEnd in
-                    scrolledToEnd = atEnd
+                // Measure the port from the plate that still reserves the chevron.
+                // Hiding the mark drops that row. The scroller keeps this height, so the
+                // bottom padding under the last line stays the same 12 pt as the top.
+                let room = max(0, geo.size.height - ApproachLineGrid.chevronRow)
+                let measured = ApproachLineGrid.viewport(room: room, lineHeight: height)
+                let port = scrolledToEnd && scrollport > 0 ? scrollport : measured
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        sentence
+                        Color.clear
+                            .frame(height: 0)
+                            .id(ApproachScrollEnd.bottomID)
+                            .accessibilityHidden(true)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .contentMargins(.vertical, 0, for: .scrollContent)
+                    .frame(height: port, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .onScrollPhaseChange { _, phase in
+                        approachDragging = phase == .interacting
+                    }
+                    .onScrollGeometryChange(for: ApproachScrollSample.self) { geometry in
+                        ApproachScrollSample(
+                            contentHeight: geometry.contentSize.height,
+                            visibleMaxY: geometry.visibleRect.maxY,
+                            bottomInset: geometry.contentInsets.bottom
+                        )
+                    } action: { _, sample in
+                        let atEnd = ApproachScrollEnd.isAtEnd(
+                            contentHeight: sample.contentHeight,
+                            visibleMaxY: sample.visibleMaxY,
+                            bottomInset: sample.bottomInset
+                        )
+                        let next = chevron.step(
+                            contentHeight: sample.contentHeight,
+                            atEnd: atEnd,
+                            dragging: approachDragging
+                        )
+                        if chevron.showing, !next.showing, scrollport == 0 {
+                            scrollport = measured
+                        }
+                        if next.showing {
+                            scrollport = 0
+                        }
+                        chevron = next
+                        scrolledToEnd = !next.showing
+                    }
+                    .onChange(of: scrolledToEnd) { _, atEnd in
+                        guard atEnd else { return }
+                        proxy.scrollTo(ApproachScrollEnd.bottomID, anchor: .bottom)
+                    }
+                    .onChange(of: measured) { _, newValue in
+                        if !scrolledToEnd { scrollport = newValue }
+                    }
                 }
             }
         }
+        .animation(nil, value: scrolledToEnd)
         .overlay(alignment: .bottom) {
             if showsChevron {
                 ApproachChevronMark()
@@ -2639,6 +2763,46 @@ private struct CappedApproachText: View {
             .frame(maxWidth: width, alignment: .leading)
             .padding(ApproachLineGrid.textPadding)
     }
+}
+
+/// Scroll geometry for the capped card. Hiding the chevron changes the plate, and that
+/// relayout can report a miss. A miss only brings the mark back while a finger is down.
+enum ApproachScrollEnd {
+    static let bottomID = "approach-scroll-end"
+
+    static func isAtEnd(contentHeight: CGFloat, visibleMaxY: CGFloat, bottomInset: CGFloat = 0) -> Bool {
+        guard contentHeight > 1 else { return false }
+        return visibleMaxY + max(0, bottomInset) >= contentHeight - 1
+    }
+}
+
+/// The mark stays up until the fold has been short of the sentence and then reaches it.
+/// Dropping the chevron row relayouts the plate and can report a miss. That miss stays hidden
+/// until a finger drags back up. An empty first geometry sample does not count.
+struct ApproachChevronState: Equatable {
+    var showing: Bool
+    var seenShort: Bool
+    var latched: Bool
+
+    static let initial = ApproachChevronState(showing: true, seenShort: false, latched: false)
+
+    func step(contentHeight: CGFloat, atEnd: Bool, dragging: Bool) -> ApproachChevronState {
+        guard contentHeight > 1 else { return self }
+        if atEnd {
+            guard seenShort else { return self }
+            return ApproachChevronState(showing: false, seenShort: true, latched: true)
+        }
+        if dragging || !latched {
+            return ApproachChevronState(showing: true, seenShort: true, latched: false)
+        }
+        return ApproachChevronState(showing: false, seenShort: true, latched: true)
+    }
+}
+
+private struct ApproachScrollSample: Equatable {
+    var contentHeight: CGFloat
+    var visibleMaxY: CGFloat
+    var bottomInset: CGFloat
 }
 
 /// The capped plate is the whole-line scrollport plus the chevron row, not the leftover under the last line.
