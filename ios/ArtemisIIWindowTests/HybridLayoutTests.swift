@@ -439,11 +439,11 @@ final class HybridLayoutTests: XCTestCase {
 
     /// Beside the 176 pt rail, each default-size bar button is an equal 95 pt slot, at least 44.
     func testBottomBarSlotsClear44BesideTheRuler() {
-        XCTAssertEqual(FlybyRuler.width, 176, accuracy: 0.001)
+        XCTAssertEqual(RulerMetrics.width, 176, accuracy: 0.001)
         let slot = ControlColumnMetrics.barSlotWidth(screenWidth: 402)
         XCTAssertEqual(slot, 95, accuracy: 0.001)
         XCTAssertGreaterThanOrEqual(slot, ControlColumnMetrics.minimumTap)
-        let column = 402 - FlybyRuler.width
+        let column = 402 - RulerMetrics.width
         XCTAssertEqual(column, 226, accuracy: 0.001)
         XCTAssertLessThanOrEqual(column, 402)
         XCTAssertEqual(

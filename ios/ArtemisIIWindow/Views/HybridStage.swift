@@ -432,7 +432,7 @@ struct HybridStage: View {
                     crater = kind
                 }
                 // The rail keeps its column. A flexible control row used to push it past the phone.
-                .frame(width: FlybyRuler.width)
+                .frame(width: RulerMetrics.width)
                 .clipped()
                 .layoutPriority(1)
             }
@@ -1007,6 +1007,9 @@ private struct RulerHitShape: Shape {
 }
 
 enum RulerMetrics {
+    /// Column width. The sheet keeps this on the trailing edge of the phone.
+    /// It lives here, not on `FlybyRuler`, because a `View` static is main-actor isolated.
+    static let width: CGFloat = 176
     static let topInset: CGFloat = 16
     static let bottomInset: CGFloat = 16
 
@@ -1748,7 +1751,7 @@ enum ControlColumnMetrics {
 
     /// Equal share of the column after padding. Two columns, one gap.
     /// On a 402 pt phone the rail takes 176, the column is 226, and each button is 95.
-    static func barSlotWidth(screenWidth: CGFloat, rulerWidth: CGFloat = FlybyRuler.width) -> CGFloat {
+    static func barSlotWidth(screenWidth: CGFloat, rulerWidth: CGFloat = RulerMetrics.width) -> CGFloat {
         let inner = max(0, screenWidth - rulerWidth - leading - trailing)
         return (inner - barSpacing) / 2
     }
@@ -1909,8 +1912,6 @@ private struct MomentHint: ViewModifier {
 }
 
 struct FlybyRuler: View {
-    /// Column width. The sheet keeps this on the trailing edge of the phone.
-    static let width: CGFloat = 176
     @EnvironmentObject private var model: PlaybackModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var safeBottom: CGFloat = 0
